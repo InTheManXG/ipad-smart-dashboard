@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const labels = {running:'正在进行', waiting:'等待你处理', done:'已完成', error:'需要关注', unknown:'暂无状态'};
 let token = sessionStorage.getItem('display-token') || '';
-let busy = false, lastSuccess = 0, wakeLock = null, wantWake = false;
+let busy = false, lastSuccess = 0, wakeLock = null, wantWake = true;
 function element(tag, className, text) {
   const node = document.createElement(tag); node.className = className;
   if (text !== undefined) node.textContent = text; // 对话标题始终当作文本，不能注入 HTML。
@@ -109,12 +109,51 @@ $('settings-form').addEventListener('submit',event => {event.preventDefault(); t
 $('cancel').onclick = () => $('settings').close();
 $('connect').onclick = () => $('settings').showModal();
 $('refresh').onclick = refresh;
-async function keepAwake() {
-  if (!('wakeLock' in navigator)) { $('footer-note').textContent = '当前连接不支持常亮，请在 iPad 设置中关闭自动锁定'; wantWake = false; return; }
-  try { wakeLock = await navigator.wakeLock.request('screen'); $('wake').textContent = '已保持常亮'; wakeLock.addEventListener('release',() => {wakeLock = null; $('wake').textContent = '保持常亮';}); }
-  catch { wantWake = false; $('footer-note').textContent = '未能保持常亮，请检查低电量模式或自动锁定设置'; }
+let wakePending = false;
+function showWakeState() {
+  $('wake').textContent = wakeLock ? '常亮已开启' : wantWake ? '常亮待恢复' : '开启常亮';
+  $('wake').setAttribute('aria-pressed', String(wantWake));
 }
-$('wake').onclick = async () => {wantWake = !wantWake; if (wantWake) await keepAwake(); else {await wakeLock?.release();}};
-document.addEventListener('visibilitychange',() => {if (!document.hidden) {refresh(); if (wantWake) keepAwake();}});
+async function keepAwake() {
+  if (!wantWake || document.hidden || wakeLock || wakePending) return;
+  if (!('wakeLock' in navigator)) {
+    $('wake').textContent = '常亮不可用';
+    $('footer-note').textContent = '浏览器不支持常亮，请在 iPad 设置中将自动锁定设为永不';
+    return;
+  }
+  wakePending = true;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    // 请求期间用户可能关闭常亮或切入后台，不能让迟到回执重新开启。
+    if (!wantWake || document.hidden) { await lock.release(); return; }
+    wakeLock = lock;
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; showWakeState(); });
+  } catch {
+    $('footer-note').textContent = '常亮暂未获准，点击页面或返回前台会重试；请检查低电量模式';
+  } finally { wakePending = false; showWakeState(); }
+}
+$('wake').onclick = async () => {
+  wantWake = !wantWake;
+  if (wantWake) await keepAwake(); else await wakeLock?.release();
+  showWakeState();
+};
+// 默认请求常亮；恢复前台或下一次用户操作时重试，避免后台重复申请。
+document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake')) return; keepAwake(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); keepAwake(); } });
+function showFullscreenState() {
+  $('fullscreen').textContent = document.fullscreenElement ? '退出全屏' : navigator.standalone ? '已全屏显示' : '全屏显示';
+}
+$('fullscreen').onclick = async () => {
+  try {
+    // 浏览器全屏必须由用户点击触发，不能在页面加载时强制隐藏地址栏。
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (navigator.standalone) return;
+    else if (document.documentElement.requestFullscreen && document.fullscreenEnabled) await document.documentElement.requestFullscreen();
+    else $('footer-note').textContent = '请在 Safari 点“分享 → 添加到主屏幕”，再从主屏图标打开，即可隐藏地址栏';
+  } catch { $('footer-note').textContent = '未能进入全屏，请使用 Safari“分享 → 添加到主屏幕”后打开'; }
+  showFullscreenState();
+};
+document.addEventListener('fullscreenchange', showFullscreenState);
+showFullscreenState(); showWakeState(); keepAwake();
 function clock() { $('clock').textContent = new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); }
 clock(); setInterval(clock,1000); setInterval(() => {if(token) refresh();},2000); refresh();

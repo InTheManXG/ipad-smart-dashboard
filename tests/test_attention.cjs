@@ -4,10 +4,10 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const nodes = new Map();
 const get = id => {
-  if (!nodes.has(id)) nodes.set(id, {open:false, textContent:'', addEventListener(){}, showModal(){this.open=true; this.shown=(this.shown||0)+1;}, close(){this.open=false;}});
+  if (!nodes.has(id)) nodes.set(id, {setAttribute(){},open:false, textContent:'', addEventListener(){}, showModal(){this.open=true; this.shown=(this.shown||0)+1;}, close(){this.open=false;}});
   return nodes.get(id);
 };
-const context = vm.createContext({document:{getElementById:get,hidden:true,addEventListener(){}}, sessionStorage:{getItem(){return '';}}, setInterval(){}, Date});
+const context = vm.createContext({document:{getElementById:get,hidden:true,addEventListener(){}}, navigator:{},sessionStorage:{getItem(){return '';}}, setInterval(){}, Date});
 vm.runInContext(fs.readFileSync('web/app.js','utf8'), context);
 const run = code => vm.runInContext(code, context);
 run('updateAttention({threadId:"a",title:"任务 A"})');

@@ -4,3 +4,6 @@
 
 /* 【业务逻辑】整行可点击打开对应对话；缺少真实 ID 时禁用，避免错误定位。 */
 button.task{width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;color:var(--ink)}button.task:hover:not(:disabled){background:var(--panel)}button.task:disabled{cursor:default}button.task:active:not(:disabled){background:#24445e}
+
+/* 禁用双击缩放，保留双指缩放和滚动，兼顾看板操作与可访问性。 */
+html{touch-action:manipulation}footer>div{flex-wrap:wrap}input{font-size:16px}
