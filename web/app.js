@@ -45,7 +45,7 @@ function render(data) {
   $('summary').textContent = data.conversationsAvailable ? `${counts.running} 个进行中 · ${counts.waiting} 个待处理 · ${counts.error} 个错误 · ${counts.done} 个完成未读` : '计数暂不可用';
   $('list-note').textContent = data.conversationsTotal > tasks.length ? `展示最近 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '';
   $('plan').textContent = formatPlan(data.plan);
-  $('quota-note').textContent = !data.quotaAvailable ? '额度暂不可用' : data.cached ? '额度为上次缓存' : '额度约每分钟更新';
+  $('quota-note').textContent = !data.quotaAvailable ? '额度暂不可用' : data.cached ? '额度为上次缓存' : '';
   $('windows').replaceChildren();
   for (const w of data.quotaAvailable ? [data.primary, data.secondary] : []) {
     if (!w || !Number.isFinite(w.usedPercent)) continue;

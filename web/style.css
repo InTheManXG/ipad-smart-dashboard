@@ -18,7 +18,7 @@ dialog{width:min(460px,90vw);background:var(--panel);color:var(--ink);border:1px
 .task.running .badge{color:#846300}
 
 /* 空提示不占位置；异常反馈仍使用原有可访问状态区域。 */
-#message:empty,#list-note:empty,#open-result:empty{display:none}
+#message:empty,#list-note:empty,#open-result:empty,#quota-note:empty{display:none}
 
 /* 使用原生弹出层支持点外部关闭和 Escape，避免菜单被任务卡片遮挡。 */
 .more-button{width:44px;padding:0;font-size:26px;line-height:1;border:0}
