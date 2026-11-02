@@ -22,12 +22,29 @@ async function api(path, body) {
 function money(value, unit = 'USD') {
   return Number.isFinite(value) ? `${unit === 'USD' ? '$' : unit === 'CNY' ? '¥' : ''}${value.toLocaleString('zh-CN', {minimumFractionDigits:2, maximumFractionDigits:2})}` : '—';
 }
+function dailyRemaining(data) {
+  // 进度条只使用订阅每日口径，缺失或无限额时不推算比例。
+  if (!Number.isFinite(data.dailyLimit) || data.dailyLimit <= 0 || !Number.isFinite(data.dailyUsed)) return null;
+  return Math.max(0, Math.min(100, (1 - data.dailyUsed / data.dailyLimit) * 100));
+}
 function renderUsage(card, item, data) {
   card.replaceChildren(node('h3','',item.name));
   if (data.error) { card.append(node('p','relay-error',data.error)); return; }
-  card.append(node('div','relay-value',money(data.remaining, data.unit)), node('p','relay-caption','剩余额度'),
-    node('div','relay-detail',`当日已用 ${money(data.dailyUsed)} / 每日额度 ${money(data.dailyLimit)}`),
-    node('p','relay-time',`更新于 ${new Date(data.updatedAt * 1000).toLocaleTimeString('zh-CN')}`));
+  const value = node('div','window-value');
+  value.append(node('strong','relay-value',money(data.remaining, data.unit)), node('span','','剩余'));
+  const left = dailyRemaining(data), track = node('div','track');
+  if (left !== null) {
+    const fill = node('div',left < 15 ? 'fill low' : 'fill');
+    fill.style.width = `${left}%`; track.append(fill);
+    track.setAttribute('role','meter'); track.setAttribute('aria-label','每日额度剩余比例');
+    track.setAttribute('aria-valuemin','0'); track.setAttribute('aria-valuemax','100');
+    track.setAttribute('aria-valuenow',String(left));
+  } else {
+    track.classList.add('unavailable'); track.setAttribute('aria-label','每日额度比例不可用');
+  }
+  card.append(value, track,
+    node('div','reset relay-detail',`当日已用 ${money(data.dailyUsed)} / 每日额度 ${money(data.dailyLimit)}`),
+    node('p','reset relay-time',`${new Date(data.updatedAt * 1000).toLocaleTimeString('zh-CN')} 更新`));
 }
 async function refreshRelay() {
   if (document.hidden || editing) return;
