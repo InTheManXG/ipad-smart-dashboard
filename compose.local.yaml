@@ -1,0 +1,16 @@
+services:
+  ipad-dashboard:
+    image: python:3.13-alpine
+    container_name: codex-ipad-local
+    command: ["python3", "/dashboard/server.py"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18088:18086"
+    environment:
+      STATUS_URL: https://esp.iamxg.com/status
+    volumes:
+      - .:/dashboard:ro
+      - "${HOME}/Library/Application Support/ESP32CodexBridge/config.json:/root/Library/Application Support/ESP32CodexBridge/config.json:ro"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

@@ -1,0 +1,16 @@
+services:
+  ipad-dashboard:
+    image: local/codex-status-relay:0.5.12
+    container_name: codex-ipad-dashboard
+    restart: unless-stopped
+    entrypoint: ["python3", "/dashboard/server.py"]
+    network_mode: host
+    environment:
+      STATUS_URL: http://127.0.0.1:8787/status
+      DISPLAY_BIND: 127.0.0.1
+    env_file: .env
+    volumes:
+      - ./app:/dashboard:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
