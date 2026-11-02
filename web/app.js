@@ -35,7 +35,7 @@ function render(data) {
     // 【业务逻辑】仅使用上游真实 ID 打开对话，不能按同名标题猜测目标。
     row.onclick = () => openConversation(task.threadId);
     const dot = element('span','dot');
-    // 轮询重建列表时沿用呼吸相位，避免每两秒重新起亮。
+    // 轮询重建列表时沿用呼吸相位，避免每次刷新重新起亮。
     dot.style.animationDelay = `-${(Date.now() - breathStartedAt) % 1800}ms`;
     row.append(dot, element('div','task-title',task.title), element('span','badge',task.state === 'done' ? '完成未读' : labels[task.state] || '未知'));
     if (task.unread === true && task.state !== 'done') row.append(element('span','unread-mark','完成未读'));
@@ -173,4 +173,4 @@ $('fullscreen').onclick = async () => {
 document.addEventListener('fullscreenchange', showFullscreenState);
 showFullscreenState(); showWakeState(); keepAwake();
 function clock() { $('clock').textContent = new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); }
-clock(); setInterval(clock,1000); setInterval(() => {if(token) refresh();},2000); refresh();
+clock(); setInterval(clock,1000); setInterval(() => {if(token) refresh();},1000); refresh();
