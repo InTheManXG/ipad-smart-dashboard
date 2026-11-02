@@ -6,11 +6,13 @@ services:
     entrypoint: ["python3", "/dashboard/server.py"]
     network_mode: host
     environment:
+      RELAY_DATA_DIR: /relay-data
       STATUS_URL: http://127.0.0.1:8787/status
       DISPLAY_BIND: 127.0.0.1
     env_file: .env
     volumes:
       - ./app:/dashboard:ro
+      - ./relay-data:/relay-data
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

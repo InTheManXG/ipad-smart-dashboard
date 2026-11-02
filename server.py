@@ -5,13 +5,15 @@ import os
 from pathlib import Path
 import secrets
 import uuid
+from urllib.parse import urlsplit, parse_qs
+import relay
 from urllib.error import HTTPError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = Path.home() / 'Library/Application Support/ESP32CodexBridge/config.json'
-FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'),
+FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/relay.js': ('relay.js', 'text/javascript'),
          '/style.css': ('style.css', 'text/css'), '/manifest.json': ('manifest.json', 'application/manifest+json'),
          '/icon.svg': ('icon.svg', 'image/svg+xml'), '/codex-icon.png': ('codex-icon.png', 'image/png')}
 
@@ -72,7 +74,31 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def relay_api(self):
+        if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
+            self.reply(401, b'{}', 'application/json')
+            return
+        try:
+            if self.command == 'POST':
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 4096:
+                    raise ValueError('invalid body size')
+                self.connection.settimeout(5)
+                result = relay.change_key(json.loads(self.rfile.read(length)))
+            elif urlsplit(self.path).path == '/api/relay/usage':
+                result = relay.read_usage(parse_qs(urlsplit(self.path).query).get('id', [''])[0])
+            else:
+                result = relay.public_keys()
+            self.reply(200, json.dumps(result, ensure_ascii=False).encode(), 'application/json')
+        except (ValueError, TypeError):
+            self.reply(400, b'{"error":"invalid_request"}', 'application/json')
+        except OSError:
+            self.reply(503, b'{"error":"storage_unavailable"}', 'application/json')
+
     def do_POST(self):
+        if self.path == '/api/relay/keys':
+            self.relay_api()
+            return
         if self.path != '/api/open':
             self.reply(404, b'{}', 'application/json')
             return
@@ -98,6 +124,9 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, b'{}', 'application/json')
 
     def do_GET(self):
+        if urlsplit(self.path).path in ('/api/relay/keys', '/api/relay/usage'):
+            self.relay_api()
+            return
         if self.path == '/api/status':
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
                 self.reply(401, b'{"error":"unauthorized"}', 'application/json')

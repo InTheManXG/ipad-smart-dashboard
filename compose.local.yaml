@@ -7,9 +7,11 @@ services:
     ports:
       - "127.0.0.1:18088:18086"
     environment:
+      RELAY_DATA_DIR: /relay-data
       STATUS_URL: https://esp.iamxg.com/status
     volumes:
       - .:/dashboard:ro
+      - ./.relay-data:/relay-data
       - "${HOME}/Library/Application Support/ESP32CodexBridge/config.json:/root/Library/Application Support/ESP32CodexBridge/config.json:ro"
     read_only: true
     cap_drop: [ALL]

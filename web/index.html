@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#f7f7f8"><link rel="manifest" href="./manifest.json"><link rel="icon" href="./codex-icon.png"><link rel="apple-touch-icon" href="./codex-icon.png"><link rel="stylesheet" href="./style.css"><title>Codex · 工作现场</title></head>
 <body>
+<div class="pages" tabindex="0" aria-label="看板页面"><div class="dashboard-page">
 <header>
   <div class="brand"><img class="logo" src="./codex-icon.png" alt=""><div><h1>Codex</h1><span class="sub">工作看板</span></div></div>
   <aside class="header-quota" aria-label="订阅等级">
@@ -16,6 +17,16 @@
   </section>
 </main>
 <footer><span id="footer-note" role="status"></span></footer>
+</div>
+<section class="dashboard-page company-page" aria-labelledby="company-title">
+  <div class="section-head"><div><h2 id="company-title">公司中转站</h2><p class="section-description">订阅额度 · 每分钟更新</p></div><button id="relay-manage">管理 Key</button></div>
+  <p id="relay-message" class="note" role="status"></p><div id="relay-cards"></div>
+</section></div>
+<dialog id="relay-settings" aria-labelledby="relay-settings-title">
+  <h2 id="relay-settings-title">管理 Key</h2><div id="relay-key-list"></div>
+  <form id="relay-form"><input id="relay-id" type="hidden"><label>备注名<input id="relay-name" required maxlength="60" autocomplete="off"></label><label>API Key<input id="relay-key" type="password" maxlength="512" autocomplete="off" spellcheck="false" placeholder="输入 Key；编辑时留空保留原值"></label>
+  <p id="relay-form-message" role="status"></p><div class="dialog-actions"><button type="button" id="relay-new">新增</button><button type="button" id="relay-close">关闭</button><button id="relay-save" type="submit">保存</button></div></form>
+</dialog>
 <dialog id="settings"><form id="settings-form"><h2>连接你的 Codex</h2><p>输入此 Mac 上生成的看板访问口令。</p><label>访问口令<input id="token" type="password" autocomplete="off" required></label><div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit">连接</button></div></form></dialog>
 <dialog id="attention-dialog" aria-labelledby="attention-heading" aria-describedby="attention-title">
   <div class="attention-brand"><img src="./codex-icon.png" alt="" width="36" height="36"><span>Codex</span><span class="attention-status"><i aria-hidden="true"></i>等待你处理</span></div>
@@ -27,4 +38,4 @@
   </div>
   <div class="dialog-actions"><button id="attention-dismiss">稍后处理</button><button id="open-codex">打开 Codex <span aria-hidden="true">↗</span></button></div>
 </dialog>
-<script src="./app.js" type="module"></script></body></html>
+<script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script></body></html>
