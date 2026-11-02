@@ -6,12 +6,8 @@
   <div class="top"><span id="connection" role="status">正在连接</span><time id="clock"></time></div>
 </header>
 <main>
-  <section class="status-strip" aria-label="总体状态">
-    <div class="status-current"><div id="signal" class="signal" aria-hidden="true"><span></span></div><div><h2 id="state">连接中</h2><p id="message">正在读取 Mac 上的 Codex 状态</p></div></div>
-    <div class="status-meta"><span id="summary">等待第一份快照</span><span id="sync">尚未同步</span></div>
-  </section>
   <section class="tasks">
-    <div class="section-head"><div><h2>任务现场</h2></div><span id="task-count">—</span></div>
+    <div class="section-head"><div><h2>任务现场</h2><p id="summary" class="section-description">等待第一份状态</p></div><span id="task-count">—</span></div>
     <div id="task-list" aria-live="polite"></div><p id="list-note" class="note"></p>
   </section>
   <aside class="quota" aria-label="使用额度">

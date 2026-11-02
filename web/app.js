@@ -22,10 +22,7 @@ function taskOverview(data) {
 }
 function render(data) {
   updateAttention(data.attention);
-  const {tasks, counts, state} = taskOverview(data);
-  $('state').textContent = data.conversationsAvailable ? (tasks.length ? labels[state] : '暂无活跃任务') : '任务状态不可用';
-  $('signal').className = `signal ${data.conversationsAvailable ? state : 'unknown'}`;
-  $('message').textContent = data.conversationsAvailable ? '' : '暂时无法读取任务列表';
+  const {tasks, counts} = taskOverview(data);
   const total = data.conversationsTotal ?? tasks.length;
   $('task-count').textContent = data.conversationsAvailable ? (total > tasks.length ? `共 ${total} 个 · 显示 ${tasks.length} 个` : `${tasks.length} 个任务`) : '状态不可用';
   $('task-list').replaceChildren(...tasks.map(task => {
@@ -75,10 +72,10 @@ async function refresh() {
     const data = await response.json();
     if (!Number.isFinite(data.servedAt) || Date.now()/1000 - data.servedAt > 20) throw new Error('状态数据已过期');
     render(data); lastSuccess = Date.now(); $('connection').textContent = '● 已连接';
-    $('sync').textContent = `${new Date(lastSuccess).toLocaleTimeString('zh-CN')} 同步`;
   } catch (error) {
-    updateAttention(null, false); $('connection').textContent = '● 连接中断'; $('state').textContent = '暂时离线'; $('signal').className = 'signal offline';
-    $('message').textContent = error.name === 'AbortError' ? '连接超时，正在自动重试' : error.message;
+    // 移除总体状态栏后，连接错误仍需可见，避免把旧列表误认为实时数据。
+    updateAttention(null, false);
+    $('connection').textContent = error.name === 'AbortError' ? '连接超时，正在重试' : error.message;
     $('summary').textContent = lastSuccess ? '下方保留上次数据，并非当前状态' : '请检查 Mac 和网络连接';
   } finally { clearTimeout(timer); busy = false; }
 }
