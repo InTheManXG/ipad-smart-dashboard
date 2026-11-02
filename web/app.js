@@ -1,3 +1,4 @@
+const breathStartedAt = Date.now();
 const $ = id => document.getElementById(id);
 const labels = {running:'正在进行', waiting:'等待你处理', done:'已完成', error:'需要关注', unknown:'暂无状态'};
 // 套餐代码仅做显示规范化，不推断价格或权益；未知代码保留原值。
@@ -24,7 +25,7 @@ function render(data) {
   const {tasks, counts, state} = taskOverview(data);
   $('state').textContent = data.conversationsAvailable ? (tasks.length ? labels[state] : '暂无活跃任务') : '任务状态不可用';
   $('signal').className = `signal ${data.conversationsAvailable ? state : 'unknown'}`;
-  $('message').textContent = data.conversationsAvailable ? '按当前展示的任务汇总' : '暂时无法读取任务列表';
+  $('message').textContent = data.conversationsAvailable ? '' : '暂时无法读取任务列表';
   const total = data.conversationsTotal ?? tasks.length;
   $('task-count').textContent = data.conversationsAvailable ? (total > tasks.length ? `共 ${total} 个 · 显示 ${tasks.length} 个` : `${tasks.length} 个任务`) : '状态不可用';
   $('task-list').replaceChildren(...tasks.map(task => {
@@ -35,12 +36,15 @@ function render(data) {
     row.setAttribute('aria-label', `打开 Codex 对话：${task.title}`);
     // 【业务逻辑】仅使用上游真实 ID 打开对话，不能按同名标题猜测目标。
     row.onclick = () => openConversation(task.threadId);
-    row.append(element('span','dot'), element('div','task-title',task.title), element('span','badge',task.state === 'done' ? '完成未读' : labels[task.state] || '未知'));
+    const dot = element('span','dot');
+    // 轮询重建列表时沿用呼吸相位，避免每两秒重新起亮。
+    dot.style.animationDelay = `-${(Date.now() - breathStartedAt) % 2800}ms`;
+    row.append(dot, element('div','task-title',task.title), element('span','badge',task.state === 'done' ? '完成未读' : labels[task.state] || '未知'));
     return row;
   }));
   if (!tasks.length) $('task-list').append(element('p','empty',data.conversationsAvailable ? '暂时没有活跃任务，新的工作会出现在这里。' : '暂时无法读取任务列表。'));
   $('summary').textContent = data.conversationsAvailable ? `${counts.running} 个进行中 · ${counts.waiting} 个待处理 · ${counts.error} 个错误 · ${counts.done} 个完成未读` : '计数暂不可用';
-  $('list-note').textContent = data.conversationsTotal > tasks.length ? `展示最近 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '与 Mac 上的 Codex 状态同步';
+  $('list-note').textContent = data.conversationsTotal > tasks.length ? `展示最近 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '';
   $('plan').textContent = formatPlan(data.plan);
   $('quota-note').textContent = !data.quotaAvailable ? '额度暂不可用' : data.cached ? '额度为上次缓存' : '额度约每分钟更新';
   $('windows').replaceChildren();
@@ -89,7 +93,7 @@ function updateAttention(next, reset = true) {
   // 【业务逻辑】同一待处理阶段只弹一次；解除后再次等待可重新提醒，连接失败不清除已忽略状态。
   $('attention-title').textContent = attention.title;
   if (attention.threadId !== dismissedThread && !$('settings').open && !$('attention-dialog').open) {
-    $('open-result').textContent = '点击后，在 Mac 上打开对应对话。';
+    $('open-result').textContent = '';
     $('attention-dialog').showModal();
   }
 }
@@ -107,7 +111,7 @@ async function openConversation(threadId) {
     const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Display-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
     if (!response.ok || (await response.json()).ok !== true) throw new Error('open failed');
     // 状态可能已切换到另一对话，旧请求的回执不能关闭新提醒。
-    $('footer-note').textContent = 'Mac 已接收打开请求，请查看 Codex 窗口';
+    $('footer-note').textContent = '';
     if (attention?.threadId === threadId) {
       dismissedThread = threadId; $('attention-dialog').close();
     }
