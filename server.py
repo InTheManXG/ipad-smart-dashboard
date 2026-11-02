@@ -35,10 +35,13 @@ def read_status():
 
 
 def open_attention(thread_id):
-    # 【业务逻辑】只允许打开最新待处理对话，中继和 Mac 还会再次校验状态。
+    # 【业务逻辑】只允许打开最新列表或提醒中的对话，中继和 Mac 还会再次校验。
     snapshot = read_status()
     attention = snapshot.get('attention')
-    if not isinstance(attention, dict) or attention.get('threadId') != thread_id:
+    allowed = {item.get('threadId') for item in snapshot.get('conversations', [])}
+    if isinstance(attention, dict):
+        allowed.add(attention.get('threadId'))
+    if thread_id not in allowed:
         return False
     config = json.loads(CONFIG.read_text()) if not os.environ.get('CODEX_STATUS_TOKEN') else os.environ
     status_url = os.environ.get('STATUS_URL', config.get('url', '').rsplit('/', 1)[0] + '/status')

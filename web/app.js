@@ -15,8 +15,13 @@ function render(data) {
   const tasks = Array.isArray(data.conversations) ? data.conversations : [];
   $('task-count').textContent = data.conversationsAvailable ? `${data.conversationsTotal ?? tasks.length} 个任务` : '状态不可用';
   $('task-list').replaceChildren(...tasks.map(task => {
-    const row = element('div', `task ${task.state in labels ? task.state : 'unknown'}`);
+    const row = element('button', `task ${task.state in labels ? task.state : 'unknown'}`);
     // 【业务逻辑】上游列表仅保留完成后未读的对话；总体 done 不代表未读。
+    row.type = 'button';
+    row.disabled = !task.threadId;
+    row.setAttribute('aria-label', `打开 Codex 对话：${task.title}`);
+    // 【业务逻辑】仅使用上游真实 ID 打开对话，不能按同名标题猜测目标。
+    row.onclick = () => openConversation(task.threadId);
     row.append(element('span','dot'), element('div','task-title',task.title), element('span','badge',task.state === 'done' ? '完成未读' : labels[task.state] || '未知'));
     return row;
   }));
@@ -80,24 +85,26 @@ function updateAttention(next, reset = true) {
 function dismissAttention() { dismissedThread = attention?.threadId; $('attention-dialog').close(); }
 $('attention-dismiss').onclick = dismissAttention;
 $('attention-dialog').addEventListener('cancel', () => { dismissedThread = attention?.threadId; });
-$('open-codex').onclick = async () => {
-  if (!attention || opening) return;
-  const threadId = attention.threadId;
+$('open-codex').onclick = () => attention && openConversation(attention.threadId);
+async function openConversation(threadId) {
+  if (!threadId || opening) return;
   opening = true; $('open-codex').disabled = true;
   $('open-result').textContent = '正在请求 Mac 打开对话…';
+  $('footer-note').textContent = '正在请求 Mac 打开对话…';
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 18000);
   try {
     const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Display-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
     if (!response.ok || (await response.json()).ok !== true) throw new Error('open failed');
     // 状态可能已切换到另一对话，旧请求的回执不能关闭新提醒。
+    $('footer-note').textContent = 'Mac 已接收打开请求，请查看 Codex 窗口';
     if (attention?.threadId === threadId) {
       dismissedThread = threadId; $('attention-dialog').close();
-      $('footer-note').textContent = 'Mac 已接收打开请求，请查看 Codex 窗口';
     }
   } catch {
+    $('footer-note').textContent = '未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试';
     if (attention?.threadId === threadId) $('open-result').textContent = '未能确认打开，请检查 Mac 是否在线或任务是否仍待处理，然后重试。';
   } finally { clearTimeout(timeout); opening = false; $('open-codex').disabled = false; }
-};
+}
 $('settings-form').addEventListener('submit',event => {event.preventDefault(); token = $('token').value.trim(); sessionStorage.setItem('display-token',token); $('token').value = ''; $('settings').close(); refresh();});
 $('cancel').onclick = () => $('settings').close();
 $('connect').onclick = () => $('settings').showModal();
