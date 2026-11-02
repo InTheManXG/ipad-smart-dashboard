@@ -44,7 +44,7 @@ main{grid-template-columns:minmax(0,1fr)}
 .header-quota .plan{font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap}
 .header-quota #windows{display:flex;flex-direction:column;gap:16px;grid-column:2;grid-row:1}
 /* 两种额度各占一行，重置时间固定在短进度条末端，避免横向挤成两张卡片。 */
-.header-quota .window{display:grid;grid-template-columns:76px 70px minmax(28px,72px) minmax(0,1fr);align-items:center;gap:10px;min-width:0}
+.header-quota .window{display:grid;grid-template-columns:max-content max-content minmax(60px,140px) minmax(0,1fr);align-items:center;gap:8px;min-width:0}
 .header-quota .window-title{font-size:12px}
 .header-quota .window-value{gap:4px;margin:0;white-space:nowrap}
 .header-quota .window-value strong{font-size:18px;letter-spacing:-.4px}
