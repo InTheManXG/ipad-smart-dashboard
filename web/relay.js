@@ -104,3 +104,7 @@ $('settings-form').addEventListener('submit', () => refreshRelay());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelay(); });
 setInterval(refreshRelay, 60000);
 refreshRelay();
+// 刷新时浏览器可能恢复旧滚动位置，在页面恢复后重新应用直达锚点。
+window.addEventListener('pageshow', () => {
+  if (location.hash === '#company') requestAnimationFrame(() => $('company').scrollIntoView({block:'start', inline:'start'}));
+});
