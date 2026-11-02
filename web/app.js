@@ -121,6 +121,8 @@ $('settings-form').addEventListener('submit',event => {event.preventDefault(); t
 $('cancel').onclick = () => $('settings').close();
 $('connect').onclick = () => $('settings').showModal();
 $('refresh').onclick = refresh;
+// 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。
+$('reload').onclick = () => location.reload();
 let wakePending = false;
 function showWakeState() {
   $('wake').textContent = wakeLock ? '常亮已开启' : wantWake ? '常亮待恢复' : '开启常亮';

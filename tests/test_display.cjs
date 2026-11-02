@@ -7,13 +7,14 @@ const get = id => {
   if (!nodes.has(id)) nodes.set(id,{textContent:'',setAttribute(){},addEventListener(){},showModal(){},close(){}});
   return nodes.get(id);
 };
-let requests = 0, releases = 0, enter = 0, exit = 0;
+let requests = 0, releases = 0, enter = 0, exit = 0, reloads = 0;
 const document = {hidden:false,getElementById:get,addEventListener(name, fn){events[name]=fn;},fullscreenEnabled:true,documentElement:{async requestFullscreen(){enter++;}},async exitFullscreen(){exit++;}};
 const navigator = {wakeLock:{async request(){requests++;let listener;return {addEventListener(_,fn){listener=fn;},async release(){releases++;listener?.();}};}}};
-const context = vm.createContext({document,navigator,sessionStorage:{getItem(){return '';}},setInterval(){},Date});
+const context = vm.createContext({document,navigator,location:{reload(){reloads++;}},sessionStorage:{getItem(){return '';}},setInterval(){},Date});
 vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));
+  get('reload').onclick();assert.equal(reloads,1);
   assert.equal(requests,1);assert.equal(get('wake').textContent,'常亮已开启');
   await get('wake').onclick();assert.equal(releases,1);
   events.pointerup({target:{closest(){return false;}}});assert.equal(requests,1);
