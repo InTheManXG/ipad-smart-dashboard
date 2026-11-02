@@ -31,3 +31,6 @@ footer:has(#footer-note:empty){display:none}
 /* 未读独立于当前执行状态，始终使用绿色，避免继承运行黄灯。 */
 .unread-mark{flex:none;color:var(--done);font-size:12px;white-space:nowrap}.unread-mark::before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:var(--done)}
 @media(max-width:540px){button.task{flex-wrap:wrap}.unread-mark{margin-left:auto}}
+
+/* 连接状态独立于任务颜色，失败时不能保留上次连接成功的绿色。 */
+#connection.connected{color:var(--done)}#connection.disconnected{color:var(--error)}

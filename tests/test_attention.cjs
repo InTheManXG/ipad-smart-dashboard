@@ -47,3 +47,23 @@ assert.ok(row.children.some(node => node.textContent === '正在进行'));
 assert.ok(row.children.some(node => node.className === 'unread-mark' && node.textContent === '完成未读'));
 run("render({conversationsAvailable:true,conversations:[{title:'已读仍运行',threadId:'a',state:'running',unread:false}],quotaAvailable:false})");
 assert.ok(!get('task-list').children[0].children.some(node => node.className === 'unread-mark'));
+
+// 验证连接成功、失败及恢复时颜色状态跟随真实刷新结果变化。
+Object.assign(context, {AbortController, setTimeout, clearTimeout});
+context.document.hidden = false;
+(async () => {
+  run("token = 'test'");
+  context.fetch = async () => ({ok:true,json:async()=>({servedAt:Date.now()/1000,conversations:[],conversationsAvailable:true})});
+  await run('refresh()');
+  assert.equal(get('connection').className,'connected');
+  const success = context.fetch;
+  context.fetch = async () => {throw new Error('offline');};
+  await run('refresh()');
+  assert.equal(get('connection').className,'disconnected');
+  context.fetch = success;
+  await run('refresh()');
+  assert.equal(get('connection').className,'connected');
+  run("token = ''");
+  await run('refresh()');
+  assert.equal(get('connection').className,'disconnected');
+})().catch(error => {console.error(error);process.exitCode=1;});

@@ -64,7 +64,7 @@ function render(data) {
 }
 async function refresh() {
   if (busy || document.hidden) return;
-  if (!token) { $('connection').textContent = '尚未连接'; $('settings').showModal(); return; }
+  if (!token) { $('connection').className = 'disconnected'; $('connection').textContent = '尚未连接'; $('settings').showModal(); return; }
   busy = true;
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 7000);
   try {
@@ -73,10 +73,11 @@ async function refresh() {
     if (!response.ok) throw new Error('Mac 状态服务未连接');
     const data = await response.json();
     if (!Number.isFinite(data.servedAt) || Date.now()/1000 - data.servedAt > 20) throw new Error('状态数据已过期');
-    render(data); lastSuccess = Date.now(); $('connection').textContent = '● 已连接';
+    render(data); lastSuccess = Date.now(); $('connection').className = 'connected'; $('connection').textContent = '● 已连接';
   } catch (error) {
     // 移除总体状态栏后，连接错误仍需可见，避免把旧列表误认为实时数据。
     updateAttention(null, false);
+    $('connection').className = 'disconnected';
     $('connection').textContent = error.name === 'AbortError' ? '连接超时，正在重试' : error.message;
     $('summary').textContent = lastSuccess ? '下方保留上次数据，并非当前状态' : '请检查 Mac 和网络连接';
   } finally { clearTimeout(timer); busy = false; }
