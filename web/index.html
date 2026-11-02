@@ -3,7 +3,7 @@
 <body>
 <header>
   <div class="brand"><img class="logo" src="./codex-icon.png" alt=""><div><h1>Codex</h1><span class="sub">工作看板</span></div></div>
-  <div class="top"><span id="connection" role="status">正在连接</span><time id="clock"></time></div>
+  <div class="top"><span id="connection" role="status">正在连接</span><time id="clock"></time><button class="more-button" popovertarget="display-options" aria-label="更多设置">···</button><div id="display-options" popover aria-label="显示设置"><button id="connect">连接设置</button><button id="fullscreen">全屏显示</button><button id="wake" aria-pressed="true">常亮待恢复</button><button id="refresh">立即刷新</button></div></div>
 </header>
 <main>
   <section class="tasks">
@@ -16,7 +16,7 @@
 
   </aside>
 </main>
-<footer><span id="footer-note"></span><div><button id="connect">连接设置</button><button id="fullscreen">全屏显示</button><button id="wake" aria-pressed="true">常亮待恢复</button><button id="refresh">立即刷新</button></div></footer>
+<footer><span id="footer-note" role="status"></span></footer>
 <dialog id="settings"><form id="settings-form"><h2>连接你的 Codex</h2><p>输入此 Mac 上生成的看板访问口令。</p><label>访问口令<input id="token" type="password" autocomplete="off" required></label><div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit">连接</button></div></form></dialog>
 <dialog id="attention-dialog" aria-labelledby="attention-heading"><h2 id="attention-heading">Codex 需要你处理</h2><p id="attention-title"></p><p id="open-result" role="status"></p><div class="dialog-actions"><button id="attention-dismiss">稍后处理</button><button id="open-codex">打开 Codex</button></div></dialog>
 <script src="./app.js" type="module"></script></body></html>
