@@ -57,7 +57,7 @@ iPad Safari 中选择“分享 → 添加到主屏幕”即可独立打开。首
 
 ## 布局与品牌素材
 
-状态条位于顶部，任务列表为主区域，额度在横屏右侧、竖屏下方。套餐代码只做显示格式转换（promax → Pro 500），不推断价格与权益。Codex 图标直接复用本机官方应用 `/Applications/ChatGPT.app/Contents/Resources/icon-codex-light.png`，同时用于页面、favicon 与主屏图标。
+额度集中在页头品牌与连接状态之间，任务列表占满主区域；窄屏时额度在页头内换行。套餐代码只做显示格式转换（promax → Pro 500），不推断价格与权益。Codex 图标直接复用本机官方应用 `/Applications/ChatGPT.app/Contents/Resources/icon-codex-light.png`，同时用于页面、favicon 与主屏图标。
 
 ## 运行任务计数修复
 

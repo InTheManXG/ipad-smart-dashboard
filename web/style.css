@@ -34,3 +34,23 @@ footer:has(#footer-note:empty){display:none}
 
 /* 连接状态独立于任务颜色，失败时不能保留上次连接成功的绿色。 */
 #connection.connected{color:var(--done)}#connection.disconnected{color:var(--error)}
+
+/* 顶部集中展示额度，主区域只保留任务；窄屏在页头内换行，避免挤压触摸控件。 */
+header{height:auto;min-height:126px;gap:24px;padding-block:16px}
+header .brand,header .top{flex-shrink:0}
+main{grid-template-columns:minmax(0,1fr)}
+.header-quota{flex:1;min-width:0;max-width:640px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 18px;align-items:center}
+.quota-label{display:flex;flex-direction:column;align-items:flex-start;gap:8px;font-size:11px;color:var(--muted)}
+.header-quota .plan{font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap}
+.header-quota #windows{display:flex;flex-direction:row;gap:24px;grid-column:2;grid-row:1}
+.header-quota .window{flex:1;min-width:0}
+.header-quota .window-title{font-size:12px}
+.header-quota .window-value{gap:6px;margin-top:4px}
+.header-quota .window-value strong{font-size:24px;letter-spacing:-.7px}
+.header-quota .window-value span{font-size:10px}
+.header-quota .track{height:4px;margin:6px 0}
+.header-quota .reset{font-size:10px;line-height:1.4}
+.header-quota #quota-note{grid-column:2;margin:0;font-size:11px;color:var(--muted)}
+.header-quota .empty{margin:0;padding:0}
+@media(max-width:1100px){header{gap:18px}.top{gap:12px}.header-quota{gap:6px 12px}.header-quota #windows{gap:14px}}
+@media(max-width:850px){header{flex-wrap:wrap;gap:16px}.header-quota{order:3;flex-basis:100%;max-width:none}.header-quota #windows{margin-top:0;flex-wrap:nowrap}.top{margin-left:auto}}
