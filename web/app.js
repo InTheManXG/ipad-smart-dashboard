@@ -16,7 +16,8 @@ function element(tag, className, text) {
 function taskOverview(data) {
   const tasks = Array.isArray(data.conversations) ? data.conversations : [];
   const counts = Object.fromEntries(['running','waiting','error','done'].map(state => [state, tasks.filter(t => t.state === state).length]));
-  // 总体灯与计数使用同一份列表；总任务数还包括待处理、错误和完成未读。
+  // 未读与运行可重叠，分类之和不代表去重后的对话总数。
+  counts.done = tasks.filter(t => t.unread === true || t.state === 'done').length;
   const state = ['waiting','error','running','done'].find(state => counts[state]) || 'unknown';
   return {tasks, counts, state};
 }
@@ -37,6 +38,7 @@ function render(data) {
     // 轮询重建列表时沿用呼吸相位，避免每两秒重新起亮。
     dot.style.animationDelay = `-${(Date.now() - breathStartedAt) % 1800}ms`;
     row.append(dot, element('div','task-title',task.title), element('span','badge',task.state === 'done' ? '完成未读' : labels[task.state] || '未知'));
+    if (task.unread === true && task.state !== 'done') row.append(element('span','unread-mark','完成未读'));
     return row;
   }));
   if (!tasks.length) $('task-list').append(element('p','empty',data.conversationsAvailable ? '暂时没有活跃任务，新的工作会出现在这里。' : '暂时无法读取任务列表。'));

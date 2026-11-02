@@ -29,3 +29,21 @@ assert.equal(run("formatPlan(null)"),'未知套餐');
 const overview = run("taskOverview({state:'done',conversations:[{state:'running'},{state:'running'},{state:'done'}]})");
 assert.equal(overview.state,'running');assert.equal(overview.counts.running,2);assert.equal(overview.counts.done,1);
 assert.equal(run("taskOverview({conversations:[]}).state"),'unknown');
+
+const mixed = run("taskOverview({conversations:[{state:'running',unread:true},{state:'done',unread:true}]})");
+assert.equal(mixed.tasks.length,2);assert.equal(mixed.counts.running,1);assert.equal(mixed.counts.done,2);
+assert.equal(run("taskOverview({conversations:[{state:'running',unread:false}]}).counts.done"),0);
+
+// 同一行必须同时保留当前状态和独立未读标签，不能仅修复统计。
+context.document.createElement = () => ({style:{},children:[],setAttribute(){},append(...items){this.children.push(...items);}});
+for (const id of ['task-list','windows']) {
+  get(id).replaceChildren = function(...items){this.children=items;};
+  get(id).append = function(...items){this.children.push(...items);};
+}
+run("render({conversationsAvailable:true,conversations:[{title:'双状态',threadId:'a',state:'running',unread:true}],quotaAvailable:false})");
+const row = get('task-list').children[0];
+assert.equal(row.className,'task running');
+assert.ok(row.children.some(node => node.textContent === '正在进行'));
+assert.ok(row.children.some(node => node.className === 'unread-mark' && node.textContent === '完成未读'));
+run("render({conversationsAvailable:true,conversations:[{title:'已读仍运行',threadId:'a',state:'running',unread:false}],quotaAvailable:false})");
+assert.ok(!get('task-list').children[0].children.some(node => node.className === 'unread-mark'));

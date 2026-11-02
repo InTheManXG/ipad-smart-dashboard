@@ -27,3 +27,7 @@ dialog{width:min(460px,90vw);background:var(--panel);color:var(--ink);border:1px
 footer:has(#footer-note:empty){display:none}
 @media(min-width:1200px){#display-options{right:44px}}
 @media(max-width:540px){#display-options{right:16px;top:calc(env(safe-area-inset-top) + 68px)}}
+
+/* 未读独立于当前执行状态，始终使用绿色，避免继承运行黄灯。 */
+.unread-mark{flex:none;color:var(--done);font-size:12px;white-space:nowrap}.unread-mark::before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:var(--done)}
+@media(max-width:540px){button.task{flex-wrap:wrap}.unread-mark{margin-left:auto}}
