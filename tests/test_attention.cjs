@@ -25,3 +25,7 @@ console.log('提醒首次弹出、关闭去重、断线和再次等待验证通�
 assert.equal(run("formatPlan('promax')"),'Pro Max');
 assert.equal(run("formatPlan('custom')"),'custom');
 assert.equal(run("formatPlan(null)"),'未知套餐');
+
+const overview = run("taskOverview({state:'done',conversations:[{state:'running'},{state:'running'},{state:'done'}]})");
+assert.equal(overview.state,'running');assert.equal(overview.counts.running,2);assert.equal(overview.counts.done,1);
+assert.equal(run("taskOverview({conversations:[]}).state"),'unknown');

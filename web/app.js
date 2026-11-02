@@ -12,13 +12,21 @@ function element(tag, className, text) {
   if (text !== undefined) node.textContent = text; // 对话标题始终当作文本，不能注入 HTML。
   return node;
 }
+function taskOverview(data) {
+  const tasks = Array.isArray(data.conversations) ? data.conversations : [];
+  const counts = Object.fromEntries(['running','waiting','error','done'].map(state => [state, tasks.filter(t => t.state === state).length]));
+  // 总体灯与计数使用同一份列表；总任务数还包括待处理、错误和完成未读。
+  const state = ['waiting','error','running','done'].find(state => counts[state]) || 'unknown';
+  return {tasks, counts, state};
+}
 function render(data) {
   updateAttention(data.attention);
-  $('state').textContent = labels[data.state] || labels.unknown;
-  $('signal').className = `signal ${data.state in labels ? data.state : 'unknown'}`;
-  $('message').textContent = data.message || '暂无状态说明';
-  const tasks = Array.isArray(data.conversations) ? data.conversations : [];
-  $('task-count').textContent = data.conversationsAvailable ? `${data.conversationsTotal ?? tasks.length} 个任务` : '状态不可用';
+  const {tasks, counts, state} = taskOverview(data);
+  $('state').textContent = data.conversationsAvailable ? (tasks.length ? labels[state] : '暂无活跃任务') : '任务状态不可用';
+  $('signal').className = `signal ${data.conversationsAvailable ? state : 'unknown'}`;
+  $('message').textContent = data.conversationsAvailable ? '按当前展示的任务汇总' : '暂时无法读取任务列表';
+  const total = data.conversationsTotal ?? tasks.length;
+  $('task-count').textContent = data.conversationsAvailable ? (total > tasks.length ? `共 ${total} 个 · 显示 ${tasks.length} 个` : `${tasks.length} 个任务`) : '状态不可用';
   $('task-list').replaceChildren(...tasks.map(task => {
     const row = element('button', `task ${task.state in labels ? task.state : 'unknown'}`);
     // 【业务逻辑】上游列表仅保留完成后未读的对话；总体 done 不代表未读。
@@ -31,9 +39,7 @@ function render(data) {
     return row;
   }));
   if (!tasks.length) $('task-list').append(element('p','empty',data.conversationsAvailable ? '暂时没有活跃任务，新的工作会出现在这里。' : '暂时无法读取任务列表。'));
-  const running = tasks.filter(t => t.state === 'running').length;
-  const waiting = tasks.filter(t => t.state === 'waiting').length;
-  $('summary').textContent = `当前列表：${running} 个进行中 · ${waiting} 个待处理`;
+  $('summary').textContent = data.conversationsAvailable ? `${counts.running} 个进行中 · ${counts.waiting} 个待处理 · ${counts.error} 个错误 · ${counts.done} 个完成未读` : '计数暂不可用';
   $('list-note').textContent = data.conversationsTotal > tasks.length ? `展示最近 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '与 Mac 上的 Codex 状态同步';
   $('plan').textContent = formatPlan(data.plan);
   $('quota-note').textContent = !data.quotaAvailable ? '额度暂不可用' : data.cached ? '额度为上次缓存' : '额度约每分钟更新';
