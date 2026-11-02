@@ -1,9 +1,11 @@
-"""iPad 看板：只代理本机状态快照，不提供任务写入或文件访问接口。"""
+"""iPad 看板：展示状态并请求 Mac 打开当前待处理对话，不提供任意命令接口。"""
 import hmac
 import json
 import os
 from pathlib import Path
 import secrets
+import uuid
+from urllib.error import HTTPError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
@@ -26,10 +28,30 @@ def read_status():
         data = json.load(response)
     if not isinstance(data, dict) or data.get('schema') != 1:
         raise ValueError('unsupported snapshot')
-    # 浏览器只需展示字段，不传递原桥接器的控制入口和对话标识。
+    # 【业务逻辑】仅传递待处理对话标识，供用户主动点击打开；不暴露桥接密钥。
     return {key: data[key] for key in ('state', 'message', 'plan', 'primary', 'secondary',
         'conversations', 'conversationsTotal', 'conversationsAvailable', 'quotaAvailable',
-        'cached', 'updatedAt', 'servedAt') if key in data}
+        'cached', 'updatedAt', 'servedAt', 'attention') if key in data}
+
+
+def open_attention(thread_id):
+    # 【业务逻辑】只允许打开最新待处理对话，中继和 Mac 还会再次校验状态。
+    snapshot = read_status()
+    attention = snapshot.get('attention')
+    if not isinstance(attention, dict) or attention.get('threadId') != thread_id:
+        return False
+    config = json.loads(CONFIG.read_text()) if not os.environ.get('CODEX_STATUS_TOKEN') else os.environ
+    status_url = os.environ.get('STATUS_URL', config.get('url', '').rsplit('/', 1)[0] + '/status')
+    request = Request(status_url.rsplit('/', 1)[0] + '/open',
+        data=json.dumps({'threadId': thread_id}).encode(),
+        headers={'Content-Type': 'application/json', 'X-Codex-Status-Token': config['CODEX_STATUS_TOKEN']})
+    try:
+        with urlopen(request, timeout=15) as response:
+            return json.load(response).get('ok') is True
+    except HTTPError as error:
+        if error.code == 409:
+            return False
+        raise
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -46,6 +68,31 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_POST(self):
+        if self.path != '/api/open':
+            self.reply(404, b'{}', 'application/json')
+            return
+        if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
+            self.reply(401, b'{}', 'application/json')
+            return
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= 256:
+                raise ValueError('invalid body size')
+            self.connection.settimeout(5)
+            value = json.loads(self.rfile.read(length))
+            thread_id = value.get('threadId') if isinstance(value, dict) else None
+            if not isinstance(thread_id, str) or str(uuid.UUID(thread_id)) != thread_id:
+                raise ValueError('invalid identity')
+        except (ValueError, OSError):
+            self.reply(400, b'{}', 'application/json')
+            return
+        try:
+            success = open_attention(thread_id)
+            self.reply(200 if success else 409, json.dumps({'ok': success}).encode(), 'application/json')
+        except (OSError, ValueError, KeyError):
+            self.reply(503, b'{}', 'application/json')
 
     def do_GET(self):
         if self.path == '/api/status':

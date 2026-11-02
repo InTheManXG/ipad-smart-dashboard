@@ -8,6 +8,7 @@ function element(tag, className, text) {
   return node;
 }
 function render(data) {
+  updateAttention(data.attention);
   $('state').textContent = labels[data.state] || labels.unknown;
   $('signal').className = `signal ${data.state in labels ? data.state : 'unknown'}`;
   $('message').textContent = data.message || '暂无状态说明';
@@ -56,11 +57,47 @@ async function refresh() {
     render(data); lastSuccess = Date.now(); $('connection').textContent = '● 已连接';
     $('sync').textContent = `${new Date(lastSuccess).toLocaleTimeString('zh-CN')} 同步`;
   } catch (error) {
-    $('connection').textContent = '● 连接中断'; $('state').textContent = '暂时离线'; $('signal').className = 'signal offline';
+    updateAttention(null, false); $('connection').textContent = '● 连接中断'; $('state').textContent = '暂时离线'; $('signal').className = 'signal offline';
     $('message').textContent = error.name === 'AbortError' ? '连接超时，正在自动重试' : error.message;
     $('summary').textContent = lastSuccess ? '下方保留上次数据，并非当前状态' : '请检查 Mac 和网络连接';
   } finally { clearTimeout(timer); busy = false; }
 }
+let attention = null, dismissedThread = null, opening = false;
+function updateAttention(next, reset = true) {
+  attention = next && typeof next.threadId === 'string' && typeof next.title === 'string' ? next : null;
+  if (!attention) {
+    if (reset) dismissedThread = null;
+    $('attention-dialog').close();
+    return;
+  }
+  // 【业务逻辑】同一待处理阶段只弹一次；解除后再次等待可重新提醒，连接失败不清除已忽略状态。
+  $('attention-title').textContent = attention.title;
+  if (attention.threadId !== dismissedThread && !$('settings').open && !$('attention-dialog').open) {
+    $('open-result').textContent = '点击后，在 Mac 上打开对应对话。';
+    $('attention-dialog').showModal();
+  }
+}
+function dismissAttention() { dismissedThread = attention?.threadId; $('attention-dialog').close(); }
+$('attention-dismiss').onclick = dismissAttention;
+$('attention-dialog').addEventListener('cancel', () => { dismissedThread = attention?.threadId; });
+$('open-codex').onclick = async () => {
+  if (!attention || opening) return;
+  const threadId = attention.threadId;
+  opening = true; $('open-codex').disabled = true;
+  $('open-result').textContent = '正在请求 Mac 打开对话…';
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 18000);
+  try {
+    const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Display-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
+    if (!response.ok || (await response.json()).ok !== true) throw new Error('open failed');
+    // 状态可能已切换到另一对话，旧请求的回执不能关闭新提醒。
+    if (attention?.threadId === threadId) {
+      dismissedThread = threadId; $('attention-dialog').close();
+      $('footer-note').textContent = 'Mac 已接收打开请求，请查看 Codex 窗口';
+    }
+  } catch {
+    if (attention?.threadId === threadId) $('open-result').textContent = '未能确认打开，请检查 Mac 是否在线或任务是否仍待处理，然后重试。';
+  } finally { clearTimeout(timeout); opening = false; $('open-codex').disabled = false; }
+};
 $('settings-form').addEventListener('submit',event => {event.preventDefault(); token = $('token').value.trim(); sessionStorage.setItem('display-token',token); $('token').value = ''; $('settings').close(); refresh();});
 $('cancel').onclick = () => $('settings').close();
 $('connect').onclick = () => $('settings').showModal();
