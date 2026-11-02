@@ -38,7 +38,7 @@ function render(data) {
     row.onclick = () => openConversation(task.threadId);
     const dot = element('span','dot');
     // 轮询重建列表时沿用呼吸相位，避免每两秒重新起亮。
-    dot.style.animationDelay = `-${(Date.now() - breathStartedAt) % 2800}ms`;
+    dot.style.animationDelay = `-${(Date.now() - breathStartedAt) % 1800}ms`;
     row.append(dot, element('div','task-title',task.title), element('span','badge',task.state === 'done' ? '完成未读' : labels[task.state] || '未知'));
     return row;
   }));
