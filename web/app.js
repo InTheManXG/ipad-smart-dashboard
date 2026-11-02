@@ -127,11 +127,13 @@ $('refresh').onclick = refresh;
 // 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。
 $('reload').onclick = () => location.reload();
 let wakePending = false;
+const wakeInterrupted = '常亮已中断，正在尝试恢复';
 function showWakeState() {
-  $('wake').textContent = wakeLock ? '常亮已开启' : wantWake ? '常亮待恢复' : '开启常亮';
+  $('wake').textContent = wakeLock && !wakeLock.released ? '常亮已开启' : wantWake ? '常亮待恢复' : '开启常亮';
   $('wake').setAttribute('aria-pressed', String(wantWake));
 }
 async function keepAwake() {
+  if (wakeLock?.released) wakeLock = null;
   if (!wantWake || document.hidden || wakeLock || wakePending) return;
   if (!('wakeLock' in navigator)) {
     $('wake').textContent = '常亮不可用';
@@ -144,16 +146,24 @@ async function keepAwake() {
     // 请求期间用户可能关闭常亮或切入后台，不能让迟到回执重新开启。
     if (!wantWake || document.hidden) { await lock.release(); return; }
     wakeLock = lock;
-    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; showWakeState(); });
+    if ($('footer-note').textContent === wakeInterrupted) $('footer-note').textContent = '';
+    lock.addEventListener('release', () => {
+      if (wakeLock === lock) wakeLock = null;
+      if (wantWake && !document.hidden) $('footer-note').textContent = wakeInterrupted;
+      showWakeState();
+    });
   } catch {
-    $('footer-note').textContent = '常亮暂未获准，点击页面或返回前台会重试；请检查低电量模式';
+    $('footer-note').textContent = wakeInterrupted;
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
   wantWake = !wantWake;
   if (wantWake) await keepAwake(); else await wakeLock?.release();
+  if (!wantWake && $('footer-note').textContent === wakeInterrupted) $('footer-note').textContent = '';
   showWakeState();
 };
+// 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
+setInterval(keepAwake, 5000);
 // 默认请求常亮；恢复前台或下一次用户操作时重试，避免后台重复申请。
 document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake')) return; keepAwake(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); keepAwake(); } });
