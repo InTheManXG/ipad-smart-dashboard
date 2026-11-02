@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 CONFIG = Path.home() / 'Library/Application Support/ESP32CodexBridge/config.json'
 FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'),
          '/style.css': ('style.css', 'text/css'), '/manifest.json': ('manifest.json', 'application/manifest+json'),
-         '/icon.svg': ('icon.svg', 'image/svg+xml')}
+         '/icon.svg': ('icon.svg', 'image/svg+xml'), '/codex-icon.png': ('codex-icon.png', 'image/png')}
 
 
 def authorized(header, token):

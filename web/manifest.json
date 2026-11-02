@@ -1,1 +1,1 @@
-{"name":"Codex 工作现场","short_name":"Codex 看板","start_url":"./","display":"standalone","background_color":"#102337","theme_color":"#182f45","icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{"name":"Codex 工作现场","short_name":"Codex 看板","start_url":"./","display":"standalone","background_color":"#f7f7f8","theme_color":"#f7f7f8","icons":[{"src":"./codex-icon.png","sizes":"1024x1024","type":"image/png","purpose":"any"}]}

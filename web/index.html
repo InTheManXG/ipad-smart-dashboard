@@ -1,9 +1,25 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#182f45"><link rel="manifest" href="./manifest.json"><link rel="icon" href="./icon.svg"><link rel="stylesheet" href="./style.css"><title>Codex · 工作现场</title></head>
-<body><header><div class="brand"><span class="logo">⌘</span><div>CODEX <span class="sub">工作现场</span></div></div><div class="top"><span id="connection" role="status">正在连接</span><time id="clock"></time></div></header>
-<main><section class="hero" aria-label="总体状态"><div class="eyebrow">此刻 / LIVE STATUS</div><div id="signal" class="signal"><span></span><span></span><span></span><span></span><span></span></div><h1 id="state">连接中</h1><p id="message">正在读取 Mac 上的 Codex 状态</p><div class="hero-bottom"><span id="summary">等待第一份快照</span><span id="sync">尚未同步</span></div></section>
-<section class="tasks"><div class="section-head"><h2>任务现场</h2><span id="task-count">—</span></div><div id="task-list" aria-live="polite"></div><p id="list-note" class="note"></p></section>
-<section class="quota"><div><span class="eyebrow">使用额度</span><h2 id="plan">Codex</h2><p id="quota-note">等待读取</p></div><div id="windows"></div></section></main>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#f7f7f8"><link rel="manifest" href="./manifest.json"><link rel="icon" href="./codex-icon.png"><link rel="apple-touch-icon" href="./codex-icon.png"><link rel="stylesheet" href="./style.css"><title>Codex · 工作现场</title></head>
+<body>
+<header>
+  <div class="brand"><img class="logo" src="./codex-icon.png" alt=""><div><h1>Codex</h1><span class="sub">工作看板</span></div></div>
+  <div class="top"><span id="connection" role="status">正在连接</span><time id="clock"></time></div>
+</header>
+<main>
+  <section class="status-strip" aria-label="总体状态">
+    <div class="status-current"><div id="signal" class="signal" aria-hidden="true"><span></span></div><div><h2 id="state">连接中</h2><p id="message">正在读取 Mac 上的 Codex 状态</p></div></div>
+    <div class="status-meta"><span id="summary">等待第一份快照</span><span id="sync">尚未同步</span></div>
+  </section>
+  <section class="tasks">
+    <div class="section-head"><div><h2>任务现场</h2><p class="section-description">点击任务，在 Mac 的 Codex 中打开</p></div><span id="task-count">—</span></div>
+    <div id="task-list" aria-live="polite"></div><p id="list-note" class="note"></p>
+  </section>
+  <aside class="quota" aria-label="使用额度">
+    <div class="section-head"><h2>使用额度</h2><span id="plan" class="plan">—</span></div>
+    <p id="quota-note">等待读取</p><div id="windows"></div>
+    <div class="quota-footnote">额度与重置时间以当前账户返回的信息为准。</div>
+  </aside>
+</main>
 <footer><span id="footer-note">每 2 秒同步 · 与 Mac 联动</span><div><button id="connect">连接设置</button><button id="fullscreen">全屏显示</button><button id="wake" aria-pressed="true">常亮待恢复</button><button id="refresh">立即刷新</button></div></footer>
 <dialog id="settings"><form id="settings-form"><h2>连接你的 Codex</h2><p>输入此 Mac 上生成的看板访问口令。</p><label>访问口令<input id="token" type="password" autocomplete="off" required></label><div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit">连接</button></div></form></dialog>
 <dialog id="attention-dialog" aria-labelledby="attention-heading"><h2 id="attention-heading">Codex 需要你处理</h2><p id="attention-title"></p><p id="open-result" role="status">点击后，在 Mac 上打开对应对话。</p><div class="dialog-actions"><button id="attention-dismiss">稍后处理</button><button id="open-codex">打开 Codex</button></div></dialog>

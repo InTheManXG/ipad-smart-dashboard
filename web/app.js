@@ -1,5 +1,10 @@
 const $ = id => document.getElementById(id);
 const labels = {running:'正在进行', waiting:'等待你处理', done:'已完成', error:'需要关注', unknown:'暂无状态'};
+// 套餐代码仅做显示规范化，不推断价格或权益；未知代码保留原值。
+function formatPlan(plan) {
+  const names = {promax:'Pro Max', pro:'Pro', plus:'Plus', free:'Free', team:'Team', business:'Business', enterprise:'Enterprise', edu:'Edu'};
+  return typeof plan === 'string' && plan.trim() ? names[plan.toLowerCase()] || plan : '未知套餐';
+}
 let token = sessionStorage.getItem('display-token') || '';
 let busy = false, lastSuccess = 0, wakeLock = null, wantWake = true;
 function element(tag, className, text) {
@@ -30,7 +35,7 @@ function render(data) {
   const waiting = tasks.filter(t => t.state === 'waiting').length;
   $('summary').textContent = `当前列表：${running} 个进行中 · ${waiting} 个待处理`;
   $('list-note').textContent = data.conversationsTotal > tasks.length ? `展示最近 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '与 Mac 上的 Codex 状态同步';
-  $('plan').textContent = data.plan ? `Codex · ${data.plan}` : 'Codex';
+  $('plan').textContent = formatPlan(data.plan);
   $('quota-note').textContent = !data.quotaAvailable ? '额度暂不可用' : data.cached ? '额度为上次缓存' : '额度约每分钟更新';
   $('windows').replaceChildren();
   for (const w of data.quotaAvailable ? [data.primary, data.secondary] : []) {

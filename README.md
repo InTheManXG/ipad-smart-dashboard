@@ -53,3 +53,8 @@ iPad Safari 中选择“分享 → 添加到主屏幕”即可独立打开。首
 任务行整行可点击，使用上游 threadId 定位 Mac 上对应 Codex 对话。运行、完成未读、错误、等待处理均可打开；缺少 ID 的旧快照禁用点击。看板、中继、Mac 均校验目标在最新列表或提醒中，不按标题推断 ID。Mac 和服务器仍须在线。原有待处理弹窗共用同一打开动作。
 
 2026-11-02：Mac 原后台桥接器已更新并保留备份；服务器中继在原 /opt/codex-relay 路径升级，旧容器保留；看板原目录及本地 OrbStack 已更新。线上列表 ID、资源一致性和真实打开本次对话的 Mac 回执 200 已验证，iPad 触摸操作尚未实测。
+
+
+## 布局与品牌素材
+
+状态条位于顶部，任务列表为主区域，额度在横屏右侧、竖屏下方。套餐代码只做显示格式转换（promax → Pro Max），不推断价格与权益。Codex 图标直接复用本机官方应用 `/Applications/ChatGPT.app/Contents/Resources/icon-codex-light.png`，同时用于页面、favicon 与主屏图标。
