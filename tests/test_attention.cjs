@@ -22,7 +22,7 @@ run('updateAttention(null,false)');
 assert.equal(get('attention-dialog').open,false);
 console.log('提醒首次弹出、关闭去重、断线和再次等待验证通过');
 
-assert.equal(run("formatPlan('promax')"),'Pro Max');
+assert.equal(run("formatPlan('promax')"),'Pro 500');
 assert.equal(run("formatPlan('custom')"),'custom');
 assert.equal(run("formatPlan(null)"),'未知套餐');
 

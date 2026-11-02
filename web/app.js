@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const labels = {running:'正在进行', waiting:'等待你处理', done:'已完成', error:'需要关注', unknown:'暂无状态'};
 // 套餐代码仅做显示规范化，不推断价格或权益；未知代码保留原值。
 function formatPlan(plan) {
-  const names = {promax:'Pro Max', pro:'Pro', plus:'Plus', free:'Free', team:'Team', business:'Business', enterprise:'Enterprise', edu:'Edu'};
+  const names = {promax:'Pro 500', pro:'Pro', plus:'Plus', free:'Free', team:'Team', business:'Business', enterprise:'Enterprise', edu:'Edu'};
   return typeof plan === 'string' && plan.trim() ? names[plan.toLowerCase()] || plan : '未知套餐';
 }
 let token = sessionStorage.getItem('display-token') || '';
