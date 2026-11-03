@@ -1,19 +1,18 @@
 const $ = id => document.getElementById(id);
-let keys = [], loading = false, editing = false, refreshPending = false;
+let keys = [], loading = false, refreshPending = false;
 function node(tag, className, text) {
   const value = document.createElement(tag);
   value.className = className;
   if (text !== undefined) value.textContent = text;
   return value;
 }
-async function api(path, body) {
+async function api(path) {
   const token = sessionStorage.getItem('display-token') || '';
   if (!token) throw new Error('请先在工作看板中连接');
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 18000);
   try {
     const response = await fetch(`./api/relay/${path}`, {
-      method:body ? 'POST' : 'GET', headers:{'X-Display-Token':token, ...(body ? {'Content-Type':'application/json'} : {})},
-      body:body ? JSON.stringify(body) : undefined, signal:controller.signal, cache:'no-store'
+      headers:{'X-Display-Token':token}, signal:controller.signal, cache:'no-store'
     });
     if (!response.ok) throw new Error(response.status === 401 ? '访问口令无效，请重新连接' : '操作失败，请检查输入或稍后重试');
     return await response.json();
@@ -53,7 +52,7 @@ function renderUsage(card, item, data) {
     node('p','reset relay-time',`${new Date(data.updatedAt * 1000).toLocaleTimeString('zh-CN')} 更新`));
 }
 async function refreshRelay(force = false) {
-  if (document.hidden || editing) return;
+  if (document.hidden) return;
   if (loading) { refreshPending = true; return; }
   loading = true;
   $('relay-refresh').disabled = true; $('relay-refresh').textContent = '更新中…';
@@ -80,53 +79,8 @@ async function refreshRelay(force = false) {
     if (refreshPending) { refreshPending = false; refreshRelay(); }
   }
 }
-function resetForm() {
-  $('relay-form').reset(); $('relay-id').value = ''; $('relay-key').required = true;
-  $('relay-form-message').textContent = '';
-}
-function renderKeyList() {
-  $('relay-key-list').replaceChildren(...keys.map(item => {
-    const row = node('div','relay-key-row'), edit = node('button','','编辑'), remove = node('button','','删除');
-    edit.type = remove.type = 'button'; edit.disabled = remove.disabled = editing;
-    edit.onclick = () => {
-      resetForm(); $('relay-id').value = item.id; $('relay-name').value = item.name;
-      $('relay-key').required = false; $('relay-name').focus();
-    };
-    remove.onclick = async () => {
-      if (!confirm(`删除“${item.name}”的 Key 配置？`)) return;
-      await mutate({action:'delete', id:item.id});
-    };
-    row.append(node('span','',item.name),edit,remove); return row;
-  }));
-}
-async function mutate(body) {
-  if (editing) return;
-  editing = true; $('relay-save').disabled = true; renderKeyList();
-  try {
-    await api('keys', body);
-    resetForm(); keys = await api('keys');
-    $('relay-form-message').textContent = '已保存';
-  } catch (error) { $('relay-form-message').textContent = error.message; }
-  finally {
-    editing = false; $('relay-save').disabled = false; renderKeyList();
-    // 保存期间若仍有查询，完成后立即重读配置，避免旧卡片残留。
-    refreshRelay();
-  }
-}
 // 手动更新绕过短期缓存，自动轮询仍沿用一分钟缓存。
 $('relay-refresh').onclick = () => refreshRelay(true);
-$('relay-manage').onclick = async () => {
-  resetForm(); $('relay-settings').showModal();
-  try { keys = await api('keys'); renderKeyList(); }
-  catch (error) { $('relay-form-message').textContent = error.message; }
-};
-$('relay-form').addEventListener('submit', event => {
-  event.preventDefault();
-  mutate({action:'save', id:$('relay-id').value || undefined, name:$('relay-name').value.trim(), key:$('relay-key').value.trim()});
-});
-$('relay-new').onclick = resetForm;
-$('relay-close').onclick = () => $('relay-settings').close();
-$('relay-settings').addEventListener('close', () => { $('relay-key').value = ''; });
 $('settings-form').addEventListener('submit', () => refreshRelay());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelay(); });
 setInterval(refreshRelay, 60000);

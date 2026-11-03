@@ -30,14 +30,9 @@
 </section>
 </div>
 <section id="company" class="dashboard-page company-page" aria-labelledby="company-title">
-  <div class="section-head"><div><h2 id="company-title">公司中转站</h2><p class="section-description">订阅额度 · 每分钟更新</p></div><div class="relay-actions"><button id="relay-refresh" type="button">更新</button><button id="relay-manage">管理 Key</button></div></div>
+  <div class="section-head"><div><h2 id="company-title">公司中转站</h2><p class="section-description">订阅额度 · 每分钟更新 · Key 请在 Mac 控制台管理</p></div><div class="relay-actions"><button id="relay-refresh" type="button">更新</button></div></div>
   <p id="relay-message" class="note" role="status"></p><div id="relay-cards"></div>
 </section></div>
-<dialog id="relay-settings" aria-labelledby="relay-settings-title">
-  <h2 id="relay-settings-title">管理 Key</h2><div id="relay-key-list"></div>
-  <form id="relay-form"><input id="relay-id" type="hidden"><label>备注名<input id="relay-name" required maxlength="60" autocomplete="off"></label><label>API Key<input id="relay-key" type="password" maxlength="512" autocomplete="off" spellcheck="false" placeholder="输入 Key；编辑时留空保留原值"></label>
-  <p id="relay-form-message" role="status"></p><div class="dialog-actions"><button type="button" id="relay-new">新增</button><button type="button" id="relay-close">关闭</button><button id="relay-save" type="submit">保存</button></div></form>
-</dialog>
 <dialog id="wake-dialog" aria-labelledby="wake-heading" aria-describedby="wake-message">
   <button id="restore-wake"><span id="wake-heading">点击任意位置恢复常亮</span><span id="wake-message">常亮已中断</span></button>
 </dialog>

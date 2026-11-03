@@ -111,7 +111,7 @@ body{max-width:none;padding:0}
 /* 大屏阅读时放大公司额度文字，首页原有字号保持不变。 */
 .relay-card .window-value strong{font-size:28px}.relay-card .window-value span,.relay-card .reset{font-size:14px}.company-page .section-description,.company-page .relay-actions button{font-size:14px}.relay-actions{display:flex;gap:10px;flex-shrink:0}
 @media(max-width:700px){.relay-card{grid-template-columns:minmax(0,1fr) max-content minmax(60px,100px);gap:12px}.relay-detail{grid-column:1/3}.relay-time{text-align:right}}
-#relay-message:empty,#relay-form-message:empty{display:none}#relay-key-list{margin:20px 0;max-height:25vh;overflow-y:auto}.relay-key-row{display:flex;align-items:center;gap:8px;margin:8px 0}.relay-key-row span{flex:1;overflow-wrap:anywhere}.relay-key-row button{flex-shrink:0}
+#relay-message:empty{display:none}
 @media(min-width:1200px){.dashboard-page{padding-inline:44px}}
 @media(max-width:540px){.dashboard-page{padding-inline:16px}}
 
