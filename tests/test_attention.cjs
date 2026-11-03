@@ -45,6 +45,8 @@ const row = get('task-list').children[0];
 assert.equal(row.className,'task running');
 assert.ok(row.children.some(node => node.textContent === '正在进行'));
 assert.ok(row.children.some(node => node.className === 'unread-mark' && node.textContent === '完成未读'));
+assert.ok(row.children.findIndex(node => node.className === 'unread-mark') < row.children.findIndex(node => node.className === 'badge'));
+assert.equal(row.children.at(-1).className,'badge');
 run("render({conversationsAvailable:true,conversations:[{title:'已读仍运行',threadId:'a',state:'running',unread:false}],quotaAvailable:false})");
 assert.ok(!get('task-list').children[0].children.some(node => node.className === 'unread-mark'));
 
