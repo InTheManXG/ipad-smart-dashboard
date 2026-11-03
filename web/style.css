@@ -145,5 +145,5 @@ body{max-width:none;padding:0}
 /* 常亮未生效的红点持续到恢复或主动关闭，与短暂浮动提醒互补。 */
 .more-button{position:relative}.more-button[data-wake-warning="true"]::after{content:"";position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--error);box-shadow:0 0 0 2px var(--bg)}
 
-/* 整张恢复弹窗均可轻点；保留真实按钮以支持键盘和辅助功能。 */
-#wake-dialog{width:min(520px,calc(100vw - 40px));padding:36px;text-align:center;border-top:4px solid var(--waiting);cursor:pointer}#wake-dialog h2{font-size:26px}#wake-dialog p{margin:18px 0 26px}#restore-wake{width:100%;min-height:56px;background:var(--waiting);color:white;font-size:17px;border:0}
+/* 全屏按钮覆盖整个遮罩，触摸任意位置均可恢复，并保留键盘操作。 */
+#wake-dialog{position:fixed;inset:0;width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:#101827b8;box-shadow:none;color:#fff;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}#wake-dialog::backdrop{background:transparent}#restore-wake{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;width:100%;height:100%;padding:32px;border:0;border-radius:0;background:transparent;color:inherit}#restore-wake:hover{background:transparent}#restore-wake:disabled{opacity:1}#wake-heading{font-size:clamp(24px,4vw,40px);font-weight:600;line-height:1.4}#wake-message{font-size:16px;line-height:1.7;color:#d5dce8;max-width:600px}

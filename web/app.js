@@ -140,7 +140,7 @@ $('refresh').onclick = refresh;
 // 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。
 $('reload').onclick = () => location.reload();
 let wakePending = false, wakeFailed = false;
-const wakeInterrupted = '常亮已中断，轻点此弹窗即可重新开启。';
+const wakeInterrupted = '常亮已中断';
 function dismissWakeNotice() {
   $('wake-dialog').close();
 }
@@ -166,7 +166,7 @@ function showWakeState() {
   $('wake').setAttribute('aria-pressed', String(active));
   $('wake').disabled = wakePending;
   $('restore-wake').disabled = wakePending;
-  $('restore-wake').textContent = wakePending ? '正在恢复…' : '点击恢复常亮';
+  $('wake-heading').textContent = wakePending ? '正在恢复常亮…' : '点击任意位置恢复常亮';
 }
 async function keepAwake() {
   if (wakeLock?.released) wakeLock = null;
