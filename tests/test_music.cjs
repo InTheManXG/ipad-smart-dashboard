@@ -74,11 +74,11 @@ assert.equal(track.children[0].textContent,'♪');
   await context.refreshMusic();
   assert.equal(nodes.get('music-progress').value,25,'暂停不能补偿成继续播放');
   assert.equal(nodes.get('music-toggle')['aria-label'],'播放');
-  let resolveCommand, sent;
+  let resolveCommand, sent, stateRequests = 0;
   const stateFetch = context.fetch;
   context.fetch = async (url, options) => {
     if (url.endsWith('/control')) {sent=JSON.parse(options.body);return new Promise(resolve=>{resolveCommand=resolve;});}
-    return stateFetch();
+    stateRequests++; return stateFetch();
   };
   const command = context.controlMusic('play');
   assert.equal(sent.action,'play');
@@ -86,9 +86,22 @@ assert.equal(track.children[0].textContent,'♪');
   assert.equal(nodes.get('music-next').disabled,true,'等待回执时禁用连点');
   await context.controlMusic('next');
   assert.equal(sent.action,'play','连点不产生第二个请求');
-  resolveCommand({ok:true,json:async()=>({ok:true})});
+  resolveCommand({ok:true,json:async()=>({ok:true,snapshot:{...song,playing:true}})});
   await command;
   assert.equal(nodes.get('music-control-result').textContent,'');
+  assert.equal(stateRequests,0,'确认后不再额外请求播放状态');
+  assert.equal(nodes.get('music-toggle')['aria-label'],'暂停');
+  let resolveOldPoll;
+  context.fetch = async (url) => url.endsWith('/control')
+    ? {ok:true,json:async()=>({ok:true,snapshot:{...song,playing:false,position:13}})}
+    : new Promise(resolve=>{resolveOldPoll=resolve;});
+  const oldPoll = context.refreshMusic();
+  await context.controlMusic('pause');
+  assert.equal(nodes.get('music-toggle')['aria-label'],'播放');
+  resolveOldPoll({ok:true,json:async()=>({...song,playing:true,position:12})});
+  await oldPoll;
+  assert.equal(nodes.get('music-toggle')['aria-label'],'播放','旧轮询不能覆盖已确认的暂停');
+  assert.equal(nodes.get('music-progress').value,13);
   context.fetch = async()=>({ok:false});
   await context.controlMusic('next');
   assert.match(nodes.get('music-control-result').textContent,/未能确认/);

@@ -1,18 +1,23 @@
 """读取 Mac 系统当前播放，匹配网易云时间轴歌词，上报到已认证的看板。"""
 import argparse
 import hashlib
+import http.client
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from pathlib import Path
 import re
 import subprocess
 import time
+import threading
 import unicodedata
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 MEDIA_CONTROL = '/opt/homebrew/bin/media-control'
+_connections = {}
+_connection_locks = defaultdict(threading.Lock)
 CONTROL_ARGS = {'previous': ['previous-track'], 'next': ['next-track'], 'play': ['play'],
                 'pause': ['pause'], 'replay': ['seek', '0']}
 
@@ -99,12 +104,26 @@ def read_player():
 
 
 def send(url, token, value):
-    request = Request(url, data=json.dumps(value, ensure_ascii=False).encode(),
-                      headers={'X-Display-Token': token, 'Content-Type': 'application/json'})
-    with urlopen(request, timeout=4) as response:
-        if response.status != 200:
-            raise OSError('music upload failed')
-        return json.load(response)
+    target = urlsplit(url)
+    origin = (target.scheme, target.netloc)
+    # 上报和回执复用 TLS 连接；各站点独立加锁，连接断开后交给下轮重连，不重试本次操作。
+    with _connection_locks[origin]:
+        connection = _connections.get(origin)
+        if connection is None:
+            factory = http.client.HTTPSConnection if target.scheme == 'https' else http.client.HTTPConnection
+            connection = _connections[origin] = factory(target.hostname, target.port, timeout=4)
+        try:
+            connection.request('POST', target.path or '/', body=json.dumps(value, ensure_ascii=False).encode(),
+                               headers={'X-Display-Token': token, 'Content-Type': 'application/json'})
+            with connection.getresponse() as response:
+                raw = response.read()
+                if response.status != 200:
+                    raise OSError('music upload failed')
+                return json.loads(raw)
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            _connections.pop(origin, None)
+            connection.close()
+            raise OSError('music connection failed') from error
 
 
 def publish(url, token, snapshot):
@@ -135,11 +154,11 @@ def execute_control(command, started):
         same = current.get('trackId') == command['trackId']
         if current.get('state') == 'ready':
             if action in ('next', 'previous') and not same:
-                return True
+                return current
             if same and ((action == 'play' and current['playing']) or
                          (action == 'pause' and not current['playing']) or
                          (action == 'replay' and current['playing'] and current['position'] < 3)):
-                return True
+                return current
         time.sleep(.1)
     return False
 
@@ -188,20 +207,24 @@ def main():
                     if not isinstance(command, dict) or not isinstance(command.get('requestId'), str):
                         continue
                     request_id = command['requestId']
-                    # 回执丢失时重发结果，不再次执行上一曲或下一曲。
-                    if request_id not in completed:
+                    # 回执丢失时只补发当前状态，不再次执行上一曲或下一曲。
+                    if request_id in completed:
+                        updated = read_player()
+                    else:
                         try:
-                            completed[request_id] = execute_control(command, sent_at)
+                            updated = execute_control(command, sent_at)
                         except (OSError, ValueError, subprocess.SubprocessError):
-                            completed[request_id] = False
+                            updated = False
+                        completed[request_id] = isinstance(updated, dict)
                         if len(completed) > 64:
                             del completed[next(iter(completed))]
-                    # 回执之前更新播放器状态，页面不能在成功之后继续显示旧曲或旧播放图标。
-                    updated = read_player()
+                        if not completed[request_id]:
+                            updated = read_player()
+                    # 复用刚验证的状态，并随同一次上报确认指令，减少原生读取与网络往返。
                     if updated.get('trackId') == snapshot.get('trackId') and updated.get('state') == 'ready':
                         updated.update(lines=snapshot['lines'], lyricsState=snapshot['lyricsState'])
-                    send(url.rstrip('/') + '/api/music', token, updated)
-                    send(url.rstrip('/') + '/api/music/ack', token, {'requestId': request_id, 'ok': completed[request_id]})
+                    send(url.rstrip('/') + '/api/music', token, updated | {
+                        'ack': {'requestId': request_id, 'ok': completed[request_id]}})
                 except (OSError, ValueError, subprocess.SubprocessError):
                     pass
             # 指令随上报取回，缩短空闲等待；耗时超过周期时不额外休眠或并发叠加采集。

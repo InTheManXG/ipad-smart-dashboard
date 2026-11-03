@@ -42,7 +42,7 @@ class MusicTests(unittest.TestCase):
                     patch.object(bridge, 'read_player', return_value=snapshot() | {'album': '测试专辑'}), \
                     patch.object(bridge, 'find_lyrics', return_value=[]), \
                     patch.object(bridge, 'publish', return_value=(command, time.monotonic())), \
-                    patch.object(bridge, 'execute_control', return_value=True) as execute, \
+                    patch.object(bridge, 'execute_control', return_value=snapshot()) as execute, \
                     patch.object(bridge, 'send', side_effect=OSError('ack lost')), \
                     patch.object(bridge.time, 'sleep', side_effect=[None, RuntimeError('stop test')]):
                 with self.assertRaisesRegex(RuntimeError, 'stop test'):
@@ -65,14 +65,14 @@ class MusicTests(unittest.TestCase):
         def execute(*args):
             order.append(slow_finished.is_set())
             executed.set()
-            return True
+            return snapshot()
 
         with tempfile.TemporaryDirectory() as folder:
             token = Path(folder) / 'token'
             token.write_text('test-only')
             with patch('sys.argv', ['bridge.py', '--url', 'http://127.0.0.1:18088',
                                    '--url', 'https://example.test', '--token-file', str(token)]), \
-                    patch.object(bridge, 'read_player', return_value=snapshot() | {'album': '测试专辑'}), \
+                    patch.object(bridge, 'read_player', return_value=snapshot() | {'album': '测试专辑'}) as read, \
                     patch.object(bridge, 'find_lyrics', return_value=[]), \
                     patch.object(bridge, 'publish', side_effect=publish), \
                     patch.object(bridge, 'execute_control', side_effect=execute), \
@@ -81,8 +81,58 @@ class MusicTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'stop test'):
                     bridge.main()
                 self.assertEqual(order, [False])
+                read.assert_called_once()
                 self.assertGreaterEqual(sleep.call_args.args[0], 0)
                 self.assertLessEqual(sleep.call_args.args[0], .25)
+
+    def test_upload_reuses_connection_and_reconnects_without_retry(self):
+        with patch.dict(bridge._connections, {}, clear=True), \
+                patch.object(bridge.http.client, 'HTTPSConnection') as factory:
+            connection = factory.return_value
+            response = connection.getresponse.return_value.__enter__.return_value
+            response.status = 200
+            response.read.return_value = b'{"ok":true}'
+            for _ in range(2):
+                self.assertTrue(bridge.send('https://example.test/api/music', 'test-only', snapshot())['ok'])
+            factory.assert_called_once()
+            self.assertEqual(connection.request.call_count, 2)
+            connection.request.side_effect = bridge.http.client.RemoteDisconnected('closed')
+            with self.assertRaises(OSError):
+                bridge.send('https://example.test/api/music', 'test-only', snapshot())
+            self.assertEqual(connection.request.call_count, 3, '断线不能立即重发操作')
+            connection.close.assert_called_once()
+            connection.request.side_effect = None
+            bridge.send('https://example.test/api/music', 'test-only', snapshot())
+            self.assertEqual(factory.call_count, 2)
+
+    def test_waiting_upload_wakes_when_control_arrives(self):
+        music.put(snapshot())
+        waiting = threading.Event()
+        original_wait = music._control_condition.wait
+        received, results = [], []
+
+        def wait(timeout=None):
+            waiting.set()
+            return original_wait(timeout)
+
+        with patch.object(music._control_condition, 'wait', side_effect=wait):
+            listener = threading.Thread(target=lambda: received.append(music.pending_control(wait=2)))
+            listener.start()
+            self.assertTrue(waiting.wait(1))
+            worker = threading.Thread(target=lambda: results.append(music.control(
+                {'action': 'pause', 'trackId': 'a' * 64})))
+            worker.start()
+            try:
+                listener.join(.5)
+                self.assertFalse(listener.is_alive(), '新指令必须唤醒上报，不能等满轮询超时')
+                self.assertEqual(received[0]['action'], 'pause')
+            finally:
+                pending = music.pending_control()
+                if pending:
+                    music.acknowledge({'requestId': pending['requestId'], 'ok': True})
+                worker.join(1)
+                listener.join(2)
+        self.assertTrue(results[0]['ok'])
 
     def test_command_ack_busy_expiry_and_changed_track(self):
         music.put(snapshot())
@@ -192,7 +242,44 @@ class MusicHTTPTests(unittest.TestCase):
             self.assertEqual(error.exception.code, 400)
         with patch('music.control', return_value={'ok': True}):
             with urlopen(Request(self.url + '/api/music/control', data=b'{}', headers={'X-Display-Token': 'test-only'})) as response:
-                self.assertEqual(json.load(response), {'ok': True})
+                result = json.load(response)
+                self.assertTrue(result['ok'])
+                self.assertIn('snapshot', result)
+
+    def test_snapshot_upload_ack_returns_confirmed_state(self):
+        music.put(snapshot())
+        headers = {'X-Display-Token': 'test-only'}
+        results = []
+
+        def control():
+            request = Request(self.url + '/api/music/control', headers=headers,
+                              data=json.dumps({'action': 'pause', 'trackId': 'a' * 64}).encode())
+            with urlopen(request, timeout=10) as response:
+                results.append(json.load(response))
+
+        worker = threading.Thread(target=control)
+        worker.start()
+        try:
+            for _ in range(100):
+                command = music.pending_control()
+                if command:
+                    break
+                time.sleep(.005)
+            self.assertIsNotNone(command)
+            updated = snapshot() | {'playing': False, 'position': 13,
+                                    'ack': {'requestId': command['requestId'], 'ok': True}}
+            with urlopen(Request(self.url + '/api/music', headers=headers,
+                                 data=json.dumps(updated).encode())) as response:
+                self.assertEqual(response.status, 200)
+        finally:
+            if music.pending_control():
+                music.acknowledge({'requestId': music.pending_control()['requestId'], 'ok': False})
+            worker.join(2)
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0]['ok'])
+        self.assertFalse(results[0]['snapshot']['playing'])
+        self.assertEqual(results[0]['snapshot']['position'], 13)
+        self.assertNotIn('ack', results[0]['snapshot'])
 
     def test_music_auth_and_validation(self):
         for data in (None, json.dumps(snapshot()).encode()):

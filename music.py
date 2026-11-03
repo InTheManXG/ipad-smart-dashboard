@@ -68,6 +68,7 @@ def control(value):
         command = {'requestId': str(uuid.uuid4()), 'action': value['action'], 'trackId': value['trackId'],
                    'expires': time.monotonic() + 8, 'result': None}
         _command = command
+        _control_condition.notify_all()
         try:
             _control_condition.wait_for(lambda: command['result'] is not None, timeout=8)
             return {'ok': command['result'] is True, 'error': None if command['result'] is True else 'unconfirmed'}
@@ -76,8 +77,11 @@ def control(value):
             _command = None
 
 
-def pending_control():
-    with _lock:
+def pending_control(wait=0):
+    with _control_condition:
+        # 上报连接短暂等候点按，指令到达立即唤醒，不必等下一轮播放器采集。
+        if wait and _command is None:
+            _control_condition.wait_for(lambda: _command is not None, timeout=wait)
         if not _command or _command['result'] is not None or _command['expires'] <= time.monotonic():
             return None
         return {key: _command[key] for key in ('requestId', 'action', 'trackId')} | {

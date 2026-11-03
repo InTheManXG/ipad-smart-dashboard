@@ -113,6 +113,8 @@ class Handler(BaseHTTPRequestHandler):
                     result = {'ok': True}
                 else:
                     result = music.control(value)
+                    if result['ok']:
+                        result['snapshot'] = music.get()
                 self.reply(200 if result['ok'] else 409, json.dumps(result).encode(), 'application/json')
             except (ValueError, OSError):
                 self.reply(400, b'{}', 'application/json')
@@ -126,8 +128,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not 0 < length <= 512_000:
                     raise ValueError('invalid music size')
                 self.connection.settimeout(5)
-                music.put(json.loads(self.rfile.read(length)))
-                self.reply(200, json.dumps({'ok': True, 'command': music.pending_control()}).encode(), 'application/json')
+                value = json.loads(self.rfile.read(length))
+                music.put(value)
+                # 先保存真实状态再唤醒控制请求，让页面直接使用回执中的状态。
+                if 'ack' in value:
+                    music.acknowledge(value['ack'])
+                self.reply(200, json.dumps({'ok': True, 'command': music.pending_control(wait=0 if 'ack' in value else .2)}).encode(), 'application/json')
             except (ValueError, OSError):
                 self.reply(400, b'{}', 'application/json')
             return

@@ -1,7 +1,7 @@
 const musicNode = id => document.getElementById(id);
 let musicSnapshot = null, musicReceived = 0, musicBusy = false;
 let lyricKey = '', renderedSnapshot = null, lastLyricFrame = null;
-let musicControlBusy = false;
+let musicControlBusy = false, musicRevision = 0;
 
 function lyricFrame(snapshot, elapsed) {
   if (!snapshot || elapsed > 8 || snapshot.state === 'offline') return {title:'等待音乐连接', artist:'Mac 上的音乐同步暂未连接', state:'未连接', current:'♪'};
@@ -86,9 +86,16 @@ async function controlMusic(action) {
   try {
     const response = await fetch('./api/music/control', {method:'POST',headers:{'Content-Type':'application/json','X-Display-Token':token},
       body:JSON.stringify({action,trackId:musicSnapshot.trackId}),signal:controller.signal});
-    if (!response.ok || (await response.json()).ok !== true) throw new Error('unconfirmed');
+    if (!response.ok) throw new Error('unconfirmed');
+    const result = await response.json();
+    if (result.ok !== true) throw new Error('unconfirmed');
     musicNode('music-control-result').textContent = '';
-    await refreshMusic();
+    if (result.snapshot) {
+      // 回执已经包含真实状态；旧轮询晚到时不能把暂停按钮和进度改回去。
+      musicRevision++;
+      musicSnapshot = result.snapshot;
+      musicReceived = performance.now();
+    } else await refreshMusic();
   } catch {
     // 超时不自动重试，避免上一曲/下一曲在回执丢失时执行两次。
     musicNode('music-control-result').textContent = '未能确认操作，请检查播放器后重试';
@@ -102,17 +109,19 @@ async function refreshMusic() {
   const token = sessionStorage.getItem('display-token');
   if (!token) { musicSnapshot = null; renderMusic(); return; }
   musicBusy = true;
-  const started = performance.now();
+  const started = performance.now(), revision = musicRevision;
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch('./api/music', {headers:{'X-Display-Token':token}, cache:'no-store', signal:controller.signal});
     if (!response.ok) throw new Error('music unavailable');
-    musicSnapshot = await response.json();
+    const snapshot = await response.json();
+    if (revision !== musicRevision) return;
+    musicSnapshot = snapshot;
     const received = performance.now();
     // 服务器进度在响应发出前计算；用半个往返耗时估计回程延迟，不依赖设备时钟一致。
     musicReceived = musicSnapshot.state === 'ready' && musicSnapshot.playing ? (started + received) / 2 : received;
   } catch {
-    musicSnapshot = null;
+    if (revision === musicRevision) musicSnapshot = null;
   } finally { clearTimeout(timer); musicBusy = false; renderMusic(); }
 }
 
