@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#f7f7f8"><link rel="manifest" href="./manifest.json"><link rel="icon" href="./codex-icon.png"><link rel="apple-touch-icon" href="./codex-icon.png"><link rel="stylesheet" href="./style.css"><title>Codex · 工作现场</title></head>
 <body>
-<div class="pages" tabindex="0" aria-label="看板页面"><div class="dashboard-page">
+<div class="pages" tabindex="0" aria-label="看板页面"><div class="dashboard-page home-page">
 <header>
   <div class="brand"><img class="logo" src="./codex-icon.png" alt=""><div><h1>Codex</h1><span class="sub">工作看板</span></div></div>
   <aside class="header-quota" aria-label="订阅等级">
@@ -17,6 +17,10 @@
   </section>
 </main>
 <footer><span id="footer-note" role="status"></span></footer>
+<section class="music-panel" aria-label="正在播放的歌词">
+  <div class="music-meta"><div><span class="music-label">正在聆听</span><h2 id="music-title">等待音乐响起</h2><p id="music-artist">在 Mac 上播放音乐，歌词会出现在这里</p></div><span id="music-state" role="status">未连接</span></div>
+  <div class="lyric-lines" aria-live="off"><p id="lyric-previous"></p><p id="lyric-current">♪</p><p id="lyric-next"></p></div>
+</section>
 </div>
 <section id="company" class="dashboard-page company-page" aria-labelledby="company-title">
   <div class="section-head"><div><h2 id="company-title">公司中转站</h2><p class="section-description">订阅额度 · 每分钟更新</p></div><div class="relay-actions"><button id="relay-refresh" type="button">更新</button><button id="relay-manage">管理 Key</button></div></div>
@@ -38,4 +42,4 @@
   </div>
   <div class="dialog-actions"><button id="attention-dismiss">稍后处理</button><button id="open-codex">打开 Codex <span aria-hidden="true">↗</span></button></div>
 </dialog>
-<script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script></body></html>
+<script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script><script src="./music.js" type="module"></script></body></html>

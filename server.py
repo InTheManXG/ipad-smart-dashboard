@@ -7,13 +7,14 @@ import secrets
 import uuid
 from urllib.parse import urlsplit, parse_qs
 import relay
+import music
 from urllib.error import HTTPError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = Path.home() / 'Library/Application Support/ESP32CodexBridge/config.json'
-FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/relay.js': ('relay.js', 'text/javascript'),
+FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/relay.js': ('relay.js', 'text/javascript'), '/music.js': ('music.js', 'text/javascript'),
          '/style.css': ('style.css', 'text/css'), '/manifest.json': ('manifest.json', 'application/manifest+json'),
          '/icon.svg': ('icon.svg', 'image/svg+xml'), '/codex-icon.png': ('codex-icon.png', 'image/png')}
 
@@ -97,6 +98,20 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, b'{"error":"storage_unavailable"}', 'application/json')
 
     def do_POST(self):
+        if self.path == '/api/music':
+            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
+                self.reply(401, b'{}', 'application/json')
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 512_000:
+                    raise ValueError('invalid music size')
+                self.connection.settimeout(5)
+                music.put(json.loads(self.rfile.read(length)))
+                self.reply(200, b'{"ok":true}', 'application/json')
+            except (ValueError, OSError):
+                self.reply(400, b'{}', 'application/json')
+            return
         if self.path == '/api/relay/keys':
             self.relay_api()
             return
@@ -125,6 +140,12 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, b'{}', 'application/json')
 
     def do_GET(self):
+        if self.path == '/api/music':
+            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
+                self.reply(401, b'{}', 'application/json')
+                return
+            self.reply(200, json.dumps(music.get(), ensure_ascii=False).encode(), 'application/json')
+            return
         if urlsplit(self.path).path in ('/api/relay/keys', '/api/relay/usage'):
             self.relay_api()
             return

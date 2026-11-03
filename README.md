@@ -89,3 +89,17 @@ iPad Safari 中选择“分享 → 添加到主屏幕”即可独立打开。首
 
 
 公司中转站每个 Key 独占一行，沿用首页额度区布局和细进度条，备注名放大至 18px、金额 28px、辅助信息 14px；窄屏时辅助信息换行。进度条表示订阅每日额度的剩余比例，缺失或每日限额不大于零时不推算；金额仍直接展示接口返回值。验证：`node tests/test_relay.cjs` 覆盖缺失与超额边界，浏览器验证单列排列、窄屏无溢出及 Key 管理回归。
+
+## Mac 实时歌词
+
+首页底部固定约四分之一屏显示歌曲、歌手及前后句，当前句突出显示；任务列表在剩余区域独立滚动。暂停保留当前句，进度跳转按时间轴重新定位；前奏、间奏、无匹配歌词及连接异常分别提示。低于 500px 的矮窗口允许页面纵向滚动，保证内容可读。
+
+Mac 使用 Homebrew 的 `media-control` 读取系统 Now Playing（兼容新 macOS 的 MediaRemote 限制），无需安装 LyricsX 或 163MusicLyrics。参考 [LyricsX](https://github.com/ddddxxx/LyricsX) 的系统播放思路与 [163MusicLyrics](https://github.com/jitwxs/163MusicLyrics) 的网易云歌词来源，实际采集依赖 [media-control](https://github.com/ungive/media-control)。优先匹配同歌名、歌手、专辑及相近时长的网易云歌词，避免用同名翻唱的时间轴；匹配不到时不显示猜测歌词。接口变更、歌曲下架或版本差异可能造成缺词或偏移。
+
+在 Mac 项目目录执行 `brew install media-control`，然后 `python3 deploy/install-music.py`，注册当前用户的 `com.iamxg.ipad-music` 登录服务。它运行 `music/bridge.py`，每秒向本地 OrbStack 与现有 HTTPS 看板上报一次；本机和线上需使用同一个原有 `.display-token`。口令不写入启动参数或日志。安装器固定使用本机 Apple Silicon Homebrew 路径；移动项目后需重新运行安装器。停止同步可执行 `launchctl bootout gui/$(id -u)/com.iamxg.ipad-music`。
+
+`GET/POST /api/music` 沿用看板口令鉴权，严格限制字段、长度和时间轴；歌词只保存于服务内存，超过 8 秒没有 Mac 更新即标记离线，前端也有断线超时。任何持有看板口令的人均可读取或更新音乐快照。查询第三方歌词只发送歌名、歌手，不发送看板口令、Codex 数据或网易云账户信息。系统只提供当前活跃播放器；已适配网易云、Apple Music、Spotify、QQ 音乐的系统标识，本次真实验证以网易云为准，浏览器视频不作为音乐展示。
+
+验证命令：`python3 -m unittest discover -s tests -v`，以及 `node tests/test_music.cjs`、原有三个 Node 自检。新测试覆盖 LRC 多时间标签、偏移与空白间奏、同名翻唱拒绝、输入校验、鉴权、暂停、进度跳转及离线。
+
+2026-11-03：已安装 Mac 登录采集服务并更新本地 OrbStack、原 1Panel 目录；线上替换前备份为 `backup-music-20261103-095733`。15 项 Python 测试与 4 组 Node 自检通过，真实网易云切歌、线上歌词显示、接口鉴权及静态资源一致性已验证；线上与系统播放进度的一次抽样差为 0.02 秒，不代表长期延迟保证。iPad 真机及其他音乐软件尚未实测。

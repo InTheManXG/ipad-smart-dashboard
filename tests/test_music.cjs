@@ -1,0 +1,21 @@
+// 覆盖暂停、拖动、前奏、间奏和断线，不依赖真实播放器。
+const vm = require('node:vm');
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const nodes = new Map();
+const context = vm.createContext({document:{hidden:false,addEventListener(){},getElementById(id){if(!nodes.has(id))nodes.set(id,{textContent:''});return nodes.get(id);}},sessionStorage:{getItem(){return '';}},performance:{now(){return 0;}},setInterval(){}});
+vm.runInContext(fs.readFileSync('web/music.js','utf8'),context);
+const frame = (snapshot, elapsed = 0) => context.lyricFrame(snapshot, elapsed);
+const song = {state:'ready',title:'歌',artist:'歌手',source:'网易云音乐',position:0,duration:100,playing:true,lyricsState:'ready',lines:[{time:2,text:'第一句'},{time:5,text:'第二句'},{time:8,text:''},{time:12,text:'第三句'}]};
+assert.equal(frame(song).current,'前奏');
+assert.equal(frame(song,3).current,'第一句');
+assert.equal(frame(song,5).current,'第二句');
+assert.equal(frame({...song,position:8}).current,'间奏');
+assert.equal(frame({...song,position:12}).current,'第三句');
+assert.equal(frame({...song,position:2,playing:false},6).current,'第一句');
+assert.equal(frame(song,9).state,'未连接');
+assert.equal(frame({...song,lyricsState:'missing'}).current,'暂无匹配的时间轴歌词');
+assert.equal(frame({...song,state:'idle'}).current,'♪');
+assert.equal(frame({...song,position:5}).previous,'第一句');
+assert.equal(frame({...song,position:2}).next,'第二句');
+console.log('歌词暂停、进度跳转、前奏、间奏、断线验证通过');
