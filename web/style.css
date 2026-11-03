@@ -112,19 +112,19 @@ body{max-width:none;padding:0}
 .home-page .tasks{width:100%;min-height:0;display:flex;flex-direction:column;padding:20px 24px}
 .home-page .section-head,.home-page #list-note{flex-shrink:0}
 .home-page #task-list{min-height:0;overflow-y:auto;overscroll-behavior-y:contain;margin-top:12px}
-.music-panel{flex:0 0 25dvh;min-height:160px;display:grid;grid-template-columns:minmax(160px,28%) minmax(0,1fr);gap:24px;align-items:center;padding:20px 28px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
-.music-meta{min-width:0;display:flex;flex-direction:column;gap:14px}.music-label{font-size:11px;letter-spacing:2px;color:var(--muted)}
-#music-title{font-size:20px;font-weight:600;line-height:1.4;margin:8px 0 5px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.music-panel{flex:0 0 25dvh;min-height:160px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:6px;align-items:center;padding:12px 28px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
+/* 歌曲信息在顶部同一行居中，歌词使用整张面板宽度，不再为左侧信息留栏。 */
+.music-meta{min-width:0;display:flex;justify-content:center;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden}
+#music-title{min-width:0;font-size:16px;font-weight:600;line-height:1.5;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #music-artist{font-size:12px;color:var(--muted);line-height:1.5;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#music-state{font-size:11px;color:var(--muted)}
-.lyric-lines{--lyric-step:clamp(34px,4.4vw,48px);text-align:center;min-width:0;height:calc(3 * var(--lyric-step));overflow:hidden;mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent);-webkit-mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent)}
+.lyric-lines{--lyric-step:clamp(30px,4.8dvh,44px);text-align:center;min-width:0;height:calc(3 * var(--lyric-step));overflow:hidden;mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent);-webkit-mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent)}
 #lyric-track{will-change:transform}
 .lyric-line{height:var(--lyric-step);line-height:var(--lyric-step);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(21px,2.7vw,34px);font-weight:600;letter-spacing:.5px;color:#8a8b94;opacity:.65;transform:scale(.65);transform-origin:center}
 .lyric-line.active{color:var(--ink);opacity:1;transform:scale(1)}
 /* 位移和强调使用相同的线性时长；轮询不重建节点，不打断正在进行的过渡。 */
 #lyric-track.smooth{transition:transform .6s linear}#lyric-track.smooth .lyric-line{transition:transform .6s linear,color .6s linear,opacity .6s linear}
 @media(prefers-reduced-motion:reduce){#lyric-track.smooth,#lyric-track.smooth .lyric-line{transition:none}}
-@media(max-width:700px){.music-panel{grid-template-columns:1fr;gap:8px;padding:14px 18px}.music-meta{flex-direction:row;justify-content:space-between;align-items:center;gap:10px}.music-label,#music-artist{display:none}#music-title{font-size:14px;margin:0;-webkit-line-clamp:1}#music-state{white-space:nowrap}.lyric-lines{--lyric-step:32px}.lyric-line{font-size:22px}}
+@media(max-width:700px){.music-panel{padding:12px 18px}.music-meta{gap:8px}#music-title{font-size:14px}.lyric-lines{--lyric-step:32px}.lyric-line{font-size:22px}}
 @media(max-height:500px){.home-page{height:auto;min-height:100dvh;overflow:visible}.home-page main{flex:none;height:300px}.music-panel{min-height:170px}}
 
 /* 常亮中断使用短暂浮层，不占页面布局，也不遮挡操作。 */
