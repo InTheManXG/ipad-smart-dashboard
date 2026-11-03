@@ -42,13 +42,14 @@
 </dialog>
 <dialog id="settings"><form id="settings-form"><h2>连接你的 Codex</h2><p>输入此 Mac 上生成的看板访问口令。</p><label>访问口令<input id="token" type="password" autocomplete="off" required></label><div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit">连接</button></div></form></dialog>
 <dialog id="attention-dialog" aria-labelledby="attention-heading" aria-describedby="attention-title">
-  <div class="attention-brand"><img src="./codex-icon.png" alt="" width="36" height="36"><span>Codex</span><span class="attention-status"><i aria-hidden="true"></i>等待你处理</span></div>
+  <div class="attention-brand">CODEX</div>
   <div class="attention-content">
-    <div class="attention-beacon" aria-hidden="true"><span></span></div>
-    <h2 id="attention-heading" tabindex="-1" autofocus>轮到你了</h2>
+    <div class="attention-beacon" aria-hidden="true"><img src="./codex-icon.png" alt="" width="140" height="140"></div>
+    <h2 id="attention-heading" tabindex="-1" autofocus>NEEDS YOU</h2>
     <p id="attention-title"></p>
+    <p class="attention-caption">CODEX IS WAITING</p>
     <p id="open-result" role="status"></p>
   </div>
-  <div class="dialog-actions"><button id="attention-dismiss">稍后处理</button><button id="open-codex">打开 Codex <span aria-hidden="true">↗</span></button></div>
+  <div class="dialog-actions"><button id="open-codex">打开 Codex <span aria-hidden="true">↗</span></button><button id="attention-dismiss">稍后处理 · DISMISS</button></div>
 </dialog>
 <script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script><script src="./music.js" type="module"></script></body></html>
