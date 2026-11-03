@@ -72,8 +72,9 @@ main{grid-template-columns:minmax(0,1fr)}
 #attention-dialog #open-result{font-size:14px;color:#995020;margin:16px 0 0}
 #attention-dialog .dialog-actions{display:flex;flex-direction:column;align-items:center;gap:10px;margin:0;padding:12px 0 0}
 #attention-dialog button{min-height:54px;font-size:16px;border-radius:12px}
-#attention-dialog #open-codex{width:min(300px,100%);display:flex;align-items:center;justify-content:center;gap:20px;background:var(--notice-accent);border:1px solid var(--notice-accent);color:#fff;font-weight:650;box-shadow:none}
-#attention-dialog #open-codex:hover{background:#2867ca}#attention-dialog #open-codex:active{transform:translateY(1px)}
+/* 整卡可点击后，入口退为文字提示，保留原生按钮的键盘可达性。 */
+#attention-dialog #open-codex{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:8px 12px;background:transparent;border:0;color:var(--notice-accent);font-size:14px;font-weight:500;box-shadow:none}
+#attention-dialog #open-codex:hover{background:transparent;color:#2867ca}#attention-dialog #open-codex:active{transform:translateY(1px)}
 #attention-dialog #attention-dismiss{background:transparent;border:0;color:var(--muted);letter-spacing:0;font-size:14px;padding:0 20px}
 #attention-dialog #attention-dismiss:hover{color:var(--ink);background:#f4f5f8}
 #attention-dialog button:focus-visible{outline:2px solid var(--waiting);outline-offset:4px}
