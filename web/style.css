@@ -122,3 +122,6 @@ body{max-width:none;padding:0}
 .lyric-lines #lyric-current{font-size:clamp(21px,2.7vw,34px);font-weight:600;color:var(--ink);letter-spacing:.5px}
 @media(max-width:700px){.music-panel{grid-template-columns:1fr;gap:8px;padding:14px 18px}.music-meta{flex-direction:row;justify-content:space-between;align-items:center;gap:10px}.music-label,#music-artist{display:none}#music-title{font-size:14px;margin:0;-webkit-line-clamp:1}#music-state{white-space:nowrap}.lyric-lines{gap:4px}.lyric-lines p{font-size:13px}.lyric-lines #lyric-current{font-size:22px}}
 @media(max-height:500px){.home-page{height:auto;min-height:100dvh;overflow:visible}.home-page main{flex:none;height:300px}.music-panel{min-height:170px}}
+
+/* 常亮中断使用短暂浮层，不占页面布局，也不遮挡操作。 */
+.wake-notice{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px);transform:translateX(-50%);z-index:1000;max-width:calc(100vw - 32px);padding:12px 20px;border-radius:12px;background:#202124;color:#fff;box-shadow:0 8px 28px #0003;font-size:14px;line-height:1.5;text-align:center;pointer-events:none}

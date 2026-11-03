@@ -141,6 +141,21 @@ $('refresh').onclick = refresh;
 $('reload').onclick = () => location.reload();
 let wakePending = false;
 const wakeInterrupted = '常亮已中断，正在尝试恢复';
+let wakeNoticeShown = false, wakeNoticeTimer;
+function dismissWakeNotice() {
+  clearTimeout(wakeNoticeTimer);
+  document.getElementById('wake-notice')?.remove();
+}
+function notifyWakeInterrupted() {
+  if (!wantWake || document.hidden || wakeNoticeShown) return;
+  // 同一次中断只提醒一次，后台重试不能不断打扰用户。
+  wakeNoticeShown = true;
+  const notice = element('div','wake-notice',wakeInterrupted);
+  notice.id = 'wake-notice';
+  notice.setAttribute('role','status');
+  document.body.append(notice);
+  wakeNoticeTimer = setTimeout(dismissWakeNotice, 4000);
+}
 function showWakeState() {
   $('wake').textContent = wakeLock && !wakeLock.released ? '常亮已开启' : wantWake ? '常亮待恢复' : '开启常亮';
   $('wake').setAttribute('aria-pressed', String(wantWake));
@@ -159,20 +174,21 @@ async function keepAwake() {
     // 请求期间用户可能关闭常亮或切入后台，不能让迟到回执重新开启。
     if (!wantWake || document.hidden) { await lock.release(); return; }
     wakeLock = lock;
-    if ($('footer-note').textContent === wakeInterrupted) $('footer-note').textContent = '';
+    wakeNoticeShown = false;
+    dismissWakeNotice();
     lock.addEventListener('release', () => {
       if (wakeLock === lock) wakeLock = null;
-      if (wantWake && !document.hidden) $('footer-note').textContent = wakeInterrupted;
+      notifyWakeInterrupted();
       showWakeState();
     });
   } catch {
-    $('footer-note').textContent = wakeInterrupted;
+    notifyWakeInterrupted();
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
   wantWake = !wantWake;
   if (wantWake) await keepAwake(); else await wakeLock?.release();
-  if (!wantWake && $('footer-note').textContent === wakeInterrupted) $('footer-note').textContent = '';
+  if (!wantWake) { wakeNoticeShown = false; dismissWakeNotice(); }
   showWakeState();
 };
 // 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
