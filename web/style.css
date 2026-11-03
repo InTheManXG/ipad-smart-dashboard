@@ -122,7 +122,8 @@ body{max-width:none;padding:0}
 .music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:3}
 .music-meta{grid-row:1}.music-timeline{grid-row:2}.lyric-lines{grid-row:3}
 .music-source{position:absolute;top:12px;left:16px;display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;line-height:20px;white-space:nowrap;pointer-events:none}
-.music-source-logo{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#e83232;color:#fff;font-size:13px;font-weight:700;line-height:1}
+/* 使用本机网易云应用自带图标，保留原图透明边距和比例。 */
+.music-source-logo{width:24px;height:24px;object-fit:contain;flex:none}.music-source-logo[hidden]{display:none}
 .music-control{grid-row:1/4;align-self:stretch;width:100%;padding:0;border:0;border-radius:12px;color:#666871;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
 .music-control svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 #music-previous{grid-column:1}#music-replay{grid-column:2}#music-toggle{grid-column:4;color:var(--ink)}#music-next{grid-column:5}

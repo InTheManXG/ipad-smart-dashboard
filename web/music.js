@@ -54,6 +54,8 @@ function renderLyrics(snapshot, frame) {
 
 function renderMusic() {
   const frame = lyricFrame(musicSnapshot, (performance.now() - musicReceived) / 1000);
+  // 其他播放器及断线状态不显示网易云品牌图标。
+  musicNode('music-source-logo').hidden = frame.source !== '网易云音乐';
   const values = {'music-title':frame.title, 'music-artist':frame.artist, 'music-source':frame.source || '音乐播放器',
     'music-elapsed':musicTime(frame.position), 'music-duration':musicTime(frame.duration)};
   for (const [id, value] of Object.entries(values)) {
