@@ -77,7 +77,8 @@ main{grid-template-columns:minmax(0,1fr)}
 #attention-dialog h2::after{color:#3278f5}
 #attention-dialog[open] h2::before,#attention-dialog[open] h2::after{animation:attention-lightbar 1s ease-in-out infinite}
 #attention-dialog[open] h2::after{animation-delay:-.5s}
-@keyframes attention-lightbar{0%,42%,100%{opacity:.3;filter:brightness(.85)}12%,30%{opacity:1;filter:brightness(1.15)}}
+/* 两灯错开半周期连续渐变，一侧渐强时另一侧同步渐弱。 */
+@keyframes attention-lightbar{0%,100%{opacity:.25;filter:brightness(.8)}50%{opacity:1;filter:brightness(1.15)}}
 #attention-title{font-size:clamp(32px,4.75vw,42px);font-weight:700;line-height:1.55;letter-spacing:0;color:var(--ink);margin:0;overflow-wrap:anywhere}
 #attention-dialog .attention-caption{font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:16px 0 0}
 #attention-dialog #open-result{font-size:14px;color:#995020;margin:16px 0 0}
