@@ -33,6 +33,7 @@ assert.equal(nodes.get('music-progress').value,25);
 assert.equal(nodes.get('music-progress').max,100);
 assert.equal(nodes.get('music-elapsed').textContent,'0:25');
 assert.equal(nodes.get('music-duration').textContent,'1:40');
+assert.equal(nodes.get('music-source').textContent,'网易云音乐');
 vm.runInContext('musicSnapshot = null; renderMusic()',context);
 assert.equal(nodes.get('music-progress').value,0);
 assert.equal(nodes.get('music-elapsed').textContent,'--:--');

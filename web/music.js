@@ -8,7 +8,7 @@ function lyricFrame(snapshot, elapsed) {
   if (snapshot.state === 'idle') return {title:'等待音乐响起', artist:'在 Mac 上播放音乐，歌词会出现在这里', state:'未播放', current:'♪'};
   if (snapshot.state !== 'ready') return {title:'暂时无法读取音乐', artist:'正在尝试恢复播放信息', state:'连接异常', current:'♪'};
   const position = Math.min(snapshot.duration, snapshot.position + (snapshot.playing ? Math.max(0, elapsed) : 0));
-  const frame = {title:snapshot.title, artist:`${snapshot.artist} · ${snapshot.source}`, state:snapshot.playing ? '播放中' : '已暂停', position, duration:snapshot.duration};
+  const frame = {title:snapshot.title, artist:snapshot.artist, source:snapshot.source, state:snapshot.playing ? '播放中' : '已暂停', position, duration:snapshot.duration};
   if (snapshot.lyricsState !== 'ready') return {...frame, current:{loading:'正在寻找歌词…', missing:'暂无匹配的时间轴歌词', error:'歌词获取失败，稍后重试'}[snapshot.lyricsState] || '暂无歌词'};
   const lines = snapshot.lines || [];
   // 每次按时间轴重新定位，拖动进度、切歌和恢复前台都不能沿用旧行号。
@@ -54,7 +54,7 @@ function renderLyrics(snapshot, frame) {
 
 function renderMusic() {
   const frame = lyricFrame(musicSnapshot, (performance.now() - musicReceived) / 1000);
-  const values = {'music-title':frame.title, 'music-artist':frame.artist,
+  const values = {'music-title':frame.title, 'music-artist':frame.artist, 'music-source':frame.source || '音乐播放器',
     'music-elapsed':musicTime(frame.position), 'music-duration':musicTime(frame.duration)};
   for (const [id, value] of Object.entries(values)) {
     const node = musicNode(id);
