@@ -25,16 +25,14 @@ console.log('提醒首次弹出、关闭去重、断线和再次等待验证通�
 // 点击内容、按钮与内边距均跳转；遮罩和稍后处理必须排除。
 run('var originalOpen = openConversation; var opened = []; openConversation = id => opened.push(id); updateAttention({threadId:"click-target",title:"点击测试"})');
 const dialog = get('attention-dialog');
-dialog.getBoundingClientRect = () => ({left:100,right:600,top:100,bottom:500});
 dialog.closest = () => null;
-for (const area of ['标题','图标','正文','打开按钮']) {
-  dialog.onclick({target:{closest:()=>null},clientX:200,clientY:200});
+for (const area of ['标题','图标','正文','打开按钮','内边距']) {
+  dialog.onclick({target:{closest:selector=>selector === '.attention-card' ? {} : null}});
 }
-dialog.onclick({target:dialog,clientX:110,clientY:110});
 assert.equal(run('opened.length'),5);
 assert.ok(run('opened.every(id => id === "click-target")'));
-dialog.onclick({target:dialog,clientX:50,clientY:50});
-dialog.onclick({target:{closest:()=>get('attention-dismiss')}});
+dialog.onclick({target:dialog});
+dialog.onclick({target:{closest:()=>null}});
 assert.equal(run('opened.length'),5);
 get('attention-dismiss').onclick();
 assert.equal(dialog.open,false);

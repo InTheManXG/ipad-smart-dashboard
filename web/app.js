@@ -115,12 +115,7 @@ $('attention-dismiss').onclick = dismissAttention;
 $('attention-dialog').addEventListener('cancel', () => { dismissedThread = attention?.threadId; });
 // 整张提醒都可打开对话；稍后处理和弹窗外遮罩不触发跳转。
 $('attention-dialog').onclick = event => {
-  if (event.target.closest('#attention-dismiss')) return;
-  const dialog = $('attention-dialog');
-  if (event.target === dialog) {
-    const rect = dialog.getBoundingClientRect();
-    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
-  }
+  if (!event.target.closest('.attention-card')) return;
   if (attention) return openConversation(attention.threadId);
 };
 async function openConversation(threadId) {
