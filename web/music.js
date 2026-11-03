@@ -80,7 +80,7 @@ async function controlMusic(action) {
   const token = sessionStorage.getItem('display-token');
   if (!token) return;
   musicControlBusy = true;
-  musicNode('music-control-result').textContent = '正在操作…';
+  musicNode('music-control-result').textContent = '';
   renderMusic();
   const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 12000);
   try {
