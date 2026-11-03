@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const context = vm.createContext({document:{}});
-vm.runInContext(fs.readFileSync('web/relay.js','utf8').split('async function refreshRelay()')[0],context);
+vm.runInContext(fs.readFileSync('web/relay.js','utf8').split('async function refreshRelay(')[0],context);
 for (const [data, expected] of [
   [{dailyLimit:300,dailyUsed:120},60],
   [{dailyLimit:300,dailyUsed:400},0],

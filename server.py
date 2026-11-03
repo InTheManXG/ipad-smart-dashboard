@@ -86,7 +86,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.connection.settimeout(5)
                 result = relay.change_key(json.loads(self.rfile.read(length)))
             elif urlsplit(self.path).path == '/api/relay/usage':
-                result = relay.read_usage(parse_qs(urlsplit(self.path).query).get('id', [''])[0])
+                query = parse_qs(urlsplit(self.path).query)
+                result = relay.read_usage(query.get('id', [''])[0], force=query.get('refresh') == ['1'])
             else:
                 result = relay.public_keys()
             self.reply(200, json.dumps(result, ensure_ascii=False).encode(), 'application/json')

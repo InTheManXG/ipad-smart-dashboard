@@ -82,13 +82,13 @@ def number(value):
     return value if type(value) in (int, float) and abs(value) < 1e15 and math.isfinite(value) else None
 
 
-def read_usage(identity):
+def read_usage(identity, force=False):
     with LOCK:
         item = next((item for item in read_keys() if item['id'] == identity), None)
         if item is None:
             raise ValueError('unknown key')
         cached = CACHE.get(identity)
-        if cached and time.time() - cached['updatedAt'] < 60:
+        if not force and cached and time.time() - cached['updatedAt'] < 60:
             return cached
         key = item['key']
     try:

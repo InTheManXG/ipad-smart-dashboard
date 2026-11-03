@@ -51,6 +51,9 @@ class RelayTests(unittest.TestCase):
             self.assertNotIn('secret', json.dumps(result))
             self.assertEqual(relay.read_usage(identity), result)
             self.assertEqual(opener.open.call_count, 1)
+            opener.open.return_value = io.BytesIO(json.dumps(payload).encode())
+            self.assertEqual(relay.read_usage(identity, force=True)['remaining'], 176.24)
+            self.assertEqual(opener.open.call_count, 2)
         relay.change_key({'action': 'save', 'id': identity, 'name': '公司', 'key': 'replacement'})
         opener.open.side_effect = HTTPError('url', 401, 'test-secret', {}, None)
         with patch('relay.build_opener', return_value=opener):
@@ -85,3 +88,11 @@ class RelayHTTPTests(unittest.TestCase):
                 result = response.read().decode()
                 self.assertIn('公司', result)
                 self.assertNotIn('secret', result)
+
+    def test_manual_refresh_forwarded(self):
+        with patch('server.relay.read_usage', return_value={'remaining': 12}) as read:
+            request = Request(self.url + '/api/relay/usage?id=test&refresh=1',
+                              headers={'X-Display-Token': 'test-only'})
+            with urlopen(request) as response:
+                self.assertEqual(json.load(response)['remaining'], 12)
+            read.assert_called_once_with('test', force=True)

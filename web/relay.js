@@ -46,10 +46,11 @@ function renderUsage(card, item, data) {
     node('div','reset relay-detail',`当日已用 ${money(data.dailyUsed)} / 每日额度 ${money(data.dailyLimit)}`),
     node('p','reset relay-time',`${new Date(data.updatedAt * 1000).toLocaleTimeString('zh-CN')} 更新`));
 }
-async function refreshRelay() {
+async function refreshRelay(force = false) {
   if (document.hidden || editing) return;
   if (loading) { refreshPending = true; return; }
   loading = true;
+  $('relay-refresh').disabled = true; $('relay-refresh').textContent = '更新中…';
   try {
     keys = await api('keys');
     $('relay-message').textContent = keys.length ? '' : '尚未配置 Key';
@@ -60,7 +61,7 @@ async function refreshRelay() {
     });
     $('relay-cards').replaceChildren(...cards);
     await Promise.all(keys.map(async (item, index) => {
-      try { renderUsage(cards[index], item, await api(`usage?id=${encodeURIComponent(item.id)}`)); }
+      try { renderUsage(cards[index], item, await api(`usage?id=${encodeURIComponent(item.id)}${force ? '&refresh=1' : ''}`)); }
       catch { renderUsage(cards[index], item, {error:'查询失败，请稍后重试'}); }
     }));
   } catch (error) {
@@ -69,6 +70,7 @@ async function refreshRelay() {
     $('relay-message').textContent = error.message;
   } finally {
     loading = false;
+    $('relay-refresh').disabled = false; $('relay-refresh').textContent = '更新';
     if (refreshPending) { refreshPending = false; refreshRelay(); }
   }
 }
@@ -105,6 +107,8 @@ async function mutate(body) {
     refreshRelay();
   }
 }
+// 手动更新绕过短期缓存，自动轮询仍沿用一分钟缓存。
+$('relay-refresh').onclick = () => refreshRelay(true);
 $('relay-manage').onclick = async () => {
   resetForm(); $('relay-settings').showModal();
   try { keys = await api('keys'); renderKeyList(); }
