@@ -206,6 +206,16 @@ class MusicTests(unittest.TestCase):
             self.assertEqual(bridge.find_lyrics(track), [])
             self.assertEqual(fetch.call_count, 1)
 
+    def test_verified_old_release_uses_exact_id_without_matching_other_versions(self):
+        track = snapshot() | {'title': '梦醒时分', 'artist': '周冰倩', 'album': '梦醒时分', 'duration': 244.333}
+        with patch.object(bridge, 'fetch', return_value={'lrc': {'lyric': '[00:01]测试歌词'}}) as fetch:
+            self.assertEqual(bridge.find_lyrics(track)[0]['text'], '测试歌词')
+            fetch.assert_called_once_with('song/lyric', {'id': 334909, 'lv': -1, 'kv': -1, 'tv': -1})
+        for change in ({'artist': '其他歌手'}, {'album': '其他专辑'}, {'duration': 238.421}):
+            with patch.object(bridge, 'fetch', return_value={'result': {'songs': []}}) as fetch:
+                self.assertEqual(bridge.find_lyrics(track | change), [])
+                self.assertEqual(fetch.call_args.args[0], 'search/get')
+
     def test_play_pause_and_stale_snapshot(self):
         with patch('music.time.monotonic', return_value=100):
             music.put(snapshot())
