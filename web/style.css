@@ -141,8 +141,9 @@ body{max-width:none;padding:0}
 /* 手机宽度不足以容纳两侧操作时，按钮放到下方，仍保留 44px 点击区域。 */
 @media(max-width:540px){.music-panel{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto auto minmax(0,1fr) 44px;min-height:250px}.music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:1/-1}.music-control{grid-row:4}#music-toggle{grid-column:3}#music-next{grid-column:4}#music-control-result{bottom:50px}}
 
-/* 常亮中断使用短暂浮层，不占页面布局，也不遮挡操作。 */
-.wake-notice{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px);transform:translateX(-50%);z-index:1000;max-width:calc(100vw - 32px);padding:12px 20px;border-radius:12px;background:#202124;color:#fff;box-shadow:0 8px 28px #0003;font-size:14px;line-height:1.5;text-align:center;pointer-events:none}
 
 /* 常亮未生效的红点持续到恢复或主动关闭，与短暂浮动提醒互补。 */
 .more-button{position:relative}.more-button[data-wake-warning="true"]::after{content:"";position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--error);box-shadow:0 0 0 2px var(--bg)}
+
+/* 整张恢复弹窗均可轻点；保留真实按钮以支持键盘和辅助功能。 */
+#wake-dialog{width:min(520px,calc(100vw - 40px));padding:36px;text-align:center;border-top:4px solid var(--waiting);cursor:pointer}#wake-dialog h2{font-size:26px}#wake-dialog p{margin:18px 0 26px}#restore-wake{width:100%;min-height:56px;background:var(--waiting);color:white;font-size:17px;border:0}

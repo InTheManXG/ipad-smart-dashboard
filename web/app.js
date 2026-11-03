@@ -140,22 +140,22 @@ $('refresh').onclick = refresh;
 // 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。
 $('reload').onclick = () => location.reload();
 let wakePending = false, wakeFailed = false;
-const wakeInterrupted = '常亮已中断，正在尝试恢复';
-let wakeNoticeShown = false, wakeNoticeTimer;
+const wakeInterrupted = '常亮已中断，轻点此弹窗即可重新开启。';
 function dismissWakeNotice() {
-  clearTimeout(wakeNoticeTimer);
-  document.getElementById('wake-notice')?.remove();
+  $('wake-dialog').close();
 }
 function notifyWakeInterrupted(message = wakeInterrupted) {
-  if (!wantWake || document.hidden || wakeNoticeShown) return;
-  // 同一次中断只提醒一次，后台重试不能不断打扰用户。
-  wakeNoticeShown = true;
-  const notice = element('div','wake-notice',message);
-  notice.id = 'wake-notice';
-  notice.setAttribute('role','status');
-  document.body.append(notice);
-  wakeNoticeTimer = setTimeout(dismissWakeNotice, 4000);
+  if (!wantWake || document.hidden) return;
+  $('wake-message').textContent = message;
+  if (!$('wake-dialog').open) $('wake-dialog').showModal();
 }
+// 点击本身提供系统所需的用户手势，成功后再关闭，失败时留下可重试的提示。
+$('wake-dialog').onclick = async () => {
+  if (wakePending) return;
+  wakeFailed = false;
+  wantWake = true;
+  await keepAwake();
+};
 function showWakeState() {
   // 高亮代表已持有有效锁，不代表用户曾请求开启。
   const active = !!(wakeLock && !wakeLock.released);
@@ -165,6 +165,8 @@ function showWakeState() {
   $('wake').textContent = active ? '常亮已开启' : wakePending ? '正在申请常亮…' : wakeFailed ? '申请失败，点击重试' : '开启常亮';
   $('wake').setAttribute('aria-pressed', String(active));
   $('wake').disabled = wakePending;
+  $('restore-wake').disabled = wakePending;
+  $('restore-wake').textContent = wakePending ? '正在恢复…' : '点击恢复常亮';
 }
 async function keepAwake() {
   if (wakeLock?.released) wakeLock = null;
@@ -182,26 +184,24 @@ async function keepAwake() {
     // 请求期间用户可能关闭常亮或切入后台，不能让迟到回执重新开启。
     if (!wantWake || document.hidden) { await lock.release(); return; }
     wakeLock = lock;
-    wakeNoticeShown = false;
     dismissWakeNotice();
     lock.addEventListener('release', () => {
       if (wakeLock === lock) wakeLock = null;
+      if (wantWake && !document.hidden) wakeFailed = true;
       notifyWakeInterrupted();
       showWakeState();
     });
   } catch {
     wakeFailed = true;
-    wakeNoticeShown = false;
-    notifyWakeInterrupted('常亮申请失败，请点击右上角 ⋮ → 申请失败，点击重试');
+    notifyWakeInterrupted('常亮申请失败，请再点一下重试；仍失败时请检查低电量模式。');
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
   if (wakePending) return;
   wantWake = !(wakeLock && !wakeLock.released);
   wakeFailed = false;
-  wakeNoticeShown = false;
   if (wantWake) await keepAwake(); else await wakeLock?.release();
-  if (!wantWake) { wakeNoticeShown = false; dismissWakeNotice(); }
+  if (!wantWake) dismissWakeNotice();
   showWakeState();
 };
 // 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
