@@ -72,11 +72,11 @@ main{grid-template-columns:minmax(0,1fr)}
 .attention-card::after{content:"↗";position:absolute;top:25px;right:28px;color:var(--notice-accent);font-size:28px;line-height:1;opacity:.65;pointer-events:none}
 /* 红蓝双灯等宽分列，模拟警灯交替亮起，同时保持文字稳定可读。 */
 #attention-dialog h2{display:inline-grid;grid-template-columns:28px auto 28px;align-items:center;gap:12px;padding:7px 8px;border:1px solid #dce2ed;border-radius:13px;background:#f5f7fb;font-size:18px;font-weight:600;line-height:1.4;letter-spacing:0;margin:0 0 28px;color:var(--ink);outline:none;box-shadow:0 2px 5px #192c4710}
-#attention-dialog h2::before,#attention-dialog h2::after{content:"";width:28px;height:24px;border-radius:7px;background:repeating-linear-gradient(90deg,#ffffff33 0 2px,transparent 2px 6px),linear-gradient(#ffffff55,transparent 55%),currentColor;box-shadow:inset 0 0 0 1px #ffffff55,0 0 12px currentColor;opacity:.85}
+#attention-dialog h2::before,#attention-dialog h2::after{content:"";width:28px;height:24px;border-radius:7px;background:repeating-linear-gradient(90deg,#ffffff33 0 2px,transparent 2px 6px),linear-gradient(#ffffff55,transparent 55%),currentColor;box-shadow:inset 0 0 0 1px #ffffff88,0 0 10px 3px currentColor,0 0 24px 6px currentColor;opacity:.85}
 #attention-dialog h2::before{color:#ec4054}
 #attention-dialog h2::after{color:#3278f5}
-#attention-dialog[open] h2::before,#attention-dialog[open] h2::after{animation:attention-lightbar 1.6s ease-in-out infinite}
-#attention-dialog[open] h2::after{animation-delay:-.8s}
+#attention-dialog[open] h2::before,#attention-dialog[open] h2::after{animation:attention-lightbar 1s ease-in-out infinite}
+#attention-dialog[open] h2::after{animation-delay:-.5s}
 @keyframes attention-lightbar{0%,42%,100%{opacity:.3;filter:brightness(.85)}12%,30%{opacity:1;filter:brightness(1.15)}}
 #attention-title{font-size:clamp(32px,4.75vw,42px);font-weight:700;line-height:1.55;letter-spacing:0;color:var(--ink);margin:0;overflow-wrap:anywhere}
 #attention-dialog .attention-caption{font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:16px 0 0}
