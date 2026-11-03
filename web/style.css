@@ -118,7 +118,8 @@ body{max-width:none;padding:0}
 .music-control{grid-row:1/4;align-self:stretch;width:100%;padding:0;border:0;border-radius:12px;color:#666871;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
 .music-control svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 #music-previous{grid-column:1}#music-replay{grid-column:2}#music-toggle{grid-column:4;color:var(--ink)}#music-next{grid-column:5}
-#music-toggle svg{width:30px;height:30px}.music-control:hover:not(:disabled){background:#f0f1f4;color:var(--ink)}.music-control:active:not(:disabled){background:#e5e7ec}.music-control:disabled{opacity:.25;cursor:default}
+/* 触屏会保留 hover 状态；底色只由按住时的 active 提供，松开即透明。 */
+#music-toggle svg{width:30px;height:30px}.music-control:hover{background:transparent}.music-control:active:not(:disabled){background:#e5e7ec}.music-control:disabled{opacity:.25;cursor:default}
 #music-toggle[data-playing="true"] .play-icon,#music-toggle[data-playing="false"] .pause-icon{display:none}
 #music-control-result{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);margin:0;padding:3px 10px;border-radius:8px;background:#fff;font-size:11px;color:var(--muted);text-align:center;pointer-events:none}#music-control-result:empty{display:none}
 /* 歌曲信息在顶部同一行居中，歌词使用整张面板宽度，不再为左侧信息留栏。 */
