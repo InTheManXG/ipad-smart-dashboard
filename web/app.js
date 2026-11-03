@@ -139,41 +139,44 @@ $('connect').onclick = () => $('settings').showModal();
 $('refresh').onclick = refresh;
 // 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。
 $('reload').onclick = () => location.reload();
-let wakePending = false;
+let wakePending = false, wakeFailed = false;
 const wakeInterrupted = '常亮已中断，正在尝试恢复';
 let wakeNoticeShown = false, wakeNoticeTimer;
 function dismissWakeNotice() {
   clearTimeout(wakeNoticeTimer);
   document.getElementById('wake-notice')?.remove();
 }
-function notifyWakeInterrupted() {
+function notifyWakeInterrupted(message = wakeInterrupted) {
   if (!wantWake || document.hidden || wakeNoticeShown) return;
   // 同一次中断只提醒一次，后台重试不能不断打扰用户。
   wakeNoticeShown = true;
-  const notice = element('div','wake-notice',wakeInterrupted);
+  const notice = element('div','wake-notice',message);
   notice.id = 'wake-notice';
   notice.setAttribute('role','status');
   document.body.append(notice);
   wakeNoticeTimer = setTimeout(dismissWakeNotice, 4000);
 }
 function showWakeState() {
-  // 仅在用户要求常亮但没有有效锁时提示；主动关闭不算故障。
-  const unavailable = wantWake && !(wakeLock && !wakeLock.released);
+  // 高亮代表已持有有效锁，不代表用户曾请求开启。
+  const active = !!(wakeLock && !wakeLock.released);
+  const unavailable = wantWake && !active && !wakePending;
   $('more-settings').setAttribute('data-wake-warning', String(unavailable));
   $('more-settings').setAttribute('aria-label', unavailable ? '更多设置，常亮未生效' : '更多设置');
-  $('wake').textContent = wakeLock && !wakeLock.released ? '常亮已开启' : wantWake ? '常亮待恢复' : '开启常亮';
-  $('wake').setAttribute('aria-pressed', String(wantWake));
+  $('wake').textContent = active ? '常亮已开启' : wakePending ? '正在申请常亮…' : wakeFailed ? '申请失败，点击重试' : '开启常亮';
+  $('wake').setAttribute('aria-pressed', String(active));
+  $('wake').disabled = wakePending;
 }
 async function keepAwake() {
   if (wakeLock?.released) wakeLock = null;
-  if (!wantWake || document.hidden || wakeLock || wakePending) return;
+  if (!wantWake || document.hidden || wakeLock || wakePending || wakeFailed) return;
   if (!('wakeLock' in navigator)) {
+    wakeFailed = true;
     showWakeState();
-    $('wake').textContent = '常亮不可用';
-    $('footer-note').textContent = '浏览器不支持常亮，请在 iPad 设置中将自动锁定设为永不';
+    notifyWakeInterrupted('常亮申请失败：浏览器不支持，请在 iPad 设置中关闭自动锁定');
     return;
   }
   wakePending = true;
+  showWakeState();
   try {
     const lock = await navigator.wakeLock.request('screen');
     // 请求期间用户可能关闭常亮或切入后台，不能让迟到回执重新开启。
@@ -187,11 +190,16 @@ async function keepAwake() {
       showWakeState();
     });
   } catch {
-    notifyWakeInterrupted();
+    wakeFailed = true;
+    wakeNoticeShown = false;
+    notifyWakeInterrupted('常亮申请失败，请点击右上角 ⋮ → 申请失败，点击重试');
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
-  wantWake = !wantWake;
+  if (wakePending) return;
+  wantWake = !(wakeLock && !wakeLock.released);
+  wakeFailed = false;
+  wakeNoticeShown = false;
   if (wantWake) await keepAwake(); else await wakeLock?.release();
   if (!wantWake) { wakeNoticeShown = false; dismissWakeNotice(); }
   showWakeState();
