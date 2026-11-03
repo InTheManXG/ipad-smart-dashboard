@@ -24,13 +24,9 @@ struct ManagedKey: Identifiable {
     @Published var connectedURL = ""
 
     nonisolated static func request(_ payload: [String: Any]) throws -> [String: Any] {
-        guard let root = Bundle.main.object(forInfoDictionaryKey: "ProjectRoot") as? String,
-              let python = Bundle.main.object(forInfoDictionaryKey: "PythonPath") as? String else {
-            throw NSError(domain: "配置缺失，请重新构建 App", code: 1)
-        }
         let process = Process(), input = Pipe(), output = Pipe()
-        process.executableURL = URL(fileURLWithPath: python)
-        process.arguments = [root + "/mac_app/control.py"]
+        process.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/iPadService")
+        process.arguments = ["--request"]
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -40,11 +36,11 @@ struct ManagedKey: Identifiable {
         try input.fileHandleForWriting.close()
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard process.terminationStatus == 0,
-              let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NSError(domain: "控制服务未正常返回", code: 1)
         }
         if let error = result["error"] as? String { throw NSError(domain: error, code: 1) }
+        guard process.terminationStatus == 0 else { throw NSError(domain: "原生服务未正常返回", code: 1) }
         return result
     }
 
@@ -156,7 +152,7 @@ struct ControlView: View {
 
     var services: some View {
         VStack(alignment: .leading, spacing: 18) {
-            GroupBox("本地看板 · OrbStack") {
+            GroupBox("本地看板 · 原生服务") {
                 VStack(alignment: .leading, spacing: 12) {
                     status(model.dashboard)
                     HStack {
@@ -165,7 +161,7 @@ struct ControlView: View {
                         Spacer()
                         Button("打开本地看板") { open("http://127.0.0.1:18088") }
                     }
-                    Text("需先运行 OrbStack；容器沿用原自动重启策略。停止本地看板不影响线上站点。")
+                    Text("由 App 内置后台提供服务，无需 Docker。停止本地看板不影响线上站点。")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -176,7 +172,7 @@ struct ControlView: View {
                         Button("启动同步") { Task { await model.service("music-start") } }
                         Button("停止同步") { Task { await model.service("music-stop") } }
                     }
-                    Toggle("登录 Mac 时启动音乐同步", isOn: Binding(get: { model.musicLogin }, set: { enabled in
+                    Toggle("登录 Mac 时启动后台服务", isOn: Binding(get: { model.musicLogin }, set: { enabled in
                         Task { await model.service("music-login", enabled: enabled) }
                     }))
                     Text("同时服务本地和线上看板；停止后，两端歌词和播放控制将离线。")
@@ -186,7 +182,7 @@ struct ControlView: View {
             Toggle("登录 Mac 时打开控制台", isOn: Binding(get: { model.appLogin }, set: { enabled in
                 Task { await model.service("app-login", enabled: enabled) }
             }))
-            Text("退出控制台不会停止后台服务。Codex 状态继续使用原有共享桥接器。")
+            Text("退出控制台不会停止后台服务。Codex 状态由原生采集器直接读取。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("刷新状态") { Task { await model.refresh() } }
@@ -204,7 +200,7 @@ struct ControlView: View {
                 }
                 TextField("看板地址", text: $model.url).textFieldStyle(.roundedBorder)
                 SecureField("访问口令（留空沿用已保存的口令）", text: $model.token).textFieldStyle(.roundedBorder)
-                Text("首次使用自动读取本机已有口令。保存前会验证连接；只设置此 App 的管理目标，不修改看板服务的口令或音乐同步地址。")
+                Text("沿用迁入钥匙串的看板口令。保存前会验证连接；只设置此 App 的管理目标，不修改看板服务的口令或音乐同步地址。")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("验证并保存连接") {
                     Task {
@@ -214,7 +210,7 @@ struct ControlView: View {
                         }
                     }
                 }.buttonStyle(.borderedProminent)
-                Text("口令仅保存在这台 Mac 的私有配置中。iPad 首次连接仍需输入看板口令。")
+                Text("口令保存在 macOS 钥匙串中。iPad 首次连接仍需输入看板口令。")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
         }
