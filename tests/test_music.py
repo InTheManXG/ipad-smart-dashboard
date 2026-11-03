@@ -49,6 +49,41 @@ class MusicTests(unittest.TestCase):
                     bridge.main()
                 execute.assert_called_once()
 
+    def test_fast_site_control_does_not_wait_for_slow_site(self):
+        command = {'requestId': 'fast-request', 'trackId': 'a' * 64, 'action': 'pause', 'expiresIn': 8}
+        slow_finished = threading.Event()
+        executed = threading.Event()
+        order = []
+
+        def publish(url, token, value):
+            if url.endswith(':18088'):
+                executed.wait(.5)
+                slow_finished.set()
+                return None, time.monotonic()
+            return command, time.monotonic()
+
+        def execute(*args):
+            order.append(slow_finished.is_set())
+            executed.set()
+            return True
+
+        with tempfile.TemporaryDirectory() as folder:
+            token = Path(folder) / 'token'
+            token.write_text('test-only')
+            with patch('sys.argv', ['bridge.py', '--url', 'http://127.0.0.1:18088',
+                                   '--url', 'https://example.test', '--token-file', str(token)]), \
+                    patch.object(bridge, 'read_player', return_value=snapshot() | {'album': '测试专辑'}), \
+                    patch.object(bridge, 'find_lyrics', return_value=[]), \
+                    patch.object(bridge, 'publish', side_effect=publish), \
+                    patch.object(bridge, 'execute_control', side_effect=execute), \
+                    patch.object(bridge, 'send', return_value={}), \
+                    patch.object(bridge.time, 'sleep', side_effect=RuntimeError('stop test')) as sleep:
+                with self.assertRaisesRegex(RuntimeError, 'stop test'):
+                    bridge.main()
+                self.assertEqual(order, [False])
+                self.assertGreaterEqual(sleep.call_args.args[0], 0)
+                self.assertLessEqual(sleep.call_args.args[0], .25)
+
     def test_command_ack_busy_expiry_and_changed_track(self):
         music.put(snapshot())
         value = {'action': 'next', 'trackId': 'a' * 64}

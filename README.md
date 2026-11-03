@@ -96,7 +96,7 @@ iPad Safari 中选择“分享 → 添加到主屏幕”即可独立打开。首
 
 Mac 使用 Homebrew 的 `media-control` 读取系统 Now Playing（兼容新 macOS 的 MediaRemote 限制），无需安装 LyricsX 或 163MusicLyrics。参考 [LyricsX](https://github.com/ddddxxx/LyricsX) 的系统播放思路与 [163MusicLyrics](https://github.com/jitwxs/163MusicLyrics) 的网易云歌词来源，实际采集依赖 [media-control](https://github.com/ungive/media-control)。优先匹配同歌名、歌手、专辑及相近时长的网易云歌词，避免用同名翻唱的时间轴；匹配不到时不显示猜测歌词。接口变更、歌曲下架或版本差异可能造成缺词或偏移。
 
-在 Mac 项目目录执行 `brew install media-control`，然后 `python3 deploy/install-music.py`，注册当前用户的 `com.iamxg.ipad-music` 登录服务。它运行 `music/bridge.py`，每秒向本地 OrbStack 与现有 HTTPS 看板上报一次；本机和线上需使用同一个原有 `.display-token`。口令不写入启动参数或日志。安装器固定使用本机 Apple Silicon Homebrew 路径；移动项目后需重新运行安装器。停止同步可执行 `launchctl bootout gui/$(id -u)/com.iamxg.ipad-music`。
+在 Mac 项目目录执行 `brew install media-control`，然后 `python3 deploy/install-music.py`，注册当前用户的 `com.iamxg.ipad-music` 登录服务。它运行 `music/bridge.py`，以 0.25 秒为目标周期向本地 OrbStack 与现有 HTTPS 看板上报（读取或请求耗时超过周期时不叠加采集）；本机和线上需使用同一个原有 `.display-token`。口令不写入启动参数或日志。安装器固定使用本机 Apple Silicon Homebrew 路径；移动项目后需重新运行安装器。停止同步可执行 `launchctl bootout gui/$(id -u)/com.iamxg.ipad-music`。
 
 `GET/POST /api/music` 沿用看板口令鉴权，严格限制字段、长度和时间轴；歌词只保存于服务内存，超过 8 秒没有 Mac 更新即标记离线，前端也有断线超时。任何持有看板口令的人均可读取或更新音乐快照。查询第三方歌词只发送歌名、歌手，不发送看板口令、Codex 数据或网易云账户信息。系统只提供当前活跃播放器；已适配网易云、Apple Music、Spotify、QQ 音乐的系统标识，本次真实验证以网易云为准，浏览器视频不作为音乐展示。
 
@@ -117,3 +117,5 @@ Mac 使用 Homebrew 的 `media-control` 读取系统 Now Playing（兼容新 mac
 `POST /api/music/control` 与 `/api/music/ack` 沿用看板口令，持有该口令的人可以控制 Mac 当前歌曲。服务器只暂存一条固定动作指令，由 Mac 在原有上报响应中取回并复核歌曲摘要；超过 8 秒的请求撤销，不自动重试。采集器只执行白名单 CLI 参数，读取播放器变化后回执；进程内缓存最近 64 个请求结果，回执丢失时不会重复跳曲。歌曲摘要使用播放器、歌名、歌手、专辑和时长，避免网易云重播时更换临时 ID 造成误判；相同元信息的重复曲目无法区分，因此重复曲目的切换可能显示未确认。重启、播放器切换和系统媒体 API 仍可能造成操作未确认，页面不会把这种情况报成成功。
 
 2026-11-03：20 项 Python 测试及 4 组 Node 自检通过；网易云上一曲、下一曲、暂停、播放与重播实际操作及回执通过，公网暂停/播放链路、鉴权和静态资源一致性已验证。Mac 采集服务、本地 OrbStack 和原 1Panel 目录均已更新，线上备份为 `backup-music-controls-20261103-103546`。其他播放器与 iPad 真机触摸尚未实测。
+
+2026-11-03：为缩短暂停响应，将 Mac 上报/取指令的目标周期由 1 秒缩短为 0.25 秒，并按请求完成顺序处理命令，避免已返回的线上指令等待本地请求。代价是正常联网时上报频率提高；保留歌曲校验、真实状态确认与去重。21 项 Python 测试、歌词 Node 自检及语法检查通过；重启 Mac 同步服务后，线上暂停两次回执为 0.78 秒、0.44 秒，并核对网易云真实暂停，测试结束已恢复播放。这是抽样结果，不代表固定延迟，iPad 真机点击到画面更新尚未测量。

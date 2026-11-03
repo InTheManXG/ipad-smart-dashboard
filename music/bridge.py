@@ -1,7 +1,7 @@
 """读取 Mac 系统当前播放，匹配网易云时间轴歌词，上报到已认证的看板。"""
 import argparse
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from pathlib import Path
 import re
@@ -180,8 +180,9 @@ def main():
                 if pending is None and (not cached or (cached[1] == 'error' and time.monotonic() - cached[0] >= 60)):
                     pending = (key, lyrics_pool.submit(find_lyrics, dict(snapshot)))
             # 两个站点独立请求；本机不可达不妨碍线上同步，失败不会终止采集循环。
-            futures = [uploads.submit(publish, url.rstrip('/'), token, snapshot) for url in args.url]
-            for url, future in zip(args.url, futures):
+            futures = {uploads.submit(publish, url.rstrip('/'), token, snapshot): url for url in args.url}
+            for future in as_completed(futures):
+                url = futures[future]
                 try:
                     command, sent_at = future.result()
                     if not isinstance(command, dict) or not isinstance(command.get('requestId'), str):
@@ -203,7 +204,8 @@ def main():
                     send(url.rstrip('/') + '/api/music/ack', token, {'requestId': request_id, 'ok': completed[request_id]})
                 except (OSError, ValueError, subprocess.SubprocessError):
                     pass
-            time.sleep(max(0, 1 - (time.monotonic() - started)))
+            # 指令随上报取回，缩短空闲等待；耗时超过周期时不额外休眠或并发叠加采集。
+            time.sleep(max(0, .25 - (time.monotonic() - started)))
 
 
 if __name__ == '__main__':
