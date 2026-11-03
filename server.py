@@ -98,6 +98,25 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, b'{"error":"storage_unavailable"}', 'application/json')
 
     def do_POST(self):
+        if self.path in ('/api/music/control', '/api/music/ack'):
+            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
+                self.reply(401, b'{}', 'application/json')
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 512:
+                    raise ValueError('invalid command size')
+                self.connection.settimeout(5)
+                value = json.loads(self.rfile.read(length))
+                if self.path.endswith('/ack'):
+                    music.acknowledge(value)
+                    result = {'ok': True}
+                else:
+                    result = music.control(value)
+                self.reply(200 if result['ok'] else 409, json.dumps(result).encode(), 'application/json')
+            except (ValueError, OSError):
+                self.reply(400, b'{}', 'application/json')
+            return
         if self.path == '/api/music':
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
                 self.reply(401, b'{}', 'application/json')
@@ -108,7 +127,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('invalid music size')
                 self.connection.settimeout(5)
                 music.put(json.loads(self.rfile.read(length)))
-                self.reply(200, b'{"ok":true}', 'application/json')
+                self.reply(200, json.dumps({'ok': True, 'command': music.pending_control()}).encode(), 'application/json')
             except (ValueError, OSError):
                 self.reply(400, b'{}', 'application/json')
             return

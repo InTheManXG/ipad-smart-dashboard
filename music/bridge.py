@@ -1,5 +1,6 @@
 """读取 Mac 系统当前播放，匹配网易云时间轴歌词，上报到已认证的看板。"""
 import argparse
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
@@ -12,6 +13,8 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 MEDIA_CONTROL = '/opt/homebrew/bin/media-control'
+CONTROL_ARGS = {'previous': ['previous-track'], 'next': ['next-track'], 'play': ['play'],
+                'pause': ['pause'], 'replay': ['seek', '0']}
 
 
 def fetch(path, params):
@@ -86,18 +89,59 @@ def read_player():
     position = player.get('elapsedTimeNow', player.get('elapsedTime'))
     if not isinstance(duration, (int, float)) or not isinstance(position, (int, float)):
         return {'state': 'unavailable'}
+    # 网易云在 seek 后会更换临时内容 ID；使用歌曲元信息摘要，避免把本曲重播误判为切歌。
+    identity = [bundle, player.get('title'), player.get('artist'), player.get('album'), duration]
     return {'state': 'ready', 'title': str(player.get('title', ''))[:300],
+            'trackId': hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest(),
             'artist': str(player.get('artist', ''))[:300], 'album': str(player.get('album', ''))[:300], 'source': names[bundle],
             'playing': player.get('playing') is True, 'duration': max(0, min(duration, 86400)),
             'position': max(0, min(position, duration)), 'lyricsState': 'loading', 'lines': []}
 
 
-def publish(url, token, snapshot):
-    request = Request(url + '/api/music', data=json.dumps(snapshot, ensure_ascii=False).encode(),
+def send(url, token, value):
+    request = Request(url, data=json.dumps(value, ensure_ascii=False).encode(),
                       headers={'X-Display-Token': token, 'Content-Type': 'application/json'})
     with urlopen(request, timeout=4) as response:
         if response.status != 200:
             raise OSError('music upload failed')
+        return json.load(response)
+
+
+def publish(url, token, snapshot):
+    started = time.monotonic()
+    data = send(url + '/api/music', token, snapshot)
+    return data.get('command'), started
+
+
+def execute_control(command, started):
+    if (not isinstance(command, dict) or command.get('action') not in CONTROL_ARGS or
+            not isinstance(command.get('trackId'), str) or type(command.get('expiresIn')) not in (int, float) or
+            not 0 < command['expiresIn'] <= 8):
+        return False
+    deadline = started + command['expiresIn']
+    before = read_player()
+    if before.get('trackId') != command['trackId'] or time.monotonic() >= deadline:
+        return False
+    action = command['action']
+    # 只执行固定参数，不把网页输入作为命令；播放/暂停使用确定状态，避免重复切换。
+    subprocess.run([MEDIA_CONTROL, *CONTROL_ARGS[action]], check=True, timeout=2, capture_output=True)
+    if action == 'replay':
+        if read_player().get('trackId') != command['trackId'] or time.monotonic() >= deadline:
+            return False
+        subprocess.run([MEDIA_CONTROL, 'play'], check=True, timeout=2, capture_output=True)
+    until = min(deadline, time.monotonic() + 2)
+    while time.monotonic() < until:
+        current = read_player()
+        same = current.get('trackId') == command['trackId']
+        if current.get('state') == 'ready':
+            if action in ('next', 'previous') and not same:
+                return True
+            if same and ((action == 'play' and current['playing']) or
+                         (action == 'pause' and not current['playing']) or
+                         (action == 'replay' and current['playing'] and current['position'] < 3)):
+                return True
+        time.sleep(.1)
+    return False
 
 
 def main():
@@ -110,7 +154,7 @@ def main():
         if not (url.startswith('https://') or url.startswith('http://127.0.0.1:')):
             parser.error('音乐上报仅支持 HTTPS 或本机回环地址')
     token = args.token_file.read_text().strip()
-    cache, pending = {}, None
+    cache, pending, completed = {}, None, {}
     with ThreadPoolExecutor(max_workers=1) as lyrics_pool, ThreadPoolExecutor(max_workers=len(args.url)) as uploads:
         while True:
             started = time.monotonic()
@@ -137,10 +181,27 @@ def main():
                     pending = (key, lyrics_pool.submit(find_lyrics, dict(snapshot)))
             # 两个站点独立请求；本机不可达不妨碍线上同步，失败不会终止采集循环。
             futures = [uploads.submit(publish, url.rstrip('/'), token, snapshot) for url in args.url]
-            for future in futures:
+            for url, future in zip(args.url, futures):
                 try:
-                    future.result()
-                except (OSError, ValueError):
+                    command, sent_at = future.result()
+                    if not isinstance(command, dict) or not isinstance(command.get('requestId'), str):
+                        continue
+                    request_id = command['requestId']
+                    # 回执丢失时重发结果，不再次执行上一曲或下一曲。
+                    if request_id not in completed:
+                        try:
+                            completed[request_id] = execute_control(command, sent_at)
+                        except (OSError, ValueError, subprocess.SubprocessError):
+                            completed[request_id] = False
+                        if len(completed) > 64:
+                            del completed[next(iter(completed))]
+                    # 回执之前更新播放器状态，页面不能在成功之后继续显示旧曲或旧播放图标。
+                    updated = read_player()
+                    if updated.get('trackId') == snapshot.get('trackId') and updated.get('state') == 'ready':
+                        updated.update(lines=snapshot['lines'], lyricsState=snapshot['lyricsState'])
+                    send(url.rstrip('/') + '/api/music', token, updated)
+                    send(url.rstrip('/') + '/api/music/ack', token, {'requestId': request_id, 'ok': completed[request_id]})
+                except (OSError, ValueError, subprocess.SubprocessError):
                     pass
             time.sleep(max(0, 1 - (time.monotonic() - started)))
 

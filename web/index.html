@@ -18,9 +18,14 @@
 </main>
 <footer><span id="footer-note" role="status"></span></footer>
 <section class="music-panel" aria-label="正在播放的歌词">
+  <button id="music-previous" class="music-control" type="button" aria-label="上一曲" title="上一曲" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 5l-9 7 9 7z"/></svg></button>
+  <button id="music-replay" class="music-control" type="button" aria-label="重播" title="从头播放" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg></button>
   <div class="music-meta"><h2 id="music-title">等待音乐响起</h2><p id="music-artist">在 Mac 上播放音乐，歌词会出现在这里</p></div>
   <div class="music-timeline"><span id="music-elapsed" class="music-time" aria-label="已播放时间">--:--</span><progress id="music-progress" max="1" value="0" aria-label="歌曲播放进度"></progress><span id="music-duration" class="music-time" aria-label="总时长">--:--</span></div>
   <div class="lyric-lines" aria-live="off"><div id="lyric-track"><p class="lyric-line active">♪</p></div></div>
+  <button id="music-toggle" class="music-control" type="button" aria-label="播放" title="播放" data-playing="false" disabled><svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
+  <button id="music-next" class="music-control" type="button" aria-label="下一曲" title="下一曲" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 5l9 7-9 7z"/></svg></button>
+  <p id="music-control-result" role="status"></p>
 </section>
 </div>
 <section id="company" class="dashboard-page company-page" aria-labelledby="company-title">

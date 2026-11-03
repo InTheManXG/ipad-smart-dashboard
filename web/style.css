@@ -112,7 +112,15 @@ body{max-width:none;padding:0}
 .home-page .tasks{width:100%;min-height:0;display:flex;flex-direction:column;padding:20px 24px}
 .home-page .section-head,.home-page #list-note{flex-shrink:0}
 .home-page #task-list{min-height:0;overflow-y:auto;overscroll-behavior-y:contain;margin-top:12px}
-.music-panel{flex:0 0 25dvh;min-height:176px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);gap:6px;align-items:center;padding:12px 28px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
+.music-panel{position:relative;flex:0 0 25dvh;min-height:176px;display:grid;grid-template-columns:repeat(2,clamp(44px,4vw,64px)) minmax(0,1fr) repeat(2,clamp(44px,4vw,64px));grid-template-rows:auto auto minmax(0,1fr);gap:6px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
+.music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:3}
+.music-meta{grid-row:1}.music-timeline{grid-row:2}.lyric-lines{grid-row:3}
+.music-control{grid-row:1/4;align-self:stretch;width:100%;padding:0;border:0;border-radius:12px;color:#666871;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
+.music-control svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+#music-previous{grid-column:1}#music-replay{grid-column:2}#music-toggle{grid-column:4;color:var(--ink)}#music-next{grid-column:5}
+#music-toggle svg{width:30px;height:30px}.music-control:hover:not(:disabled){background:#f0f1f4;color:var(--ink)}.music-control:active:not(:disabled){background:#e5e7ec}.music-control:disabled{opacity:.25;cursor:default}
+#music-toggle[data-playing="true"] .play-icon,#music-toggle[data-playing="false"] .pause-icon{display:none}
+#music-control-result{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);margin:0;padding:3px 10px;border-radius:8px;background:#fff;font-size:11px;color:var(--muted);text-align:center;pointer-events:none}#music-control-result:empty{display:none}
 /* 歌曲信息在顶部同一行居中，歌词使用整张面板宽度，不再为左侧信息留栏。 */
 .music-meta{min-width:0;display:flex;justify-content:center;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden}
 #music-title{min-width:0;font-size:16px;font-weight:600;line-height:1.5;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -130,6 +138,8 @@ body{max-width:none;padding:0}
 @media(prefers-reduced-motion:reduce){#lyric-track.smooth,#lyric-track.smooth .lyric-line{transition:none}}
 @media(max-width:700px){.music-panel{padding:12px 18px}.music-meta{gap:8px}#music-title{font-size:14px}.lyric-lines{--lyric-step:32px}.lyric-line{font-size:22px}}
 @media(max-height:500px){.home-page{height:auto;min-height:100dvh;overflow:visible}.home-page main{flex:none;height:300px}.music-panel{min-height:170px}}
+/* 手机宽度不足以容纳两侧操作时，按钮放到下方，仍保留 44px 点击区域。 */
+@media(max-width:540px){.music-panel{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto auto minmax(0,1fr) 44px;min-height:230px}.music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:1/-1}.music-control{grid-row:4}#music-toggle{grid-column:3}#music-next{grid-column:4}#music-control-result{bottom:50px}}
 
 /* 常亮中断使用短暂浮层，不占页面布局，也不遮挡操作。 */
 .wake-notice{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px);transform:translateX(-50%);z-index:1000;max-width:calc(100vw - 32px);padding:12px 20px;border-radius:12px;background:#202124;color:#fff;box-shadow:0 8px 28px #0003;font-size:14px;line-height:1.5;text-align:center;pointer-events:none}
