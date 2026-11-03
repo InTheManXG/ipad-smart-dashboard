@@ -70,11 +70,13 @@ main{grid-template-columns:minmax(0,1fr)}
 #attention-dialog[open] .attention-beacon::after{animation:attention-ring 3s ease-out infinite}
 /* 装饰箭头提示整卡可跳转；状态点不承担唯一的状态表达。 */
 .attention-card::after{content:"↗";position:absolute;top:25px;right:28px;color:var(--notice-accent);font-size:28px;line-height:1;opacity:.65;pointer-events:none}
-#attention-dialog h2{display:inline-flex;align-items:center;gap:10px;padding:8px 15px;border-radius:999px;background:#edf3ff;font-size:18px;font-weight:550;line-height:1.4;letter-spacing:0;margin:0 0 28px;color:var(--notice-accent);outline:none}
+#attention-dialog h2{display:inline-grid;grid-template-columns:9px auto 9px;align-items:center;gap:10px;padding:8px 15px;border-radius:999px;background:#edf3ff;font-size:18px;font-weight:550;line-height:1.4;letter-spacing:0;margin:0 0 28px;color:var(--notice-accent);outline:none}
 #attention-dialog h2::before{content:"";width:9px;height:9px;flex:none;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px #4b7de514}
+/* 右侧等宽占位抵消状态点，让胶囊文字始终位于几何中心。 */
+#attention-dialog h2::after{content:"";width:9px}
 #attention-dialog[open] h2::before{animation:attention-breathe 1.8s ease-in-out infinite}
 @keyframes attention-breathe{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
-#attention-title{font-size:clamp(32px,4.75vw,42px);font-weight:700;line-height:1.55;letter-spacing:0;color:var(--notice-accent);margin:0;overflow-wrap:anywhere}
+#attention-title{font-size:clamp(32px,4.75vw,42px);font-weight:700;line-height:1.55;letter-spacing:0;color:var(--ink);margin:0;overflow-wrap:anywhere}
 #attention-dialog .attention-caption{font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:16px 0 0}
 #attention-dialog #open-result{font-size:14px;color:#995020;margin:16px 0 0}
 /* 没有请求反馈时不占位，避免标题下方出现无意义留白。 */
