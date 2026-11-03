@@ -71,17 +71,26 @@ async function refreshMusic() {
   const token = sessionStorage.getItem('display-token');
   if (!token) { musicSnapshot = null; renderMusic(); return; }
   musicBusy = true;
+  const started = performance.now();
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch('./api/music', {headers:{'X-Display-Token':token}, cache:'no-store', signal:controller.signal});
     if (!response.ok) throw new Error('music unavailable');
-    musicSnapshot = await response.json(); musicReceived = performance.now();
+    musicSnapshot = await response.json();
+    const received = performance.now();
+    // 服务器进度在响应发出前计算；用半个往返耗时估计回程延迟，不依赖设备时钟一致。
+    musicReceived = musicSnapshot.state === 'ready' && musicSnapshot.playing ? (started + received) / 2 : received;
   } catch {
     musicSnapshot = null;
   } finally { clearTimeout(timer); musicBusy = false; renderMusic(); }
 }
 
 setInterval(refreshMusic, 1000);
-setInterval(() => { if (!document.hidden) renderMusic(); }, 200);
+function animateMusic() {
+  // 按显示帧推进，避免 200ms 定时器把跨秒显示继续拖后；隐藏页面交给浏览器暂停。
+  if (!document.hidden) renderMusic();
+  requestAnimationFrame(animateMusic);
+}
+requestAnimationFrame(animateMusic);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshMusic(); });
 refreshMusic();
