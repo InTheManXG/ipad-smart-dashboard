@@ -157,6 +157,10 @@ function notifyWakeInterrupted() {
   wakeNoticeTimer = setTimeout(dismissWakeNotice, 4000);
 }
 function showWakeState() {
+  // 仅在用户要求常亮但没有有效锁时提示；主动关闭不算故障。
+  const unavailable = wantWake && !(wakeLock && !wakeLock.released);
+  $('more-settings').setAttribute('data-wake-warning', String(unavailable));
+  $('more-settings').setAttribute('aria-label', unavailable ? '更多设置，常亮未生效' : '更多设置');
   $('wake').textContent = wakeLock && !wakeLock.released ? '常亮已开启' : wantWake ? '常亮待恢复' : '开启常亮';
   $('wake').setAttribute('aria-pressed', String(wantWake));
 }
@@ -164,6 +168,7 @@ async function keepAwake() {
   if (wakeLock?.released) wakeLock = null;
   if (!wantWake || document.hidden || wakeLock || wakePending) return;
   if (!('wakeLock' in navigator)) {
+    showWakeState();
     $('wake').textContent = '常亮不可用';
     $('footer-note').textContent = '浏览器不支持常亮，请在 iPad 设置中将自动锁定设为永不';
     return;

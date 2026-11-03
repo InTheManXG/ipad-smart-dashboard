@@ -129,3 +129,6 @@ body{max-width:none;padding:0}
 
 /* 常亮中断使用短暂浮层，不占页面布局，也不遮挡操作。 */
 .wake-notice{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px);transform:translateX(-50%);z-index:1000;max-width:calc(100vw - 32px);padding:12px 20px;border-radius:12px;background:#202124;color:#fff;box-shadow:0 8px 28px #0003;font-size:14px;line-height:1.5;text-align:center;pointer-events:none}
+
+/* 常亮未生效的红点持续到恢复或主动关闭，与短暂浮动提醒互补。 */
+.more-button{position:relative}.more-button[data-wake-warning="true"]::after{content:"";position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--error);box-shadow:0 0 0 2px var(--bg)}

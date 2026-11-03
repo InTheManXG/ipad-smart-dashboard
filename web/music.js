@@ -47,7 +47,7 @@ function renderLyrics(snapshot, frame) {
 
 function renderMusic() {
   const frame = lyricFrame(musicSnapshot, (performance.now() - musicReceived) / 1000);
-  const values = {'music-title':frame.title, 'music-artist':frame.artist, 'music-state':frame.state};
+  const values = {'music-title':frame.title, 'music-artist':frame.artist};
   for (const [id, value] of Object.entries(values)) {
     const node = musicNode(id);
     // 歌词来自外部服务，只写文本；不重复改写同一句，减少屏幕闪动。
