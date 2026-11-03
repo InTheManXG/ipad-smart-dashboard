@@ -57,7 +57,7 @@ main{grid-template-columns:minmax(0,1fr)}
 @media(max-width:1000px){header{flex-wrap:wrap;gap:16px}.header-quota{order:3;flex-basis:100%;max-width:none;padding-left:0}.header-quota #windows{margin-top:0;flex-wrap:nowrap}.top{margin-left:auto}}
 
 /* 延续看板浅色与蓝色状态语义，用居中图标和柔和光环强调待处理。 */
-#attention-dialog{--notice-accent:var(--waiting);width:min(620px,calc(100vw - 36px));max-height:calc(100dvh - 36px);padding:28px 40px 22px;border:1px solid #dde5f2;border-radius:26px;background:var(--panel);color:var(--ink);box-shadow:0 28px 90px #17253c33;overflow:auto;text-align:center}
+#attention-dialog{cursor:pointer;--notice-accent:var(--waiting);width:min(620px,calc(100vw - 36px));max-height:calc(100dvh - 36px);padding:28px 40px 22px;border:1px solid #dde5f2;border-radius:26px;background:var(--panel);color:var(--ink);box-shadow:0 28px 90px #17253c33;overflow:auto;text-align:center}
 #attention-dialog::backdrop{background:#202b405c;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 #attention-dialog[open]{animation:attention-enter .4s cubic-bezier(.16,1,.3,1) both}
 .attention-brand{color:var(--muted);font-size:16px;font-weight:600;letter-spacing:.2px;line-height:1.5}

@@ -113,7 +113,16 @@ function updateAttention(next, reset = true) {
 function dismissAttention() { dismissedThread = attention?.threadId; $('attention-dialog').close(); }
 $('attention-dismiss').onclick = dismissAttention;
 $('attention-dialog').addEventListener('cancel', () => { dismissedThread = attention?.threadId; });
-$('open-codex').onclick = () => attention && openConversation(attention.threadId);
+// 整张提醒都可打开对话；稍后处理和弹窗外遮罩不触发跳转。
+$('attention-dialog').onclick = event => {
+  if (event.target.closest('#attention-dismiss')) return;
+  const dialog = $('attention-dialog');
+  if (event.target === dialog) {
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
+  }
+  if (attention) return openConversation(attention.threadId);
+};
 async function openConversation(threadId) {
   if (!threadId || opening) return;
   opening = true; $('open-codex').disabled = true;
