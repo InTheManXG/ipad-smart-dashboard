@@ -21,6 +21,11 @@ function taskOverview(data) {
   const state = ['waiting','error','running','done'].find(state => counts[state]) || 'unknown';
   return {tasks, counts, state};
 }
+function taskDuration(seconds) {
+  if (!Number.isInteger(seconds) || seconds < 0) return '';
+  const h = Math.floor(seconds / 3600), m = Math.floor(seconds % 3600 / 60), sec = seconds % 60;
+  return (h ? `${h}:` : '') + `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
 function render(data) {
   updateAttention(data.attention);
   const {tasks, counts} = taskOverview(data);
@@ -40,6 +45,12 @@ function render(data) {
     row.append(dot, element('div','task-title',task.title));
     // 未读标记排在当前状态左侧，让各行的运行状态保持右侧对齐。
     if (task.unread === true && task.state !== 'done') row.append(element('span','unread-mark','完成未读'));
+    const duration = task.state === 'running' ? taskDuration(task.elapsedSeconds) : '';
+    if (duration) {
+      const timer = element('span','badge',duration);
+      timer.setAttribute('aria-label', `本轮运行时长 ${duration}`);
+      row.append(timer);
+    }
     row.append(element('span','badge',task.state === 'done' ? '完成未读' : labels[task.state] || '未知'));
     return row;
   }));

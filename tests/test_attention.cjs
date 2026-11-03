@@ -50,6 +50,10 @@ assert.equal(row.children.at(-1).className,'badge');
 run("render({conversationsAvailable:true,conversations:[{title:'已读仍运行',threadId:'a',state:'running',unread:false}],quotaAvailable:false})");
 assert.ok(!get('task-list').children[0].children.some(node => node.className === 'unread-mark'));
 
+run("render({conversationsAvailable:true,conversations:[{title:'计时',threadId:'a',state:'running',elapsedSeconds:125}],quotaAvailable:false})");
+assert.equal(get('task-list').children[0].children.at(-2).textContent,'02:05');
+assert.equal(get('task-list').children[0].children.at(-1).textContent,'正在进行');
+
 // 验证连接成功、失败及恢复时颜色状态跟随真实刷新结果变化。
 Object.assign(context, {AbortController, setTimeout, clearTimeout});
 context.document.hidden = false;
@@ -69,3 +73,8 @@ context.document.hidden = false;
   await run('refresh()');
   assert.equal(get('connection').className,'disconnected');
 })().catch(error => {console.error(error);process.exitCode=1;});
+
+assert.equal(run('taskDuration(125)'), '02:05');
+assert.equal(run('taskDuration(3601)'), '1:00:01');
+assert.equal(run('taskDuration(undefined)'), '');
+assert.equal(run('taskDuration(-1)'), '');
