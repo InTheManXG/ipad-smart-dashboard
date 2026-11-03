@@ -27,8 +27,14 @@ function dailyRemaining(data) {
   if (!Number.isFinite(data.dailyLimit) || data.dailyLimit <= 0 || !Number.isFinite(data.dailyUsed)) return null;
   return Math.max(0, Math.min(100, (1 - data.dailyUsed / data.dailyLimit) * 100));
 }
+function keyHeading(item) {
+  const heading = node('h3','');
+  heading.append(node('span','',item.name));
+  if (item.maskedKey) heading.append(node('span','relay-key-hint',item.maskedKey));
+  return heading;
+}
 function renderUsage(card, item, data) {
-  card.replaceChildren(node('h3','',item.name));
+  card.replaceChildren(keyHeading(item));
   if (data.error) { card.append(node('p','relay-error',data.error)); return; }
   const value = node('div','window-value');
   value.append(node('strong','relay-value',money(data.remaining, data.unit)), node('span','','剩余'));
@@ -56,7 +62,7 @@ async function refreshRelay(force = false) {
     $('relay-message').textContent = keys.length ? '' : '尚未配置 Key';
     const cards = keys.map(item => {
       const card = node('article','relay-card');
-      card.append(node('h3','',item.name), node('p','relay-caption','正在查询…'));
+      card.append(keyHeading(item), node('p','relay-caption','正在查询…'));
       return card;
     });
     $('relay-cards').replaceChildren(...cards);

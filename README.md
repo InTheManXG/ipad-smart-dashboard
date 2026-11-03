@@ -80,7 +80,7 @@ iPad Safari 中选择“分享 → 添加到主屏幕”即可独立打开。首
 
 每分钟读取额度，服务端缓存 60 秒；右上角“更新”立即重新查询并绕过缓存，查询期间按钮显示“更新中…”且禁用；查询失败显示错误而非保留过期金额。请求仅发送到固定的 Sub2API usage 接口，不跟随重定向。沿用看板访问口令鉴权，任何持有此口令的人都能管理配置；隐藏切页只是界面呈现方式，不构成额外权限隔离。
 
-Key 不回传浏览器、不写入浏览器存储或日志。服务端保存在权限为 600 的 `keys.json` 中，以原子替换保存；这是服务端明文私有文件，须保护主机和备份。本地位于被 Git 忽略的 `.relay-data/`，OrbStack 使用独立可写挂载，其余应用目录仍只读。服务器在原 1Panel 部署目录 `/opt/1panel/docker/compose/codex-ipad-dashboard` 下挂载 `./relay-data`，应用目录保持只读。
+完整 Key 不回传浏览器、不写入浏览器存储或日志；备注名旁显示前 2 位和后 4 位，中间以星号遮挡，长度不超过 6 位时全部遮挡。服务端保存在权限为 600 的 `keys.json` 中，以原子替换保存；这是服务端明文私有文件，须保护主机和备份。本地位于被 Git 忽略的 `.relay-data/`，OrbStack 使用独立可写挂载，其余应用目录仍只读。服务器在原 1Panel 部署目录 `/opt/1panel/docker/compose/codex-ipad-dashboard` 下挂载 `./relay-data`，应用目录保持只读。
 
 新增验证：`python3 -m unittest discover -s tests -v`、`node --check web/relay.js`。iPad 真机滑动和长时间刷新仍需实际设备验收。
 

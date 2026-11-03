@@ -27,6 +27,8 @@ class RelayTests(unittest.TestCase):
         items = relay.public_keys()
         self.assertEqual(len(items), 2)
         self.assertNotIn('secret', json.dumps(items))
+        self.assertEqual(items[0]['maskedKey'], 'te****cret')
+        self.assertNotIn('key', items[0])
         identity = items[0]['id']
         relay.change_key({'action': 'save', 'id': identity, 'name': '改名', 'key': ''})
         self.assertEqual(relay.read_keys()[0]['key'], 'test-secret')
@@ -37,6 +39,11 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(len(relay.public_keys()), 2)
         relay.change_key({'action': 'delete', 'id': identity})
         self.assertEqual(len(relay.public_keys()), 1)
+
+    def test_short_keys_are_fully_masked(self):
+        for key in ['a', 'abcdef']:
+            relay.change_key({'action': 'save', 'name': '短 Key', 'key': key})
+        self.assertTrue(all(item['maskedKey'] == '****' for item in relay.public_keys()))
 
     def test_usage_whitelist_cache_and_failure(self):
         relay.change_key({'action': 'save', 'name': '公司', 'key': 'test-secret'})

@@ -28,7 +28,10 @@ def read_keys():
 
 def public_keys():
     with LOCK:
-        return [{'id': item['id'], 'name': item['name']} for item in read_keys()]
+        # 短 Key 不展示首尾，避免两段拼接后泄露完整密钥。
+        return [{'id': item['id'], 'name': item['name'],
+                 'maskedKey': item['key'][:2] + '****' + item['key'][-4:] if len(item['key']) > 6 else '****'}
+                for item in read_keys()]
 
 
 def change_key(value):
