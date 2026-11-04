@@ -53,7 +53,7 @@ assert.equal(run("taskOverview({conversations:[{state:'running',unread:false}]})
 
 // 同一行必须同时保留当前状态和独立未读标签，不能仅修复统计。
 context.document.createElement = () => ({style:{},children:[],setAttribute(){},append(...items){this.children.push(...items);}});
-for (const id of ['task-list','windows','console-tasks']) {
+for (const id of ['task-list','windows']) {
   get(id).replaceChildren = function(...items){this.children=items;};
   get(id).append = function(...items){this.children.push(...items);};
 }
@@ -79,29 +79,10 @@ context.document.hidden = false;
   context.fetch = async () => ({ok:true,json:async()=>({servedAt:Date.now()/1000,conversations:[],conversationsAvailable:true})});
   await run('refresh()');
   assert.equal(get('connection').className,'connected');
-  context.fetch = async () => ({ok:true,json:async()=>({servedAt:Date.now()/1000,conversationsAvailable:true,conversationsTotal:8,conversations:[
-    {threadId:'wait',title:'等待确认',state:'waiting'},
-    {threadId:'err',title:'出现错误',state:'error'},
-    {threadId:'done',title:'完成未读',state:'done'},
-    {title:'缺少 ID',state:'waiting'}
-  ]})});
-  await run('refresh()');
-  assert.equal(get('console-tasks').children.length,3);
-  assert.equal(get('console-count').textContent,'3 项');
-  assert.match(get('console-note').textContent,/仅汇总/);
-  assert.equal(get('console-tasks').children[0].disabled,false);
-  assert.equal(get('console-tasks').children[2].disabled,true);
-  run('var consoleOpened = []; var savedOpen = openConversation; openConversation = id => consoleOpened.push(id)');
-  get('console-tasks').children[0].onclick();
-  assert.equal(run('consoleOpened[0]'),'wait');
-  run('openConversation = savedOpen');
   const success = context.fetch;
   context.fetch = async () => {throw new Error('offline');};
   await run('refresh()');
   assert.equal(get('connection').className,'disconnected');
-  assert.equal(get('console-connection').className,'disconnected');
-  assert.match(get('console-note').textContent,/旧数据/);
-  assert.ok(get('console-tasks').children.every(row => row.disabled));
   context.fetch = success;
   await run('refresh()');
   assert.equal(get('connection').className,'connected');

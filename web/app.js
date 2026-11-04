@@ -8,7 +8,6 @@ function formatPlan(plan) {
 }
 let token = sessionStorage.getItem('display-token') || '';
 let busy = false, lastSuccess = 0, wakeLock = null, wantWake = true;
-let consoleData = null;
 function element(tag, className, text) {
   const node = document.createElement(tag); node.className = className;
   if (text !== undefined) node.textContent = text; // 对话标题始终当作文本，不能注入 HTML。
@@ -28,7 +27,6 @@ function taskDuration(seconds) {
   return (h ? `${h}:` : '') + `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 function render(data) {
-  consoleData = data;
   updateAttention(data.attention);
   const {tasks, counts} = taskOverview(data);
   const total = data.conversationsTotal ?? tasks.length;
@@ -77,12 +75,10 @@ function render(data) {
   }
   if (!$('windows').children.length) $('windows').append(element('p','empty','当前没有可用的额度窗口'));
 }
-async function refresh(manual = false) {
+async function refresh() {
   if (busy || document.hidden) return;
-  if (!token) { $('connection').className = 'disconnected'; $('connection').textContent = '尚未连接'; $('settings').showModal(); renderConsole(false); return; }
+  if (!token) { $('connection').className = 'disconnected'; $('connection').textContent = '尚未连接'; $('settings').showModal(); return; }
   busy = true;
-  // 自动轮询不反复改动按钮文字，手动刷新才显示操作反馈。
-  if (manual) { $('console-refresh').disabled = true; $('console-refresh').textContent = '刷新中…'; }
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 7000);
   try {
     const response = await fetch('./api/status',{headers:{'X-Display-Token':token},cache:'no-store',signal:controller.signal});
@@ -91,38 +87,13 @@ async function refresh(manual = false) {
     const data = await response.json();
     if (!Number.isFinite(data.servedAt) || Date.now()/1000 - data.servedAt > 20) throw new Error('状态数据已过期');
     render(data); lastSuccess = Date.now(); $('connection').className = 'connected'; $('connection').textContent = '● 已连接';
-    renderConsole(true);
   } catch (error) {
     // 移除总体状态栏后，连接错误仍需可见，避免把旧列表误认为实时数据。
     updateAttention(null, false);
     $('connection').className = 'disconnected';
     $('connection').textContent = error.name === 'AbortError' ? '连接超时，正在重试' : error.message;
     $('summary').textContent = lastSuccess ? '下方保留上次数据，并非当前状态' : '请检查 Mac 和网络连接';
-    renderConsole(false);
-  } finally { clearTimeout(timer); busy = false; $('console-refresh').disabled = false; $('console-refresh').textContent = '刷新状态'; }
-}
-// 只聚合上游明确标记的等待和错误，不把完成未读当作必须处理。
-function renderConsole(online) {
-  const available = online && consoleData?.conversationsAvailable;
-  const tasks = taskOverview(consoleData || {}).tasks.filter(task => ['waiting','error'].includes(task.state));
-  $('console-connection').textContent = $('connection').textContent;
-  $('console-connection').className = online ? 'connected' : 'disconnected';
-  $('console-updated').textContent = lastSuccess ? `最近成功同步 ${new Date(lastSuccess).toLocaleTimeString('zh-CN')}` : '尚未收到数据';
-  $('console-count').textContent = available ? `${tasks.length} 项` : '状态不可用';
-  $('console-note').textContent = !online ? '连接不可用，保留的旧数据仅供参考' : !available ? '暂时无法读取任务列表' : consoleData.conversationsTotal > consoleData.conversations.length ? '仅汇总当前返回的任务；点击后在 Mac 打开对话' : '点击事项，在 Mac 打开对应对话';
-  $('console-tasks').replaceChildren(...tasks.map(task => {
-    const row = element('button', `task ${task.state}`);
-    row.type = 'button'; row.disabled = !available || !task.threadId || opening;
-    row.setAttribute('aria-label', `在 Mac 打开：${task.title}`);
-    row.append(element('span','dot'), element('span','task-title',task.title), element('span','badge',labels[task.state]));
-    row.onclick = () => openConversation(task.threadId);
-    return row;
-  }));
-  if (!tasks.length) $('console-tasks').append(element('p','empty',available ? '暂无待处理事项' : '等待恢复连接或可用任务数据'));
-}
-function showOpenResult(message) {
-  $('footer-note').textContent = message;
-  $('console-result').textContent = message;
+  } finally { clearTimeout(timer); busy = false; }
 }
 let attention = null, dismissedThread = null, opening = false;
 function updateAttention(next, reset = true) {
@@ -151,25 +122,25 @@ async function openConversation(threadId) {
   if (!threadId || opening) return;
   opening = true; $('open-codex').disabled = true;
   $('open-result').textContent = '正在请求 Mac 打开对话…';
-  showOpenResult('正在请求 Mac 打开对话…');
+  $('footer-note').textContent = '正在请求 Mac 打开对话…';
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 18000);
   try {
     const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Display-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
     if (!response.ok || (await response.json()).ok !== true) throw new Error('open failed');
     // 状态可能已切换到另一对话，旧请求的回执不能关闭新提醒。
-    showOpenResult('已在 Mac 打开对话');
+    $('footer-note').textContent = '';
     if (attention?.threadId === threadId) {
       dismissedThread = threadId; $('attention-dialog').close();
     }
   } catch {
-    showOpenResult('未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试');
+    $('footer-note').textContent = '未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试';
     if (attention?.threadId === threadId) $('open-result').textContent = '未能确认打开，请检查 Mac 是否在线或任务是否仍待处理，然后重试。';
   } finally { clearTimeout(timeout); opening = false; $('open-codex').disabled = false; }
 }
 $('settings-form').addEventListener('submit',event => {event.preventDefault(); token = $('token').value.trim(); sessionStorage.setItem('display-token',token); $('token').value = ''; $('settings').close(); refresh();});
 $('cancel').onclick = () => $('settings').close();
 $('connect').onclick = () => $('settings').showModal();
-$('refresh').onclick = () => refresh(true);
+$('refresh').onclick = refresh;
 // 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。
 $('reload').onclick = () => location.reload();
 let wakePending = false, wakeFailed = false;
@@ -199,9 +170,6 @@ function showWakeState() {
   $('wake').setAttribute('aria-pressed', String(active));
   $('wake').disabled = wakePending;
   $('restore-wake').disabled = wakePending;
-  $('console-wake').textContent = $('wake').textContent;
-  $('console-wake').disabled = wakePending;
-  $('console-wake').setAttribute('aria-pressed', String(active));
   $('wake-heading').textContent = wakePending ? '正在恢复常亮…' : '点击任意位置恢复常亮';
 }
 async function keepAwake() {
@@ -243,11 +211,10 @@ $('wake').onclick = async () => {
 // 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
 setInterval(keepAwake, 5000);
 // 默认请求常亮；恢复前台或下一次用户操作时重试，避免后台重复申请。
-document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake, #console-wake')) return; keepAwake(); });
+document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake')) return; keepAwake(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); keepAwake(); } });
 function showFullscreenState() {
   $('fullscreen').textContent = document.fullscreenElement ? '退出全屏' : navigator.standalone ? '已全屏显示' : '全屏显示';
-  $('console-fullscreen').textContent = $('fullscreen').textContent;
 }
 $('fullscreen').onclick = async () => {
   try {
@@ -255,15 +222,11 @@ $('fullscreen').onclick = async () => {
     if (document.fullscreenElement) await document.exitFullscreen();
     else if (navigator.standalone) return;
     else if (document.documentElement.requestFullscreen && document.fullscreenEnabled) await document.documentElement.requestFullscreen();
-    else showOpenResult('请在 Safari 点“分享 → 添加到主屏幕”，再从主屏图标打开，即可隐藏地址栏');
-  } catch { showOpenResult('未能进入全屏，请使用 Safari“分享 → 添加到主屏幕”后打开'); }
+    else $('footer-note').textContent = '请在 Safari 点“分享 → 添加到主屏幕”，再从主屏图标打开，即可隐藏地址栏';
+  } catch { $('footer-note').textContent = '未能进入全屏，请使用 Safari“分享 → 添加到主屏幕”后打开'; }
   showFullscreenState();
 };
 document.addEventListener('fullscreenchange', showFullscreenState);
-// 复用首页操作与权限边界，控制台不另建控制接口。
-for (const action of ['refresh','connect','fullscreen','wake','reload']) {
-  $('console-' + action).onclick = () => $(action).onclick();
-}
 showFullscreenState(); showWakeState(); keepAwake();
 function clock() { $('clock').textContent = new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); }
 clock(); setInterval(clock,1000); setInterval(() => {if(token) refresh();},1000); refresh();
