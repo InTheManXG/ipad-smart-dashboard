@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const nodes = new Map(), events = {}, timers = new Map();
 const get = id => {
-  if (!nodes.has(id)) nodes.set(id,{textContent:'',attrs:{},setAttribute(key,value){this.attrs[key]=value;},addEventListener(){},showModal(){this.open=true;},close(){this.open=false;},remove(){nodes.delete('wake-notice');}});
+  if (!nodes.has(id)) nodes.set(id,{textContent:'',children:[],replaceChildren(...items){this.children=items;},append(...items){this.children.push(...items);},attrs:{},setAttribute(key,value){this.attrs[key]=value;},addEventListener(){},showModal(){this.open=true;},close(){this.open=false;},remove(){nodes.delete('wake-notice');}});
   return nodes.get(id);
 };
 let requests = 0, releases = 0, enter = 0, exit = 0, reloads = 0;

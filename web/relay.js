@@ -85,7 +85,23 @@ $('settings-form').addEventListener('submit', () => refreshRelay());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelay(); });
 setInterval(refreshRelay, 60000);
 refreshRelay();
-// 刷新时浏览器可能恢复旧滚动位置，在页面恢复后重新应用直达锚点。
-window.addEventListener('pageshow', () => {
-  if (location.hash === '#company') requestAnimationFrame(() => $('company').scrollIntoView({block:'start', inline:'start'}));
-});
+
+// 三页导航共用现有入口，避免不同后端的静态资源白名单出现差异。
+const pages = document.querySelector('.pages');
+const pageIds = ['console', 'home', 'company'];
+let currentPage = 1;
+function showPage(id) {
+  currentPage = Math.max(0, pageIds.indexOf(id));
+  pages.scrollLeft = currentPage * pages.clientWidth;
+}
+function restorePage() {
+  const id = location.hash.slice(1);
+  showPage(pageIds.includes(id) ? id : 'home');
+}
+// 首页位于中间，加载和恢复页面时必须明确定位，不能默认露出左侧控制台。
+restorePage();
+window.addEventListener('pageshow', () => requestAnimationFrame(restorePage));
+window.addEventListener('hashchange', restorePage);
+pages.addEventListener('scroll', () => { currentPage = Math.round(pages.scrollLeft / pages.clientWidth); }, {passive:true});
+// 旋转屏幕后按页定位，避免停留在两页之间。
+window.addEventListener('resize', () => showPage(pageIds[currentPage] || 'home'));
