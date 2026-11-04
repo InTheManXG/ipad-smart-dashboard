@@ -40,6 +40,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]
         }
+        status["lanAddresses"] = lanAddresses()
         return status
     }
     if action == "keys" { return ["keys": try remoteKeys()] }

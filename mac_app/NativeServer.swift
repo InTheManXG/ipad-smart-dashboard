@@ -98,11 +98,11 @@ final class LocalHTTPServer {
     var isRunning: Bool { queue.sync { running } }
     var failed: Bool { queue.sync { failure != nil } }
     var errorDescription: String? { queue.sync { failure } }
-    init(port: UInt16, handler: @escaping (HTTPMessage) -> (Int, String, Data)) throws {
+    init(port: UInt16, host: String = "127.0.0.1", handler: @escaping (HTTPMessage) -> (Int, String, Data)) throws {
         self.handler = handler
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!)
         // 本地端点已同时限定地址和端口，不能再通过 on 重复指定，否则系统返回 EINVAL。
         listener = try NWListener(using: parameters)
     }
@@ -230,7 +230,7 @@ final class NativeBackend {
             music.setEnabled(config["musicEnabled"] as? Bool ?? true)
             if server?.failed == true { listenerError = server?.errorDescription ?? ""; server?.stop(); server = nil }
             if config["dashboardEnabled"] as? Bool != false && server == nil {
-                server = try LocalHTTPServer(port: 18088, handler: handle); server?.start()
+                server = try LocalHTTPServer(port: 18088, host: "0.0.0.0", handler: handle); server?.start()
             } else if config["dashboardEnabled"] as? Bool == false && server != nil { server?.stop(); server = nil }
             // 常驻线程没有自动释放池边界，避免每轮 Foundation 解析临时对象累积。
             let snapshot = autoreleasepool { collector.snapshot() }

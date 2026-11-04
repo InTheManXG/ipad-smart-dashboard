@@ -2,6 +2,7 @@ import Foundation
 import Security
 import CryptoKit
 import Darwin
+import SystemConfiguration
 
 typealias JSONObject = [String: Any]
 struct ControlError: Error { let message: String; init(_ message: String) { self.message = message } }
@@ -201,4 +202,39 @@ func installService(start: Bool) throws {
         // 已加载但已退出的服务也须启动；不带 -k，避免中断正在运行的音乐指令。
         _ = try launch(["kickstart", NativePaths.domain + "/" + NativePaths.label])
     }
+}
+
+// 只展示实际在线的 Wi-Fi/以太网 IPv4，过滤回环、VPN 与虚拟网桥。
+func lanAddress(_ address: String, interface: String, type: String, active: Bool) -> JSONObject? {
+    guard active, ["IEEE80211", "Ethernet"].contains(type) else { return nil }
+    let parts = address.split(separator: ".").compactMap { Int($0) }
+    guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }),
+          parts[0] != 0, parts[0] != 127, parts[0] < 224,
+          !(parts[0] == 169 && parts[1] == 254) else { return nil }
+    return ["id": interface + ":" + address, "label": (type == "IEEE80211" ? "Wi-Fi" : "网线") + " · " + interface,
+            "url": "http://\(address):18088"]
+}
+func lanAddresses() -> [JSONObject] {
+    let hardware = SCNetworkInterfaceCopyAll() as? [SCNetworkInterface] ?? []
+    var types = [String: String]()
+    for item in hardware {
+        if let name = SCNetworkInterfaceGetBSDName(item), let type = SCNetworkInterfaceGetInterfaceType(item) {
+            types[name as String] = type as String
+        }
+    }
+    var head: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&head) == 0 else { return [] }
+    defer { freeifaddrs(head) }
+    var cursor = head, result = [JSONObject]()
+    while let item = cursor {
+        defer { cursor = item.pointee.ifa_next }
+        let entry = item.pointee
+        guard let address = entry.ifa_addr, address.pointee.sa_family == UInt8(AF_INET) else { continue }
+        let name = String(cString: entry.ifa_name)
+        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        guard getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
+        let active = entry.ifa_flags & UInt32(IFF_UP | IFF_RUNNING) == UInt32(IFF_UP | IFF_RUNNING)
+        if let value = lanAddress(String(cString: host), interface: name, type: types[name] ?? "", active: active) { result.append(value) }
+    }
+    return result.sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") }
 }

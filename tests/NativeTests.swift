@@ -21,6 +21,10 @@ import SQLite3
         }
         try check(try endpoint("http://127.0.0.1:18088").port == 18088, "本机地址可用")
         try check(number(true) == nil && number(Double.infinity) == nil && number(1) == 1, "数字边界")
+        try check(lanAddress("192.168.1.2", interface: "en0", type: "IEEE80211", active: true)?["label"] as? String == "Wi-Fi · en0", "Wi-Fi 地址标签")
+        try check(lanAddress("10.0.0.2", interface: "en7", type: "Ethernet", active: true)?["url"] as? String == "http://10.0.0.2:18088", "网线地址与端口")
+        try check(lanAddress("127.0.0.1", interface: "lo0", type: "Ethernet", active: true) == nil && lanAddress("169.254.1.2", interface: "en0", type: "Ethernet", active: true) == nil, "过滤回环与自分配地址")
+        try check(lanAddress("10.0.0.2", interface: "utun0", type: "PPP", active: true) == nil && lanAddress("10.0.0.3", interface: "en0", type: "Ethernet", active: false) == nil, "过滤虚拟与离线接口")
         let lines = parseLyrics("[offset:1000]\n[00:02.50][00:04.000]你好\n[00:05.00]\n[00:04.0]世界")
         try check(lines.count == 3 && number(lines[0]["time"]) == 1.5 && lines[1]["text"] as? String == "你好 / 世界" && lines[2]["text"] as? String == "", "歌词多时间标签与间奏、偏移")
         try check(normalizeSong("Ａ B_Ｃ！") == "abc", "兼容字符规范化")
@@ -90,7 +94,7 @@ import SQLite3
         try check(backend.handle(HTTPMessage(method: "GET", path: "/.display-token", headers: [:], body: Data())).0 == 404, "私有文件不可访问")
         try check(backend.music.control(["action": "shell", "trackId": "bad"])["ok"] as? Bool == false, "未知媒体命令不可执行")
         server.stop()
-        let fixed = try LocalHTTPServer(port: port.rawValue, handler: backend.handle); fixed.start(); defer { fixed.stop() }
+        let fixed = try LocalHTTPServer(port: port.rawValue, host: "0.0.0.0", handler: backend.handle); fixed.start(); defer { fixed.stop() }
         let fixedDeadline = Date().addingTimeInterval(5)
         while !fixed.isRunning && Date() < fixedDeadline { Thread.sleep(forTimeInterval: 0.01) }
         try check(fixed.isRunning && fixed.listener.port == port, "固定监听端口不能被改成随机端口")

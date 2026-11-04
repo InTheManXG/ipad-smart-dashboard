@@ -4,6 +4,12 @@ import AppKit
 // SDK 同时导出同名宏；别名明确使用包装器，避免依赖 Xcode 的宏插件。
 typealias ViewState<Value> = SwiftUI.State<Value>
 
+struct LANAddress: Identifiable {
+    let id: String
+    let label: String
+    let url: String
+}
+
 struct ManagedKey: Identifiable {
     let id: String
     let name: String
@@ -17,6 +23,7 @@ struct ManagedKey: Identifiable {
     @Published var music = "正在检查…"
     @Published var musicLogin = false
     @Published var appLogin = false
+    @Published var lanAddresses: [LANAddress] = []
     @Published var keys: [ManagedKey] = []
     @Published var busy = false
     @Published var message = ""
@@ -64,6 +71,10 @@ struct ManagedKey: Identifiable {
             self.music = result["music"] as? String ?? "未知"
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
+            self.lanAddresses = (result["lanAddresses"] as? [[String: Any]] ?? []).compactMap {
+                guard let id = $0["id"] as? String, let label = $0["label"] as? String, let url = $0["url"] as? String else { return nil }
+                return LANAddress(id: id, label: label, url: url)
+            }
             self.connectedURL = result["url"] as? String ?? ""
             if initial { self.url = self.connectedURL }
         }
@@ -192,26 +203,56 @@ struct ControlView: View {
     }
 
     var connection: some View {
-        GroupBox("管理目标") {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Button("线上看板") { model.url = "https://ipad.iamxg.com" }
-                    Button("本地看板") { model.url = "http://127.0.0.1:18088" }
-                }
-                TextField("看板地址", text: $model.url).textFieldStyle(.roundedBorder)
-                SecureField("访问口令（留空沿用已保存的口令）", text: $model.token).textFieldStyle(.roundedBorder)
-                Text("沿用迁入钥匙串的看板口令。保存前会验证连接；只设置此 App 的管理目标，不修改看板服务的口令或音乐同步地址。")
-                    .font(.callout).foregroundStyle(.secondary)
-                Button("验证并保存连接") {
-                    Task {
-                        await model.perform(["action": "connection-save", "url": model.url, "token": model.token], success: "连接验证通过，已保存") { _ in
-                            model.connectedURL = model.url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                            model.token = ""; model.keys = []; resetEditor()
-                        }
+        VStack(alignment: .leading, spacing: 18) {
+            ipadAddresses
+            GroupBox("管理目标") {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Button("线上看板") { model.url = "https://ipad.iamxg.com" }
+                        Button("本地看板") { model.url = "http://127.0.0.1:18088" }
                     }
-                }.buttonStyle(.borderedProminent)
-                Text("口令保存在 macOS 钥匙串中。iPad 首次连接仍需输入看板口令。")
+                    TextField("看板地址", text: $model.url).textFieldStyle(.roundedBorder)
+                    SecureField("访问口令（留空沿用已保存的口令）", text: $model.token).textFieldStyle(.roundedBorder)
+                    Text("沿用迁入钥匙串的看板口令。保存前会验证连接；只设置此 App 的管理目标，不修改看板服务的口令或音乐同步地址。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Button("验证并保存连接") {
+                        Task {
+                            await model.perform(["action": "connection-save", "url": model.url, "token": model.token], success: "连接验证通过，已保存") { _ in
+                                model.connectedURL = model.url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                                model.token = ""; model.keys = []; resetEditor()
+                            }
+                        }
+                    }.buttonStyle(.borderedProminent)
+                    Text("口令保存在 macOS 钥匙串中。iPad 首次连接仍需输入看板口令。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    var ipadAddresses: some View {
+        GroupBox("iPad 访问地址") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("线上：https://ipad.iamxg.com").textSelection(.enabled)
+                Text("局域网：iPad 与 Mac 需在可互通的同一网络，首次访问需输入看板口令。")
                     .font(.caption).foregroundStyle(.secondary)
+                ForEach(model.lanAddresses) { item in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.label).font(.caption).foregroundStyle(.secondary)
+                            Text(item.url).textSelection(.enabled)
+                        }
+                        Spacer()
+                        Button("复制") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(item.url, forType: .string)
+                        }.accessibilityLabel("复制 " + item.label + " 访问地址")
+                    }
+                }
+                if model.lanAddresses.isEmpty { Text("未检测到可用的 Wi-Fi 或网线 IPv4 地址").foregroundStyle(.secondary) }
+                Text("127.0.0.1 仅供这台 Mac 使用。局域网地址随网络变化，请刷新；Mac 需保持开机并运行看板服务。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("刷新网络地址") { Task { await model.refresh() } }
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
