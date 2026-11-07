@@ -394,6 +394,8 @@ struct ControlView: View {
                             Spacer(minLength: 4)
                             Button("编辑备注") { editingScreen = screen }
                                 .controlSize(.small)
+                            Button("踢下线", role: .destructive) { kickingScreen = screen }
+                                .controlSize(.small).foregroundStyle(.red)
                         }
                         Divider()
                         VStack(alignment: .leading, spacing: 6) {
@@ -401,10 +403,6 @@ struct ControlView: View {
                             Text(screen.ua.isEmpty ? "尚未上报，请在对应网页刷新。" : screen.ua)
                                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        }
-                        HStack {
-                            Spacer()
-                            Button("踢下线", role: .destructive) { kickingScreen = screen }.controlSize(.small)
                         }
                     }
                     .padding(16).frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)
