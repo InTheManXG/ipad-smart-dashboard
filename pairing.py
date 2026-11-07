@@ -74,6 +74,22 @@ def clean_keys(value):
     return result
 
 
+def clean_console(value):
+    if not isinstance(value, list) or len(value) > 50: raise Failure(400, 'invalid_console')
+    result, ids = [], set()
+    for item in value:
+        if not isinstance(item, dict): raise Failure(400, 'invalid_console')
+        ident = identity(item.get('id'))
+        if ident in ids or not isinstance(item.get('name'), str) or not 1 <= len(item['name']) <= 60:
+            raise Failure(400, 'invalid_console')
+        if item.get('kind') not in ('app', 'script', 'command') or item.get('state') not in ('idle', 'running', 'succeeded', 'failed'):
+            raise Failure(400, 'invalid_console')
+        ids.add(ident)
+        # 路径、命令、脚本输出均留在 Mac，只接收展示及执行状态字段。
+        result.append({key: item[key] for key in ('id', 'name', 'kind', 'state')})
+    return result
+
+
 class Store:
     def __init__(self, path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,11 +242,13 @@ class Store:
         raw_music = value['music'] if 'music' in value else (previous[2] if previous else {'state': 'offline'})
         song = music.validate(raw_music)
         keys = clean_keys(value['keys']) if 'keys' in value else (previous[3] if previous else [])
+        console = clean_console(value['console']) if 'console' in value else (previous[4] if previous else [])
+        console_at = time.monotonic() if 'console' in value else (previous[5] if previous else 0)
         acks = value.get('acks', [])
         if not isinstance(acks, list) or len(acks) > 8: raise Failure(400, 'invalid_acks')
         now = time.monotonic()
         with self.condition:
-            self.snapshots[ident] = (now, status, song, keys)
+            self.snapshots[ident] = (now, status, song, keys, console, console_at)
             # 清理掉线快照，长时间运行不随历史连接数增长。
             for key in list(self.snapshots):
                 if now-self.snapshots[key][0] > 60: del self.snapshots[key]
@@ -265,6 +283,9 @@ class Store:
             if kind == 'music':
                 if song.get('playing'): return song | {'position': min(song['duration'], song['position']+age)}
                 return song
+            if kind == 'console':
+                if time.monotonic()-item[5] > FRESH_TTL: raise Failure(503, 'device_offline')
+                return item[4]
             if kind == 'keys': return [{'id': k['id'], 'name': k['name']} for k in keys]
             record = next((k for k in keys if k['id'] == key), None)
             if not record: raise Failure(404, 'key_not_found')
@@ -284,6 +305,13 @@ class Store:
             song = self.read(ident, 'music')
             if song.get('state') != 'ready' or song.get('trackId') != value['trackId']: raise Failure(409, 'stale_target')
             payload = {'kind': 'music', 'action': value['action'], 'trackId': value['trackId']}
+        elif kind == 'console':
+            if set(value) != {'id'}: raise Failure(400, 'invalid_command')
+            target = identity(value.get('id'))
+            items = self.read(ident, 'console')
+            if not any(item['id'] == target for item in items): raise Failure(404, 'action_not_found')
+            if any(item['state'] == 'running' for item in items): raise Failure(409, 'device_busy')
+            payload = {'kind': 'console', 'id': target}
         elif kind == 'subscriptions':
             target = value.get('id')
             if target is not None and target not in ('paoluz', 'sc', 'just'):
@@ -361,6 +389,8 @@ def route(handler):
             if path == '/api/pairing/leave' and method == 'POST': result = store.leave(token)
             elif path == '/api/pairing/status' and method == 'GET': result = store.state(ident)
             elif path == '/api/status' and method == 'GET': result = store.read(ident, 'status')
+            elif path == '/api/console' and method == 'GET': result = store.read(ident, 'console')
+            elif path == '/api/console/run' and method == 'POST': result = store.command(ident, value, 'console', token)
             elif path == '/api/music' and method == 'GET': result = store.read(ident, 'music')
             elif path == '/api/relay/keys' and method == 'GET': result = store.read(ident, 'keys')
             elif path == '/api/relay/usage' and method == 'GET':

@@ -19,10 +19,10 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$root/.build/control.iconset" -o "$contents/Resources/AppIcon.icns"
 xcrun swiftc -parse-as-library -swift-version 5 -O -module-cache-path "$root/.build/swift-cache" -target arm64-apple-macosx13.0 \
-  "$root/mac_app/LocalPairing.swift" "$root/mac_app/NativeCore.swift" "$root/mac_app/CodexCollector.swift" "$root/mac_app/NativeMusic.swift" \
+  "$root/mac_app/ConsoleActions.swift" "$root/mac_app/LocalPairing.swift" "$root/mac_app/NativeCore.swift" "$root/mac_app/CodexCollector.swift" "$root/mac_app/NativeMusic.swift" \
   "$root/mac_app/NativeServer.swift" "$root/mac_app/NativeMain.swift" -o "$contents/MacOS/iPadService"
 xcrun swiftc -parse-as-library -swift-version 5 -O -module-cache-path "$root/.build/swift-cache" -target arm64-apple-macosx13.0 \
-  "$root/mac_app/UserAgent.swift" "$root/mac_app/App.swift" -o "$contents/MacOS/iPadControl"
+  "$root/mac_app/UserAgent.swift" "$root/mac_app/ConsoleSettings.swift" "$root/mac_app/App.swift" -o "$contents/MacOS/iPadControl"
 cat > "$contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

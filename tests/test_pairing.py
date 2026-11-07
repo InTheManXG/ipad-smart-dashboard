@@ -10,6 +10,38 @@ import pairing
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_console_private_fields_routing_and_freshness(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = pairing.Store(Path(folder) / 'pairing.sqlite')
+            ident = str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            token = store.complete({'code': store.code(ident)['code']})['token']
+            item = {'id': str(uuid.uuid4()), 'name': '测试脚本', 'kind': 'script', 'state': 'idle', 'target': '/private/test.sh', 'output': 'secret'}
+            store.exchange(ident, {'status': {}, 'console': [item]})
+            self.assertEqual(set(store.read(ident, 'console')[0]), {'id', 'name', 'kind', 'state'})
+            with self.assertRaises(pairing.Failure): store.command(ident, {'id': item['id'], 'target': 'injected'}, 'console', token)
+            with self.assertRaises(pairing.Failure): store.command(ident, {'id': str(uuid.uuid4())}, 'console', token)
+            result = []
+            worker = threading.Thread(target=lambda: result.append(store.command(ident, {'id': item['id']}, 'console', token, wait=2)))
+            worker.start()
+            deadline = time.monotonic() + 2
+            while not store.pending.get(ident) and time.monotonic() < deadline: time.sleep(.01)
+            self.assertEqual(store.exchange(ident, {'music': {'state': 'idle'}})['commands'], [])
+            commands = store.exchange(ident, {'status': {}})['commands']
+            self.assertEqual(commands[0]['id'], item['id'])
+            self.assertNotIn('target', commands[0])
+            self.assertEqual(store.exchange(ident, {'status': {}})['commands'], [], '在途指令不能重复下发')
+            store.exchange(ident, {'acks': [{'requestId': commands[0]['requestId'], 'ok': True}], 'console': [item | {'state': 'running'}]})
+            worker.join(3); self.assertEqual(result, [{'ok': True}])
+            with self.assertRaises(pairing.Failure): store.command(ident, {'id': item['id']}, 'console', token)
+            snapshot = store.snapshots[ident]
+            store.snapshots[ident] = snapshot[:5] + (time.monotonic() - 60,)
+            store.exchange(ident, {'music': {'state': 'idle'}})
+            with self.assertRaises(pairing.Failure): store.read(ident, 'console')
+            for invalid in [[item, item], [item | {'kind': 'arbitrary'}], [item | {'name': ''}]]:
+                with self.assertRaises(pairing.Failure): pairing.clean_console(invalid)
+            store.close()
+
     def test_kick_only_owned_screen_and_cancel_pending(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'pairing.sqlite'

@@ -94,6 +94,12 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         }
         return ["ok": true]
     }
+    if action == "console-list" { return ["items": try ConsoleActions().list()] }
+    if action == "console-save" { return try ConsoleActions().save(value) }
+    if action == "console-delete" {
+        guard let id = value["id"] as? String else { throw ControlError("项目标识不正确") }
+        try ConsoleActions().delete(id); return ["ok": true]
+    }
     if action == "keys" { return ["keys": try managedKeys(), "station": try LocalKeys().station() as Any? ?? NSNull()] }
     if action == "station-save" { return try LocalKeys().saveStation(value) }
     if action == "verify" {

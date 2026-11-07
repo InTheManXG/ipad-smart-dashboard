@@ -32,6 +32,7 @@ struct PairedScreen: Identifiable {
     @Published var paired = false
     @Published var publicScreens: [PairedScreen] = []
     @Published var localScreens: [PairedScreen] = []
+    @Published var consoleItems: [ConsoleItem] = []
     @Published var publicScreensError = ""
     @Published var extraCode = ""
     @Published var extraCodeExpiry: Double = 0
@@ -132,6 +133,16 @@ struct PairedScreen: Identifiable {
         }
     }
 
+    func loadConsole() async {
+        await perform(["action": "console-list"]) { result in
+            self.consoleItems = (result["items"] as? [[String: Any]] ?? []).compactMap {
+                guard let id = $0["id"] as? String, let name = $0["name"] as? String,
+                      let kind = $0["kind"] as? String, let target = $0["target"] as? String else { return nil }
+                return ConsoleItem(id: id, name: name, kind: kind, target: target, shell: $0["shell"] as? String ?? "/bin/zsh")
+            }
+        }
+    }
+
     func loadKeys() async {
         guard !busy else { return }
         keys = []; keysLoaded = false
@@ -168,6 +179,7 @@ struct ControlView: View {
             List(selection: $section) {
                 Label("服务管理", systemImage: "switch.2").tag("服务")
                 Label("连接与配对", systemImage: "network").tag("连接")
+                Label("快捷控制台", systemImage: "square.grid.2x2").tag("控制台")
                 Label("音乐同步", systemImage: "music.note").tag("音乐")
                 Label("中转站 Key", systemImage: "key.horizontal").tag("Key")
             }
@@ -178,9 +190,9 @@ struct ControlView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : section == "音乐" ? "音乐同步" : "中转站 Key")
+                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : section == "控制台" ? "快捷控制台" : section == "音乐" ? "音乐同步" : "中转站 Key")
                             .font(.largeTitle.bold())
-                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : section == "音乐" ? "控制看板的音乐与歌词显示" : "管理这台 Mac 的中转站 Key")
+                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : section == "控制台" ? "配置网页左侧的应用和脚本快捷入口" : section == "音乐" ? "控制看板的音乐与歌词显示" : "管理这台 Mac 的中转站 Key")
                             .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     Spacer()
@@ -190,6 +202,7 @@ struct ControlView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         if section == "服务" { services }
                         else if section == "连接" { connection }
+                        else if section == "控制台" { ConsoleSettings(model: model) }
                         else if section == "音乐" { musicSettings }
                         else { keySettings }
                     }.padding(2)
@@ -204,7 +217,7 @@ struct ControlView: View {
         .task { await model.refresh() }
         .onChange(of: section) { value in
             resetEditor()
-            Task { if value == "Key" { await model.loadKeys() } else if value == "连接" { await model.refreshConnections() } else { await model.refresh() } }
+            Task { if value == "Key" { await model.loadKeys() } else if value == "连接" { await model.refreshConnections() } else if value != "控制台" { await model.refresh() } }
         }
         .alert("删除 Key？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("取消", role: .cancel) { deleting = nil }

@@ -149,7 +149,31 @@ import SQLite3
         try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用时晚到采集不能重新启用")
         disabledMusic.setEnabled(true)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == true, "启用但离线仍保留音乐区域")
-        let backend = try NativeBackend(token: "test-only", screens: LocalScreens())
+        let console = ConsoleActions(path: root.appendingPathComponent("console.json"))
+        let script = root.appendingPathComponent("test script.sh")
+        try "sleep 0.2\nprintf done > result.txt\n".write(to: script, atomically: true, encoding: .utf8)
+        let saved = try console.save(["name": "测试脚本", "kind": "script", "target": script.path, "shell": "/bin/bash"])
+        let actionID = saved["id"] as! String
+        try check(try ConsoleActions(path: console.path).list().count == 1, "快捷项目跨进程持久化")
+        try check(try console.snapshot().first?["target"] == nil, "网页快照不包含脚本路径")
+        try rejects("拒绝未知解释器") { _ = try console.save(["name": "测试", "kind": "command", "target": "true", "shell": "/usr/bin/env"]) }
+        try rejects("拒绝不存在的应用") { _ = try console.save(["name": "测试", "kind": "app", "target": "/missing.app"]) }
+        try rejects("拒绝网页传入额外命令") { _ = try console.start(["id": actionID, "target": "echo injected"]) }
+        try rejects("拒绝未知快捷项目") { _ = try console.start(["id": UUID().uuidString]) }
+        _ = try console.start(["id": actionID])
+        try check(try console.snapshot().first?["state"] as? String == "running", "脚本异步运行")
+        try rejects("重复执行保护") { _ = try console.start(["id": actionID]) }
+        var actionDeadline = Date().addingTimeInterval(3)
+        while try console.snapshot().first?["state"] as? String == "running", Date() < actionDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        try check(try console.snapshot().first?["state"] as? String == "succeeded", "脚本完成状态")
+        try check(try String(contentsOf: root.appendingPathComponent("result.txt")) == "done", "带空格脚本路径及工作目录正确")
+        _ = try console.save(["id": actionID, "name": "失败命令", "kind": "command", "target": "exit 7"])
+        _ = try console.start(["id": actionID])
+        actionDeadline = Date().addingTimeInterval(3)
+        while try console.snapshot().first?["state"] as? String == "running", Date() < actionDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        try check(try console.snapshot().first?["state"] as? String == "failed", "非零退出显示失败")
+        try check(try console.list().count == 1, "编辑保留原项目 ID")
+        let backend = try NativeBackend(token: "test-only", console: console, screens: LocalScreens())
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)
         while !server.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
@@ -165,6 +189,15 @@ import SQLite3
             _ = try HTTPFetch.request(url.deletingLastPathComponent().appendingPathComponent("relay/keys"), token: webToken, body: ["action": "delete"], header: "X-Pairing-Token")
         }
         try check(backend.handle(HTTPMessage(method: "POST", path: "/api/relay/keys?x=1", headers: ["x-pairing-token": webToken], body: Data("{}".utf8))).0 == 403, "查询参数不能绕过管理权限")
+        try check(backend.handle(HTTPMessage(method: "GET", path: "/api/console", headers: [:], body: Data())).0 == 401, "控制台拒绝未配对访问")
+        let consoleURL = url.deletingLastPathComponent().appendingPathComponent("console")
+        let remoteItems = try HTTPFetch.request(consoleURL, token: webToken, header: "X-Pairing-Token") as! [JSONObject]
+        try check(remoteItems.count == 1 && remoteItems[0]["target"] == nil, "本地 HTTP 仅返回快捷项目展示信息")
+        try check(backend.handle(HTTPMessage(method: "POST", path: "/api/console/save", headers: ["x-pairing-token": webToken], body: Data("{}".utf8))).0 == 404, "网页不能创建快捷项目")
+        try console.delete(actionID)
+        try rejects("删除立即阻止后续执行") { _ = try HTTPFetch.request(consoleURL.appendingPathComponent("run"), token: webToken, body: ["id": actionID], header: "X-Pairing-Token") }
+        try check(try console.list().isEmpty, "删除不影响脚本文件")
+        try check(FileManager.default.fileExists(atPath: script.path), "删除快捷入口保留源文件")
         let snapshot = try HTTPFetch.request(url, token: "test-only") as! JSONObject
         try check(snapshot["schema"] as? Int == 1, "真实 HTTP 鉴权与 JSON 回读")
         try rejects("真实 HTTP 拒绝非法对话 ID") { _ = try HTTPFetch.request(url.deletingLastPathComponent().appendingPathComponent("open"), token: "test-only", body: ["threadId": "file:///tmp"]) }

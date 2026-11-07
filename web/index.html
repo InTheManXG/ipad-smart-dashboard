@@ -1,9 +1,19 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#f7f7f8"><link rel="manifest" href="./manifest.json"><link rel="icon" href="./codex-icon.png"><link rel="apple-touch-icon" href="./codex-icon.png"><link rel="stylesheet" href="./style.css"><title>Codex · 工作现场</title></head>
 <body>
+<dialog id="console-confirm" aria-labelledby="console-confirm-name">
+  <h2 id="console-confirm-name">执行快捷项目？</h2>
+  <p>由配对的 Mac 在后台执行。</p>
+  <div class="dialog-actions"><button id="console-confirm-cancel" type="button">取消</button><button id="console-confirm-run" type="button">执行</button></div>
+</dialog>
 <div class="pages" tabindex="0" aria-label="看板页面">
 <section id="console" class="dashboard-page console-page" aria-labelledby="console-title">
   <h1 id="console-title">快捷控制台</h1>
+  <section class="console-shortcuts" aria-labelledby="console-shortcuts-title">
+    <div class="section-head"><h2 id="console-shortcuts-title">应用与脚本</h2><button id="console-refresh" type="button">刷新</button></div>
+    <p id="console-status" class="note" role="status">正在连接 Mac…</p>
+    <div id="console-actions" class="console-actions"></div>
+  </section>
   <section class="subscriptions" aria-labelledby="subscriptions-title">
     <div class="section-head"><div><h2 id="subscriptions-title">更新订阅</h2><p class="section-description">更新前会由 Mac 上的订阅脚本校验并回滚失败变更。</p></div><span id="subscription-status" role="status"></span></div>
     <button id="update-all-subscriptions" class="subscription-all" type="button">更新全部订阅</button>
@@ -58,4 +68,4 @@
   </div>
   <button id="attention-dismiss">稍后处理</button>
 </dialog>
-<script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script><script src="./music.js" type="module"></script><script src="./subscriptions.js" type="module"></script></body></html>
+<script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script><script src="./music.js" type="module"></script><script src="./subscriptions.js" type="module"></script><script src="./console.js" type="module"></script></body></html>

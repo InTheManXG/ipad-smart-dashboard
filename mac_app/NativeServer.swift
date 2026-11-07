@@ -211,6 +211,7 @@ final class LocalHTTPServer {
 
 final class NativeBackend {
     let lock = NSLock(), collector = CodexCollector(), music = NativeMusic(), keys = LocalKeys()
+    let console: ConsoleActions
     let subscriptionLock = NSLock()
     let subscriptionRoot = URL(fileURLWithPath: "/path/to/subscription-bridge", isDirectory: true)
     var quota: JSONObject = ["plan": "未知", "primary": NSNull(), "secondary": NSNull(), "quotaAvailable": false]
@@ -219,7 +220,8 @@ final class NativeBackend {
     var cloudPairing: JSONObject = ["paired": false]
     let token: String
     let localPairing: LocalPairing
-    init(token: String? = nil, screens: LocalScreens = LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json"))) throws {
+    init(token: String? = nil, console: ConsoleActions = ConsoleActions(), screens: LocalScreens = LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json"))) throws {
+        self.console = console
         self.token = try token ?? displayToken()
         self.localPairing = LocalPairing(secret: self.token, screens: screens)
     }
@@ -264,7 +266,7 @@ final class NativeBackend {
     }
     func handle(_ request: HTTPMessage) -> (Int, String, Data) {
         func json(_ value: Any, _ code: Int = 200) -> (Int, String, Data) { (code, "application/json", (try? jsonData(value)) ?? Data("{}".utf8)) }
-        let files = ["/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/relay.js": ("relay.js", "text/javascript"), "/music.js": ("music.js", "text/javascript"), "/subscriptions.js": ("subscriptions.js", "text/javascript"), "/style.css": ("style.css", "text/css"), "/manifest.json": ("manifest.json", "application/manifest+json"), "/icon.svg": ("icon.svg", "image/svg+xml"), "/codex-icon.png": ("codex-icon.png", "image/png"), "/netease-music.png": ("netease-music.png", "image/png")]
+        let files = ["/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/relay.js": ("relay.js", "text/javascript"), "/music.js": ("music.js", "text/javascript"), "/subscriptions.js": ("subscriptions.js", "text/javascript"), "/console.js": ("console.js", "text/javascript"), "/style.css": ("style.css", "text/css"), "/manifest.json": ("manifest.json", "application/manifest+json"), "/icon.svg": ("icon.svg", "image/svg+xml"), "/codex-icon.png": ("codex-icon.png", "image/png"), "/netease-music.png": ("netease-music.png", "image/png")]
         if request.method == "GET", let file = files[request.path], let data = try? Data(contentsOf: NativePaths.resources.appendingPathComponent("web/" + file.0)) { return (200, file.1, data) }
         guard request.path.hasPrefix("/api/") else { return json([:], 404) }
         if request.method == "GET", request.path == "/api/mode" { return json(["mode": "pairing"]) }
@@ -282,6 +284,7 @@ final class NativeBackend {
             if request.method == "GET" {
                 switch path {
                 case "/api/status": return json(status())
+                case "/api/console": return json(try console.snapshot())
                 case "/api/subscriptions": return json(try subscriptions())
                 case "/api/music": return json(music.snapshot())
                 case "/api/relay/keys": return json(try keys.list())
@@ -293,6 +296,10 @@ final class NativeBackend {
             }
             let value = try jsonObject(request.body)
             switch path {
+            case "/api/console/run":
+                guard request.method == "POST" else { return json([:], 405) }
+                do { return json(try console.start(value)) }
+                catch { return json(["error": "项目不可执行、已删除或已有任务运行"], 409) }
             case "/api/subscriptions/update": return json(try updateSubscription(value["id"] as? String))
             case "/api/relay/keys":
                 // 在规范化路径后鉴权，查询参数不能绕过管理写入限制。
@@ -335,23 +342,25 @@ final class NativeBackend {
         Thread.detachNewThread {
             while true {
                 do {
-                    var response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys()])
+                    var response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject]()])
                     if let command = (response["commands"] as? [JSONObject])?.first,
                        let id = command["requestId"] as? String {
                         let ok: Bool
                         if command["kind"] as? String == "open", let thread = command["threadId"] as? String {
                             ok = (try? self.executeOpen(thread)) == true
+                        } else if command["kind"] as? String == "console", let target = command["id"] as? String {
+                            ok = (try? self.console.start(["id": target])) != nil
                         } else if command["kind"] as? String == "subscriptions" {
                             ok = (try? self.updateSubscription(command["id"] as? String)) != nil
                         } else if command["kind"] as? String == "usage", let key = command["id"] as? String {
                             let usage = try? self.keys.usage(key, force: true)
                             ok = usage != nil
-                            response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "acks": [["requestId": id, "ok": ok, "usage": usage ?? JSONObject()] ]])
+                            response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject](), "acks": [["requestId": id, "ok": ok, "usage": usage ?? JSONObject()] ]])
                             _ = response
                             Thread.sleep(forTimeInterval: 0.05)
                             continue
                         } else { ok = false }
-                        response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "acks": [["requestId": id, "ok": ok]]])
+                        response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject](), "acks": [["requestId": id, "ok": ok]]])
                         _ = response
                     }
                 } catch { }

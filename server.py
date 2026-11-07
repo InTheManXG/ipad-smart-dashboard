@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = Path.home() / 'Library/Application Support/ESP32CodexBridge/config.json'
-FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/relay.js': ('relay.js', 'text/javascript'), '/music.js': ('music.js', 'text/javascript'), '/subscriptions.js': ('subscriptions.js', 'text/javascript'),
+FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/relay.js': ('relay.js', 'text/javascript'), '/music.js': ('music.js', 'text/javascript'), '/subscriptions.js': ('subscriptions.js', 'text/javascript'), '/console.js': ('console.js', 'text/javascript'),
          '/style.css': ('style.css', 'text/css'), '/manifest.json': ('manifest.json', 'application/manifest+json'),
          '/icon.svg': ('icon.svg', 'image/svg+xml'), '/codex-icon.png': ('codex-icon.png', 'image/png'), '/netease-music.png': ('netease-music.png', 'image/png')}
 
