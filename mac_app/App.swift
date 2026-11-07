@@ -29,6 +29,7 @@ struct ManagedKey: Identifiable {
     @Published var pairingExpiresAt: Double = 0
     @Published var lanAddresses: [LANAddress] = []
     @Published var keys: [ManagedKey] = []
+    @Published var keysLoaded = false
     @Published var busy = false
     @Published var message = ""
     @Published var failed = false
@@ -96,8 +97,10 @@ struct ManagedKey: Identifiable {
     }
 
     func loadKeys() async {
-        keys = []
-        await perform(["action": "keys"], success: "已读取当前看板的 Key") { result in
+        guard !busy else { return }
+        keys = []; keysLoaded = false
+        await perform(["action": "keys"], success: "已读取中转站 Key") { result in
+            self.keysLoaded = true
             self.keys = (result["keys"] as? [[String: Any]] ?? []).compactMap {
                 guard let id = $0["id"] as? String, let name = $0["name"] as? String,
                       let masked = $0["maskedKey"] as? String else { return nil }
@@ -304,7 +307,7 @@ struct ControlView: View {
                 .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             // 管理目标只影响 Key 接口，与公网配对和本地服务启停无关。
             managementConnection
-            Text("本地与线上配置独立；这里的修改立即作用于上方所示看板。")
+            Text("本地 Key 由 App 管理，关闭本地看板仍可编辑；本地与远程配置独立。")
                 .font(.callout).foregroundStyle(.secondary)
             ForEach(model.keys) { item in
                 HStack {
@@ -317,7 +320,10 @@ struct ControlView: View {
                     Button("删除", role: .destructive) { deleting = item }
                 }.padding(10).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
-            if model.keys.isEmpty { Text("暂无 Key，或尚未连接成功").foregroundStyle(.secondary) }
+            if model.keys.isEmpty {
+                Text(model.keysLoaded ? "暂无中转站 Key，可在下方添加。" : "Key 列表尚未加载成功，请刷新重试。")
+                    .foregroundStyle(.secondary)
+            }
             GroupBox(editingID == nil ? "添加 Key" : "编辑 Key") {
                 VStack(alignment: .leading, spacing: 12) {
                     TextField("备注名", text: $name).textFieldStyle(.roundedBorder)

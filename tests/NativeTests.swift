@@ -125,13 +125,16 @@ import SQLite3
         try check(fixed.isRunning && fixed.listener.port == port, "固定监听端口不能被改成随机端口")
         try check((try HTTPFetch.request(url, token: "test-only") as? JSONObject)?["schema"] as? Int == 1, "固定端口重新绑定回归")
         let keyStore = LocalKeys(path: root.appendingPathComponent("keys.json"))
+        let keyConfig: JSONObject = ["url": "http://127.0.0.1:18088"]
+        try check(isLocalKeyTarget(try endpoint("http://localhost:18088")) && !isLocalKeyTarget(try endpoint("http://localhost:18089")) && !isLocalKeyTarget(try endpoint("https://ipad.iamxg.com")), "仅本机看板目标直读本地 Key")
+        try check((try managedKeys(config: keyConfig, localStore: keyStore) as? [JSONObject])?.isEmpty == true, "无需启动看板即可读取空 Key 列表")
         defer { for item in (try? keyStore.records()) ?? [] { if let id = item["id"] as? String { try? Secrets.delete("company-" + id) } } }
-        _ = try keyStore.change(["action": "save", "name": "隔离测试", "key": "test-only-not-a-real-key"])
+        _ = try managedKeys(["action": "save", "name": "隔离测试", "key": "test-only-not-a-real-key"], config: keyConfig, localStore: keyStore)
         let first = try keyStore.list()[0], keyID = first["id"] as! String
         try check(first["maskedKey"] as? String == "te****-key" && !(try String(contentsOf: keyStore.path)).contains("test-only-not-a-real-key"), "本地 Key 只存钥匙串且回读遮罩")
-        _ = try keyStore.change(["action": "save", "id": keyID, "name": "改名", "key": ""])
+        _ = try managedKeys(["action": "save", "id": keyID, "name": "改名", "key": ""], config: keyConfig, localStore: keyStore)
         try check(try Secrets.get("company-" + keyID) == "test-only-not-a-real-key", "空 Key 编辑保留原值")
-        _ = try keyStore.change(["action": "delete", "id": keyID])
+        _ = try managedKeys(["action": "delete", "id": keyID], config: keyConfig, localStore: keyStore)
         try check(try keyStore.list().isEmpty && Secrets.get("company-" + keyID) == nil, "删除配置和钥匙串条目")
         print("原生 \(checks) 项断言通过：任务生命周期、未读、歌词、HTTP 边界与鉴权")
     }

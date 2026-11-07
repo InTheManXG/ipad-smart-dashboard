@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Darwin
 
 final class LocalKeys {
     let lock = NSLock()
@@ -20,6 +21,12 @@ final class LocalKeys {
     }
     func change(_ value: JSONObject) throws -> JSONObject {
         lock.lock(); defer { lock.unlock() }
+        // 控制台请求与 HTTP 服务分属不同进程，文件锁避免并发写入覆盖其他 Key。
+        let fd = open(path.appendingPathExtension("lock").path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { throw ControlError("无法锁定 Key 配置") }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { throw ControlError("无法锁定 Key 配置") }
+        defer { _ = flock(fd, LOCK_UN) }
         var items = try records()
         let supplied = value["id"] as? String
         if value["id"] != nil && supplied == nil { throw ControlError("Key 标识不正确") }

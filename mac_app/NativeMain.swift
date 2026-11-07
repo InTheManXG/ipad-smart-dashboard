@@ -47,13 +47,13 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         status["lanAddresses"] = lanAddresses()
         return status
     }
-    if action == "keys" { return ["keys": try remoteKeys()] }
+    if action == "keys" { return ["keys": try managedKeys()] }
     if action == "verify" {
         let token = try displayToken(), base = URL(string: "http://127.0.0.1:18088")!
         guard let snapshot = try HTTPFetch.request(base.appendingPathComponent("api/status"), token: token) as? JSONObject,
               snapshot["conversationsAvailable"] as? Bool == true else { throw ControlError("原生任务采集尚不可用") }
         let localKeys = try HTTPFetch.request(base.appendingPathComponent("api/relay/keys"), token: token) as? [JSONObject] ?? []
-        let remote = try remoteKeys() as? [JSONObject] ?? []
+        let remote = try managedKeys() as? [JSONObject] ?? []
         let music = try HTTPFetch.request(base.appendingPathComponent("api/music"), token: token) as? JSONObject ?? [:]
         let online = try HTTPFetch.request(URL(string: "https://ipad.iamxg.com/api/music")!, token: token) as? JSONObject ?? [:]
         _ = try media(["test"])
@@ -64,15 +64,19 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     if action == "connection-save" {
         guard let address = value["url"] as? String, let supplied = value["token"] as? String else { throw ControlError("连接设置不正确") }
         let url = try endpoint(address)
-        let token = try supplied.isEmpty ? (Secrets.get("management-token") ?? displayToken()) : supplied
-        guard secretValid(token) else { throw ControlError("口令格式不正确") }
         var candidate = config; candidate["url"] = url.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        _ = try remoteKeys(config: candidate, token: token)
-        if !supplied.isEmpty { try Secrets.set("management-token", supplied) }
+        if isLocalKeyTarget(url) {
+            _ = try managedKeys(config: candidate)
+        } else {
+            let token = try supplied.isEmpty ? (Secrets.get("management-token") ?? displayToken()) : supplied
+            guard secretValid(token) else { throw ControlError("口令格式不正确") }
+            _ = try managedKeys(config: candidate, token: token)
+            if !supplied.isEmpty { try Secrets.set("management-token", supplied) }
+        }
         try writeJSON(candidate, NativePaths.config)
     } else if ["key-save", "key-delete"].contains(action) {
         var body = value; body["action"] = action == "key-save" ? "save" : "delete"
-        _ = try remoteKeys(body)
+        _ = try managedKeys(body)
     } else if ["dashboard-start", "dashboard-stop", "music-start", "music-stop"].contains(action) {
         config[action.hasPrefix("dashboard") ? "dashboardEnabled" : "musicEnabled"] = action.hasSuffix("start")
         try writeJSON(config, NativePaths.config); try installService(start: true)

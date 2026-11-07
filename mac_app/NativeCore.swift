@@ -195,9 +195,21 @@ final class HTTPFetch: @unchecked Sendable {
     }
 }
 
-func remoteKeys(_ body: Any? = nil, config: JSONObject? = nil, token: String? = nil) throws -> Any {
+func isLocalKeyTarget(_ url: URL) -> Bool {
+    url.scheme == "http" && ["localhost", "127.0.0.1", "[::1]"].contains(url.host ?? "") && url.port == 18088
+}
+
+func managedKeys(_ body: Any? = nil, config: JSONObject? = nil, token: String? = nil, localStore: LocalKeys = LocalKeys()) throws -> Any {
     let value = try config ?? configuration()
     let url = try endpoint(value["url"] as? String ?? "")
+    // 本地管理走 App 私有存储，不能因局域网看板关闭而失去 Key 管理能力。
+    if isLocalKeyTarget(url) {
+        if let body {
+            guard let change = body as? JSONObject else { throw ControlError("Key 操作格式不正确") }
+            return try localStore.change(change)
+        }
+        return try localStore.list()
+    }
     let credential = try token ?? Secrets.get("management-token") ?? displayToken()
     return try HTTPFetch.request(url.appendingPathComponent("api/relay/keys"), token: credential, body: body)
 }
