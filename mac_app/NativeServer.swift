@@ -168,8 +168,13 @@ final class NativeBackend {
     var quota: JSONObject = ["plan": "未知", "primary": NSNull(), "secondary": NSNull(), "quotaAvailable": false]
     var conversations: JSONObject = ["conversationsAvailable": false, "conversations": [JSONObject]()]
     var server: LocalHTTPServer?
+    var cloudPairing: JSONObject = ["paired": false]
     let token: String
-    init(token: String? = nil) throws { self.token = try token ?? displayToken() }
+    let localPairing: LocalPairing
+    init(token: String? = nil) throws {
+        self.token = try token ?? displayToken()
+        self.localPairing = LocalPairing(secret: self.token)
+    }
     func status() -> JSONObject {
         lock.lock(); defer { lock.unlock() }
         var value = quota; value.merge(conversations) { _, new in new }
@@ -214,7 +219,15 @@ final class NativeBackend {
         let files = ["/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/relay.js": ("relay.js", "text/javascript"), "/music.js": ("music.js", "text/javascript"), "/subscriptions.js": ("subscriptions.js", "text/javascript"), "/style.css": ("style.css", "text/css"), "/manifest.json": ("manifest.json", "application/manifest+json"), "/icon.svg": ("icon.svg", "image/svg+xml"), "/codex-icon.png": ("codex-icon.png", "image/png"), "/netease-music.png": ("netease-music.png", "image/png")]
         if request.method == "GET", let file = files[request.path], let data = try? Data(contentsOf: NativePaths.resources.appendingPathComponent("web/" + file.0)) { return (200, file.1, data) }
         guard request.path.hasPrefix("/api/") else { return json([:], 404) }
-        guard secureEqual(request.headers["x-display-token"] ?? "", token) else { return json([:], 401) }
+        if request.method == "GET", request.path == "/api/mode" { return json(["mode": "pairing"]) }
+        if request.method == "POST", request.path == "/api/pairing/complete" {
+            guard request.body.count <= 1024, let value = try? jsonObject(request.body),
+                  let code = value["code"] as? String, code.count == 8 else { return json([:], 400) }
+            let result = localPairing.complete(code)
+            return json(result.1, result.0)
+        }
+        let manager = secureEqual(request.headers["x-display-token"] ?? "", token)
+        guard manager || localPairing.authorized(request.headers["x-pairing-token"] ?? "") else { return json([:], 401) }
         do {
             let parts = URLComponents(string: "http://localhost" + request.path)
             let path = parts?.path ?? ""
@@ -233,7 +246,10 @@ final class NativeBackend {
             let value = try jsonObject(request.body)
             switch path {
             case "/api/subscriptions/update": return json(try updateSubscription(value["id"] as? String))
-            case "/api/relay/keys": return json(try keys.change(value))
+            case "/api/relay/keys":
+                // 在规范化路径后鉴权，查询参数不能绕过管理写入限制。
+                guard manager else { return json([:], 403) }
+                return json(try keys.change(value))
             case "/api/music/control":
                 let result = music.control(value)
                 return json(result, result["ok"] as? Bool == true ? 200 : 409)
@@ -249,14 +265,25 @@ final class NativeBackend {
     }
     func run() throws {
         var listenerError = ""
-        var pairing: JSONObject = ["paired": false]
-        do {
-            pairing = try pairingStatus()
-            if pairing["paired"] as? Bool != true { pairing = try pairingStart() }
-        } catch { pairing = ["paired": false, "error": "配对服务暂不可用"] }
-        DispatchQueue.global().async { self.music.run() }
-        DispatchQueue.global().async { self.music.publish() }
-        DispatchQueue.global().async {
+        // 公网不可用不能阻塞本地监听、采集和 App 状态刷新。
+        Thread.detachNewThread {
+            var pairing: JSONObject = ["paired": false]
+            while true {
+                do {
+                    if pairing["paired"] as? Bool == true { pairing = try pairingStatus() }
+                    else if (number(pairing["expiresAt"]) ?? 0) <= Date().timeIntervalSince1970 { pairing = try pairingStart() }
+                    else {
+                        let current = try pairingStatus()
+                        if current["paired"] as? Bool == true { pairing = current }
+                    }
+                } catch { }
+                self.lock.lock(); self.cloudPairing = pairing; self.lock.unlock()
+                Thread.sleep(forTimeInterval: 10)
+            }
+        }
+        Thread.detachNewThread { self.music.run() }
+        Thread.detachNewThread { self.music.publish() }
+        Thread.detachNewThread {
             while true {
                 do {
                     var response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys()])
@@ -282,7 +309,7 @@ final class NativeBackend {
                 Thread.sleep(forTimeInterval: 1)
             }
         }
-        DispatchQueue.global().async {
+        Thread.detachNewThread {
             while true {
                 let result = Result { try readQuota() }
                 self.lock.lock()
@@ -293,6 +320,14 @@ final class NativeBackend {
                 self.lock.unlock(); Thread.sleep(forTimeInterval: 60)
             }
         }
+        // 历史日志首次回放可能较慢，不能阻塞端口就绪与 App 状态心跳。
+        Thread.detachNewThread {
+            while true {
+                let snapshot = autoreleasepool { self.collector.snapshot() }
+                self.lock.lock(); self.conversations = snapshot; self.lock.unlock()
+                Thread.sleep(forTimeInterval: 1)
+            }
+        }
         while true {
             let config = try configuration()
             music.setEnabled(config["musicEnabled"] as? Bool ?? true)
@@ -300,16 +335,10 @@ final class NativeBackend {
             if config["dashboardEnabled"] as? Bool != false && server == nil {
                 server = try LocalHTTPServer(port: 18088, host: "0.0.0.0", handler: handle); server?.start()
             } else if config["dashboardEnabled"] as? Bool == false && server != nil { server?.stop(); server = nil }
-            // 常驻线程没有自动释放池边界，避免每轮 Foundation 解析临时对象累积。
-            let snapshot = autoreleasepool { collector.snapshot() }
-            lock.lock(); conversations = snapshot; lock.unlock()
             if server?.isRunning == true { listenerError = "" }
-            if pairing["paired"] as? Bool == true {
-                if let current = try? pairingStatus() { pairing = current }
-            } else if (number(pairing["pairingExpiresAt"] ?? pairing["expiresAt"]) ?? 0) <= Date().timeIntervalSince1970 {
-                if let current = try? pairingStart() { pairing = current }
-            }
+            lock.lock(); let pairing = cloudPairing; lock.unlock()
             var runtime: JSONObject = ["dashboard": server?.isRunning == true ? "运行中" : "已停止或端口被占用", "listenerError": listenerError, "music": music.isEnabled() ? "运行中" : "已停止", "updatedAt": Date().timeIntervalSince1970]
+            runtime["localPairingCode"] = localPairing.current()
             runtime["paired"] = pairing["paired"] as? Bool ?? false
             runtime["pairingCode"] = pairing["code"] ?? NSNull()
             runtime["pairingExpiresAt"] = pairing["expiresAt"] ?? NSNull()

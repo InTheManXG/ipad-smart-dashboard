@@ -39,6 +39,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
                                   "appLogin": FileManager.default.fileExists(atPath: NativePaths.agents.appendingPathComponent("com.iamxg.ipad-control.plist").path)]
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]
+            status["localPairingCode"] = runtime["localPairingCode"] ?? ""
             status["paired"] = runtime["paired"] as? Bool ?? false
             status["pairingCode"] = runtime["pairingCode"] ?? NSNull()
             status["pairingExpiresAt"] = runtime["pairingExpiresAt"] ?? NSNull()
@@ -111,7 +112,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
                 defer { close(fd) }
                 let backend = try NativeBackend()
                 // macOS 网络与子进程回调需要主事件循环，采集循环不能占住主线程。
-                DispatchQueue.global().async {
+                Thread.detachNewThread {
                     do { try backend.run() }
                     catch { fputs("原生后台运行失败，请检查配置与文件权限\n", stderr); exit(1) }
                 }

@@ -81,6 +81,21 @@ import SQLite3
         try check((collector.snapshot()["conversations"] as! [JSONObject]).isEmpty, "完成已读移出列表")
         try unread([id]); try check((collector.snapshot()["conversations"] as! [JSONObject]).count == 1, "完成未读保留")
 
+        let local = LocalPairing(secret: "isolated-test")
+        let code = local.current(now: 1000)
+        let paired = local.complete(code, now: 1001)
+        let session = paired.1["token"] as! String
+        try check(paired.0 == 200 && local.authorized(session, now: 1002), "离线本地配对")
+        try check(local.complete(code, now: 1002).0 == 401, "配对码只可使用一次")
+        try check(!local.authorized(session + "x", now: 1002), "拒绝篡改会话")
+        try check(!local.authorized(session, now: 1001 + 30 * 86400), "会话过期")
+        try check(LocalPairing(secret: "isolated-test").authorized(session, now: 1002), "同机重启保留会话")
+        try check(!LocalPairing(secret: "other-device").authorized(session, now: 1002), "其他 Mac 不接受会话")
+        let expiring = LocalPairing(secret: "expiry")
+        let oldCode = expiring.current(now: 1000)
+        try check(expiring.complete(oldCode, now: 1600).0 == 401, "配对码过期")
+        for _ in 0..<9 { _ = expiring.complete("INVALID!", now: 1601) }
+        try check(expiring.complete("INVALID!", now: 1601).0 == 429, "本地配对限流")
         let backend = try NativeBackend(token: "test-only")
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)
@@ -88,6 +103,15 @@ import SQLite3
         guard let port = server.listener.port else { throw ControlError("测试监听失败") }
         let url = URL(string: "http://127.0.0.1:\(port.rawValue)/api/status")!
         try rejects("真实 HTTP 拒绝未认证") { _ = try HTTPFetch.request(url) }
+        let localCode = backend.localPairing.current()
+        let pairURL = url.deletingLastPathComponent().appendingPathComponent("pairing/complete")
+        let pairResult = try HTTPFetch.request(pairURL, body: ["code": localCode]) as! JSONObject
+        let webToken = pairResult["token"] as! String
+        try check((try HTTPFetch.request(url, token: webToken, header: "X-Pairing-Token") as? JSONObject)?["schema"] as? Int == 1, "HTTP 网页配对读取本地看板")
+        try rejects("网页会话不能管理 Key") {
+            _ = try HTTPFetch.request(url.deletingLastPathComponent().appendingPathComponent("relay/keys"), token: webToken, body: ["action": "delete"], header: "X-Pairing-Token")
+        }
+        try check(backend.handle(HTTPMessage(method: "POST", path: "/api/relay/keys?x=1", headers: ["x-pairing-token": webToken], body: Data("{}".utf8))).0 == 403, "查询参数不能绕过管理权限")
         let snapshot = try HTTPFetch.request(url, token: "test-only") as! JSONObject
         try check(snapshot["schema"] as? Int == 1, "真实 HTTP 鉴权与 JSON 回读")
         try rejects("真实 HTTP 拒绝非法对话 ID") { _ = try HTTPFetch.request(url.deletingLastPathComponent().appendingPathComponent("open"), token: "test-only", body: ["threadId": "file:///tmp"]) }

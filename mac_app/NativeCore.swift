@@ -91,7 +91,10 @@ func configuration() throws -> JSONObject {
     return try readJSON(NativePaths.config)
 }
 func displayToken() throws -> String {
-    guard let token = try Secrets.get("display-token") else { throw ControlError("请先导入原看板配置") }
+    if let token = try Secrets.get("display-token") { return token }
+    // 全新安装自行生成本机凭据，无需从旧 Docker 项目迁入。
+    let token = UUID().uuidString + UUID().uuidString
+    try Secrets.set("display-token", token)
     return token
 }
 
@@ -211,8 +214,9 @@ func installService(start: Bool) throws {
     let config = try configuration(), auto = config["musicLogin"] as? Bool ?? true
     try FileManager.default.createDirectory(at: NativePaths.agents, withIntermediateDirectories: true)
     let path = NativePaths.agents.appendingPathComponent(NativePaths.label + ".plist")
+    // 看板须实时回应局域网请求；Background 会在系统繁忙时严重节流网络和文件操作。
     let plist: JSONObject = ["Label": NativePaths.label, "ProgramArguments": [NativePaths.service.path, "--serve"],
-                             "RunAtLoad": auto, "KeepAlive": auto, "ThrottleInterval": 10, "ProcessType": "Background",
+                             "RunAtLoad": auto, "KeepAlive": auto, "ThrottleInterval": 10, "ProcessType": "Interactive",
                              "StandardErrorPath": NativePaths.data.appendingPathComponent("service.log").path,
                              "StandardOutPath": NativePaths.data.appendingPathComponent("service.log").path]
     try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: path, options: .atomic)

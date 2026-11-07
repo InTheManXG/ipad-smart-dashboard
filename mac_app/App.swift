@@ -24,6 +24,7 @@ struct ManagedKey: Identifiable {
     @Published var musicLogin = false
     @Published var appLogin = false
     @Published var paired = false
+    @Published var localPairingCode = ""
     @Published var pairingCode = ""
     @Published var pairingExpiresAt: Double = 0
     @Published var lanAddresses: [LANAddress] = []
@@ -75,6 +76,7 @@ struct ManagedKey: Identifiable {
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
             self.paired = result["paired"] as? Bool ?? false
+            self.localPairingCode = result["localPairingCode"] as? String ?? ""
             self.pairingCode = result["pairingCode"] as? String ?? ""
             self.pairingExpiresAt = result["pairingExpiresAt"] as? Double ?? 0
             self.lanAddresses = (result["lanAddresses"] as? [[String: Any]] ?? []).compactMap {
@@ -182,7 +184,15 @@ struct ControlView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
-            GroupBox("网页配对") {
+            GroupBox("本地看板配对") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.localPairingCode.isEmpty ? "启动本地看板后显示配对码" : model.localPairingCode)
+                        .font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                    Text("iPad 打开下方局域网地址，输入此码。无需 Docker 或公网服务；配对码 10 分钟有效，使用后更新。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
+            GroupBox("公网网页配对") {
                 VStack(alignment: .leading, spacing: 10) {
                     if model.paired {
                         Text("已配对").font(.headline).foregroundStyle(.green)
@@ -245,7 +255,7 @@ struct ControlView: View {
                             }
                         }
                     }.buttonStyle(.borderedProminent)
-                    Text("口令保存在 macOS 钥匙串中。iPad 首次连接仍需输入看板口令。")
+                    Text("口令保存在 macOS 钥匙串中。iPad 本地连接使用服务概览中的本地配对码。")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -256,7 +266,7 @@ struct ControlView: View {
         GroupBox("iPad 访问地址") {
             VStack(alignment: .leading, spacing: 12) {
                 Text("线上：https://ipad.iamxg.com").textSelection(.enabled)
-                Text("局域网：iPad 与 Mac 需在可互通的同一网络，首次访问需输入看板口令。")
+                Text("局域网：iPad 与 Mac 需在可互通的同一网络，首次访问输入 App 中的本地配对码。")
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(model.lanAddresses) { item in
                     HStack {

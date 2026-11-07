@@ -4,5 +4,5 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 mkdir -p .build
 xcrun swiftc -parse-as-library -swift-version 5 -module-cache-path .build/swift-cache -target arm64-apple-macosx13.0 \
-  mac_app/NativeCore.swift mac_app/CodexCollector.swift mac_app/NativeMusic.swift mac_app/NativeServer.swift tests/NativeTests.swift -o .build/native-tests
+  mac_app/LocalPairing.swift mac_app/NativeCore.swift mac_app/CodexCollector.swift mac_app/NativeMusic.swift mac_app/NativeServer.swift tests/NativeTests.swift -o .build/native-tests
 .build/native-tests
