@@ -120,7 +120,7 @@ struct ControlView: View {
             List(selection: $section) {
                 Label("服务管理", systemImage: "switch.2").tag("服务")
                 Label("连接与配对", systemImage: "network").tag("连接")
-                Label("公司 Key", systemImage: "key.horizontal").tag("Key")
+                Label("中转站 Key", systemImage: "key.horizontal").tag("Key")
             }
             .navigationTitle("iPad 控制台")
             .navigationSplitViewColumnWidth(170)
@@ -129,7 +129,7 @@ struct ControlView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : "公司 Key")
+                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : "中转站 Key")
                             .font(.largeTitle.bold())
                         Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : "当前管理：\(model.connectedURL)")
                             .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
@@ -300,6 +300,8 @@ struct ControlView: View {
 
     var keySettings: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Text("目前支持 Sub2API · 额度查询：sub2api.818tu.com")
+                .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             // 管理目标只影响 Key 接口，与公网配对和本地服务启停无关。
             managementConnection
             Text("本地与线上配置独立；这里的修改立即作用于上方所示看板。")
