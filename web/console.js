@@ -30,21 +30,30 @@ function renderConsole(items) {
   const renderKey = JSON.stringify([items, busy]);
   if (renderKey === consoleRenderKey) return;
   consoleRenderKey = renderKey;
-  consoleList.replaceChildren(...items.map(item => {
-    const card = document.createElement('div'); card.className = 'console-action';
-    const header = document.createElement('div'); header.className = 'console-action-header';
-    const name = document.createElement('strong'); name.textContent = item.name;
-    const type = document.createElement('span'); type.className = 'console-action-type';
-    type.textContent = item.kind === 'app' ? '应用' : item.kind === 'script' ? '脚本' : '命令';
-    header.append(name, type);
-    const state = document.createElement('p'); state.className = 'note';
-    state.textContent = item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? (item.kind === 'app' ? '已打开' : '执行完成') : item.state === 'failed' ? '执行失败或超时，请检查 Mac 上的配置' : '就绪';
-    if (item.state === 'failed') state.className = 'subscription-error';
-    const button = document.createElement('button'); button.type = 'button';
-    button.textContent = item.kind === 'app' ? '打开应用' : '执行'; button.disabled = busy;
-    button.onclick = () => requestConsoleAction(item);
-    card.append(header, state, button); return card;
-  }));
+  const groups = [];
+  for (const [kind, title] of [['app', '应用'], ['script', '脚本'], ['command', '命令']]) {
+    const entries = items.filter(item => item.kind === kind);
+    if (!entries.length) continue;
+    const group = document.createElement('section'); group.className = 'console-group';
+    const heading = document.createElement('h3'); heading.textContent = title;
+    const grid = document.createElement('div'); grid.className = 'console-group-grid';
+    for (const item of entries) {
+      const card = document.createElement('button'); card.type = 'button'; card.className = 'console-action'; card.disabled = busy;
+      const icon = document.createElement('span'); icon.className = 'console-icon';
+      icon.textContent = kind === 'app' ? '▦' : kind === 'script' ? '≡' : '>_';
+      if (kind === 'app' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon || '')) {
+        const image = document.createElement('img'); image.src = item.icon; image.alt = '';
+        icon.replaceChildren(image);
+      }
+      const name = document.createElement('strong'); name.textContent = item.name;
+      const state = document.createElement('span'); state.className = 'console-action-state';
+      state.textContent = item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? (kind === 'app' ? '已打开' : '执行完成') : item.state === 'failed' ? '执行失败或超时' : (kind === 'app' ? '打开应用' : '执行');
+      card.onclick = () => requestConsoleAction(item);
+      card.append(icon, name, state); grid.append(card);
+    }
+    group.append(heading, grid); groups.push(group);
+  }
+  consoleList.replaceChildren(...groups);
   if (!items.length) consoleList.append(Object.assign(document.createElement('p'), {className: 'empty', textContent: '在 Mac App 的「快捷控制台」中添加应用或脚本'}));
 }
 async function loadConsole() {

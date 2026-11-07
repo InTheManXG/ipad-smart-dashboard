@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Darwin
 
 // 配置只在 Mac 管理；网页仅能提交已配置项目的 ID，不能传入路径或命令。
@@ -25,7 +26,39 @@ final class ConsoleActions {
         if !NSArray(array: before).isEqual(to: records) { try writeJSON(records, path) }
         return value
     }
-    func list() throws -> [JSONObject] { try access { $0 } }
+    func list() throws -> [JSONObject] {
+        try access { records in
+            // 旧项目按原顺序保留，只补充图标；原始路径不随图标上传。
+            for index in records.indices where records[index]["kind"] as? String == "app" && records[index]["icon"] == nil {
+                records[index]["icon"] = Self.icon(records[index]["target"] as? String ?? "")
+            }
+            return records
+        }
+    }
+    static func icon(_ path: String) -> String {
+        guard FileManager.default.fileExists(atPath: path) else { return "" }
+        let source = NSWorkspace.shared.icon(forFile: path)
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return "" }
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = context
+        source.draw(in: NSRect(x: 0, y: 0, width: 32, height: 32))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let data = bitmap.representation(using: .png, properties: [:]), data.count <= 6000 else { return "" }
+        return "data:image/png;base64," + data.base64EncodedString()
+    }
+    func move(_ id: String, direction: String) throws {
+        guard ["up", "down"].contains(direction) else { throw ControlError("排序方向不正确") }
+        try access { records in
+            guard let index = records.firstIndex(where: { $0["id"] as? String == id }) else { throw ControlError("项目已删除，请刷新") }
+            let kind = records[index]["kind"] as? String
+            let group = records.indices.filter { records[$0]["kind"] as? String == kind }
+            let position = group.firstIndex(of: index)!
+            let next = position + (direction == "up" ? -1 : 1)
+            guard group.indices.contains(next) else { return }
+            // 只在同类型内交换，不覆盖其他进程新添加的项目。
+            records.swapAt(index, group[next])
+        }
+    }
 
     func save(_ value: JSONObject) throws -> JSONObject {
         guard let name = value["name"] as? String, !trimmed(name).isEmpty, trimmed(name).count <= 60,
@@ -35,8 +68,9 @@ final class ConsoleActions {
         guard ["/bin/zsh", "/bin/bash"].contains(shell) else { throw ControlError("请选择 zsh 或 bash") }
         let id = value["id"] as? String ?? UUID().uuidString.lowercased()
         guard UUID(uuidString: id) != nil else { throw ControlError("项目标识不正确") }
-        let item: JSONObject = ["id": id, "name": trimmed(name), "kind": kind, "target": target, "shell": shell]
+        var item: JSONObject = ["id": id, "name": trimmed(name), "kind": kind, "target": target, "shell": shell]
         try validateTarget(item)
+        if kind == "app" { item["icon"] = Self.icon(target) }
         return try access { records in
             if value["id"] != nil {
                 guard let index = records.firstIndex(where: { $0["id"] as? String == id }) else { throw ControlError("项目已删除，请刷新") }
@@ -70,7 +104,7 @@ final class ConsoleActions {
         lock.lock(); defer { lock.unlock() }
         return records.map { item in
             let id = item["id"] as? String ?? ""
-            return ["id": id, "name": item["name"] ?? "", "kind": item["kind"] ?? "", "state": running == id ? "running" : results[id] ?? "idle"]
+            return ["id": id, "name": item["name"] ?? "", "kind": item["kind"] ?? "", "icon": item["icon"] ?? "", "state": running == id ? "running" : results[id] ?? "idle"]
         }
     }
     func start(_ value: JSONObject) throws -> JSONObject {

@@ -18,7 +18,7 @@ class PairingStoreTests(unittest.TestCase):
             token = store.complete({'code': store.code(ident)['code']})['token']
             item = {'id': str(uuid.uuid4()), 'name': '测试脚本', 'kind': 'script', 'state': 'idle', 'target': '/private/test.sh', 'output': 'secret'}
             store.exchange(ident, {'status': {}, 'console': [item]})
-            self.assertEqual(set(store.read(ident, 'console')[0]), {'id', 'name', 'kind', 'state'})
+            self.assertEqual(set(store.read(ident, 'console')[0]), {'id', 'name', 'kind', 'state', 'icon'})
             with self.assertRaises(pairing.Failure): store.command(ident, {'id': item['id'], 'target': 'injected'}, 'console', token)
             with self.assertRaises(pairing.Failure): store.command(ident, {'id': str(uuid.uuid4())}, 'console', token)
             result = []
@@ -38,7 +38,7 @@ class PairingStoreTests(unittest.TestCase):
             store.snapshots[ident] = snapshot[:5] + (time.monotonic() - 60,)
             store.exchange(ident, {'music': {'state': 'idle'}})
             with self.assertRaises(pairing.Failure): store.read(ident, 'console')
-            for invalid in [[item, item], [item | {'kind': 'arbitrary'}], [item | {'name': ''}]]:
+            for invalid in [[item | {'icon': 'https://bad.test/icon'}], [item | {'icon': 'data:image/png;base64,AAAA'}], [item, item], [item | {'kind': 'arbitrary'}], [item | {'name': ''}]]:
                 with self.assertRaises(pairing.Failure): pairing.clean_console(invalid)
             store.close()
 

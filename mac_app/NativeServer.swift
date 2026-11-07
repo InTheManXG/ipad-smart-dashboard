@@ -197,7 +197,7 @@ final class LocalHTTPServer {
                 if let request = try HTTPMessage.parse(data) {
                     DispatchQueue.global().async {
                         let result = self.handler(request)
-                        let headers = "HTTP/1.1 \(result.0) \(result.0 == 200 ? "OK" : "Error")\r\nContent-Type: \(result.1); charset=utf-8\r\nContent-Length: \(result.2.count)\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'\r\n\r\n"
+                        let headers = "HTTP/1.1 \(result.0) \(result.0 == 200 ? "OK" : "Error")\r\nContent-Type: \(result.1); charset=utf-8\r\nContent-Length: \(result.2.count)\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'\r\n\r\n"
                         connection.send(content: Data(headers.utf8) + result.2, completion: .contentProcessed { _ in timeout.cancel(); connection.cancel() })
                     }
                 } else if error == nil && !done { self.receive(connection, data, timeout) }

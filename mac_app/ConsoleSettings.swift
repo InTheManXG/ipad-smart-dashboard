@@ -16,6 +16,12 @@ struct ConsoleSettings: View {
     @ViewState private var editor = false
     @ViewState private var editing: ConsoleItem?
     @ViewState private var deleting: ConsoleItem?
+    private func move(_ item: ConsoleItem, _ direction: String) {
+        Task {
+            await model.perform(["action": "console-move", "id": item.id, "direction": direction], success: "顺序已保存")
+            if !model.failed { await model.loadConsole() }
+        }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
@@ -28,20 +34,34 @@ struct ConsoleSettings: View {
                 Text("暂无快捷项目，添加一个应用或脚本开始使用。")
                     .foregroundStyle(.secondary).padding(.vertical, 24)
             }
-            ForEach(model.consoleItems) { item in
-                GroupBox {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: item.kind == "app" ? "app" : "terminal").font(.title2).foregroundStyle(Color.accentColor)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(item.name).font(.headline)
-                            Text(item.typeName).font(.caption).foregroundStyle(.secondary)
-                            Text(item.target).font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
+            ForEach(["app", "script", "command"], id: \.self) { kind in
+                let items = model.consoleItems.filter { $0.kind == kind }
+                if !items.isEmpty {
+                    Text(kind == "app" ? "应用" : kind == "script" ? "脚本" : "命令").font(.headline)
+                    ForEach(items) { item in
+                        GroupBox {
+                            HStack(alignment: .top, spacing: 12) {
+                                if item.kind == "app" {
+                                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.target)).resizable().frame(width: 40, height: 40)
+                                } else {
+                                    Image(systemName: item.kind == "script" ? "doc.text" : "terminal").font(.title2).foregroundStyle(Color.accentColor).frame(width: 40, height: 40)
+                                }
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(item.name).font(.headline)
+                                    Text(item.typeName).font(.caption).foregroundStyle(.secondary)
+                                    Text(item.target).font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
+                                }
+                                Spacer()
+                                Button { move(item, "up") } label: { Image(systemName: "arrow.up") }
+                                    .disabled(items.first?.id == item.id).help("上移").accessibilityLabel("上移 " + item.name)
+                                Button { move(item, "down") } label: { Image(systemName: "arrow.down") }
+                                    .disabled(items.last?.id == item.id).help("下移").accessibilityLabel("下移 " + item.name)
+                                Button("编辑") { editing = item; editor = true }
+                                Button("删除", role: .destructive) { deleting = item }.foregroundStyle(.red)
+                            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        Spacer()
-                        Button("编辑") { editing = item; editor = true }
-                        Button("删除", role: .destructive) { deleting = item }.foregroundStyle(.red)
-                    }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
             Button("刷新列表") { Task { await model.loadConsole() } }

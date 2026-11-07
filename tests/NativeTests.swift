@@ -173,6 +173,17 @@ import SQLite3
         while try console.snapshot().first?["state"] as? String == "running", Date() < actionDeadline { Thread.sleep(forTimeInterval: 0.01) }
         try check(try console.snapshot().first?["state"] as? String == "failed", "非零退出显示失败")
         try check(try console.list().count == 1, "编辑保留原项目 ID")
+        let sortStore = ConsoleActions(path: root.appendingPathComponent("sort.json"))
+        let firstSort = try sortStore.save(["name": "一", "kind": "command", "target": "true"])["id"] as! String
+        let middleSort = try sortStore.save(["name": "脚本", "kind": "script", "target": script.path])["id"] as! String
+        let lastSort = try sortStore.save(["name": "二", "kind": "command", "target": "true"])["id"] as! String
+        try sortStore.move(lastSort, direction: "up")
+        try check(try ConsoleActions(path: sortStore.path).list().compactMap { $0["id"] as? String } == [lastSort, middleSort, firstSort], "排序持久化且只交换同类型")
+        try sortStore.move(lastSort, direction: "up")
+        try check(try sortStore.list().first?["id"] as? String == lastSort, "组首上移保持不变")
+        try rejects("拒绝非法排序方向") { try sortStore.move(firstSort, direction: "side") }
+        let icon = ConsoleActions.icon("/System/Applications/Calculator.app")
+        try check(icon.hasPrefix("data:image/png;base64,") && icon.count <= 8022, "系统应用图标缩略图可同步")
         let backend = try NativeBackend(token: "test-only", console: console, screens: LocalScreens())
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)

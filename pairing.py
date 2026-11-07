@@ -1,4 +1,6 @@
 """公开网页的配对中继：持久化凭据摘要，设备快照和短时指令只放内存。"""
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -86,7 +88,14 @@ def clean_console(value):
             raise Failure(400, 'invalid_console')
         ids.add(ident)
         # 路径、命令、脚本输出均留在 Mac，只接收展示及执行状态字段。
-        result.append({key: item[key] for key in ('id', 'name', 'kind', 'state')})
+        icon = item.get('icon', '')
+        if not isinstance(icon, str) or len(icon) > 8022: raise Failure(400, 'invalid_icon')
+        if icon:
+            if not icon.startswith('data:image/png;base64,'): raise Failure(400, 'invalid_icon')
+            try: raw = base64.b64decode(icon[22:], validate=True)
+            except (ValueError, binascii.Error): raise Failure(400, 'invalid_icon')
+            if not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise Failure(400, 'invalid_icon')
+        result.append({key: item[key] for key in ('id', 'name', 'kind', 'state')} | {'icon': icon})
     return result
 
 
