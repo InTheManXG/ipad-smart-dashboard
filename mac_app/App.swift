@@ -26,6 +26,7 @@ struct ManagedKey: Identifiable {
     @Published var pairingCode = ""
     @Published var pairingExpiresAt: Double = 0
     @Published var lanAddresses: [LANAddress] = []
+    @Published var station: [String: String]?
     @Published var keys: [ManagedKey] = []
     @Published var keysLoaded = false
     @Published var busy = false
@@ -95,6 +96,7 @@ struct ManagedKey: Identifiable {
         guard !busy else { return }
         keys = []; keysLoaded = false
         await perform(["action": "keys"], success: "已读取中转站 Key") { result in
+            self.station = result["station"] as? [String: String]
             self.keysLoaded = true
             self.keys = (result["keys"] as? [[String: Any]] ?? []).compactMap {
                 guard let id = $0["id"] as? String, let name = $0["name"] as? String,
@@ -112,6 +114,10 @@ struct ControlView: View {
     @ViewState private var name = ""
     @ViewState private var key = ""
     @ViewState private var deleting: ManagedKey?
+    @ViewState private var stationEditor = false
+    @ViewState private var stationName = ""
+    @ViewState private var stationURL = ""
+    @ViewState private var confirmStationChange = false
 
     var body: some View {
         NavigationSplitView {
@@ -274,10 +280,70 @@ struct ControlView: View {
 
     var keySettings: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("目前支持 Sub2API · 额度查询：sub2api.818tu.com")
-                .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-            Text("Key 保存在这台 Mac 的钥匙串中；公网和局域网看板展示同一份额度数据，关闭本地看板仍可管理。")
-                .font(.callout).foregroundStyle(.secondary)
+            if model.keysLoaded {
+                if let station = model.station {
+                    GroupBox("中转站") {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(station["name"] ?? "Sub2API").font(.headline)
+                                Text("Sub2API · " + (station["url"] ?? "")).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                            Spacer()
+                            Button("编辑中转站") { openStationEditor() }
+                        }.padding(10)
+                    }
+                    Text("Key 保存在这台 Mac 的钥匙串中，公网与局域网共用；目前支持一个 Sub2API 站点。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    stationKeys
+                } else {
+                    Text("先添加一个 Sub2API 中转站，再配置该站的 Key。当前支持一个站点。")
+                        .foregroundStyle(.secondary)
+                    Button("添加中转站") { openStationEditor() }.buttonStyle(.borderedProminent)
+                }
+            } else {
+                Text("中转站配置尚未加载成功，请刷新重试。").foregroundStyle(.secondary)
+            }
+            Button("刷新列表") { Task { await model.loadKeys() } }
+        }
+        .sheet(isPresented: $stationEditor) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(model.station == nil ? "添加中转站" : "编辑中转站").font(.title2.bold())
+                Text("类型：Sub2API（当前仅支持此类型）").foregroundStyle(.secondary)
+                TextField("中转站名称", text: $stationName).textFieldStyle(.roundedBorder)
+                TextField("站点地址，例如 https://sub2api.example.com", text: $stationURL).textFieldStyle(.roundedBorder)
+                Text("填写 HTTPS 根地址，也支持以 /v1 结尾的 API 地址。保存后再添加 Key。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.failed { Text(model.message).foregroundStyle(.red) }
+                HStack {
+                    Button("取消") { stationEditor = false }
+                    Spacer()
+                    Button("保存中转站") {
+                        if !model.keys.isEmpty && stationURL != model.station?["url"] { confirmStationChange = true }
+                        else { Task { await saveStation(confirmed: false) } }
+                    }.buttonStyle(.borderedProminent)
+                        .disabled(stationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || stationURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }.padding(24).frame(width: 480).disabled(model.busy)
+            .confirmationDialog("更换中转站地址？", isPresented: $confirmStationChange, titleVisibility: .visible) {
+                Button("确认更换地址") { Task { await saveStation(confirmed: true) } }
+                Button("取消", role: .cancel) { }
+            } message: { Text("已有 Key 将用于向新地址查询额度。请确认该地址属于这些 Key 的中转站。") }
+        }
+    }
+
+    func openStationEditor() {
+        stationName = model.station?["name"] ?? ""
+        stationURL = model.station?["url"] ?? ""
+        model.failed = false
+        stationEditor = true
+    }
+    func saveStation(confirmed: Bool) async {
+        await model.perform(["action": "station-save", "type": "sub2api", "name": stationName, "url": stationURL, "confirmAddressChange": confirmed])
+        if !model.failed { stationEditor = false; await model.loadKeys() }
+    }
+
+    var stationKeys: some View {
+        VStack(alignment: .leading, spacing: 16) {
             ForEach(model.keys) { item in
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -309,7 +375,6 @@ struct ControlView: View {
                             .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (editingID == nil && key.isEmpty))
                         Button("清空 / 新增") { resetEditor() }
                         Spacer()
-                        Button("刷新列表") { Task { await model.loadKeys() } }
                     }
                 }.padding(12)
             }

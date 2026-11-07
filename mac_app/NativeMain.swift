@@ -47,7 +47,8 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         status["lanAddresses"] = lanAddresses()
         return status
     }
-    if action == "keys" { return ["keys": try managedKeys()] }
+    if action == "keys" { return ["keys": try managedKeys(), "station": try LocalKeys().station() as Any? ?? NSNull()] }
+    if action == "station-save" { return try LocalKeys().saveStation(value) }
     if action == "verify" {
         let token = try displayToken(), base = URL(string: "http://127.0.0.1:18088")!
         guard let snapshot = try HTTPFetch.request(base.appendingPathComponent("api/status"), token: token) as? JSONObject,

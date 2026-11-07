@@ -7,6 +7,44 @@ final class LocalKeys {
     var cache: [String: (String, JSONObject)] = [:]
     let path: URL
     init(path: URL = NativePaths.data.appendingPathComponent("keys.json")) { self.path = path }
+    var stationPath: URL { path.deletingLastPathComponent().appendingPathComponent("station.json") }
+    static func stationURL(_ address: String) throws -> URL {
+        var normalized = trimmed(address)
+        while normalized.hasSuffix("/") { normalized.removeLast() }
+        if normalized.hasSuffix("/v1") { normalized = String(normalized.dropLast(3)) }
+        return try endpoint(normalized)
+    }
+    func station() throws -> JSONObject? {
+        if FileManager.default.fileExists(atPath: stationPath.path) {
+            let value = try readJSON(stationPath)
+            guard value["type"] as? String == "sub2api", let address = value["url"] as? String else { throw ControlError("中转站配置不可读") }
+            _ = try Self.stationURL(address)
+            return value
+        }
+        // 旧版 Key 固定属于此站点，升级时保留归属，不能随新地址悄悄转发。
+        return try records().isEmpty ? nil : ["type": "sub2api", "name": "Sub2API", "url": "https://sub2api.818tu.com"]
+    }
+    func saveStation(_ value: JSONObject) throws -> JSONObject {
+        lock.lock(); defer { lock.unlock() }
+        let fd = open(path.appendingPathExtension("lock").path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { throw ControlError("无法锁定中转站配置") }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { throw ControlError("无法锁定中转站配置") }
+        defer { _ = flock(fd, LOCK_UN) }
+        guard value["type"] as? String == "sub2api", let name = value["name"] as? String,
+              !trimmed(name).isEmpty, trimmed(name).count <= 60, let address = value["url"] as? String else { throw ControlError("中转站名称、类型或地址不正确") }
+        let url = try Self.stationURL(address).absoluteString
+        if let old = try station(), old["url"] as? String != url, try !records().isEmpty {
+            guard value["confirmAddressChange"] as? Bool == true else { throw ControlError("修改地址会将已有 Key 用于新站点，请先确认") }
+        }
+        try writeJSON(["type": "sub2api", "name": trimmed(name), "url": url], stationPath)
+        cache.removeAll()
+        return ["ok": true]
+    }
+    func usageURL() throws -> URL {
+        guard let station = try station(), let address = station["url"] as? String else { throw ControlError("请先添加中转站") }
+        return try Self.stationURL(address).appendingPathComponent("v1/usage")
+    }
     func records() throws -> [JSONObject] {
         if !FileManager.default.fileExists(atPath: path.path) { return [] }
         guard let result = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [JSONObject] else { throw ControlError("Key 配置不可读，拒绝覆盖") }
@@ -38,6 +76,7 @@ final class LocalKeys {
             items.remove(at: index); try writeJSON(items, path)
             try Secrets.delete("company-" + supplied); cache.removeValue(forKey: supplied)
         } else if value["action"] as? String == "save" {
+            guard try station() != nil else { throw ControlError("请先添加中转站，再配置 Key") }
             guard let rawName = value["name"] as? String, !trimmed(rawName).isEmpty, trimmed(rawName).count <= 60,
                   let key = value["key"] as? String, key.isEmpty || secretValid(key), index != nil || (!key.isEmpty && items.count < 50) else { throw ControlError("备注或 Key 不正确") }
             let id = supplied ?? UUID().uuidString.lowercased(), old = try Secrets.get("company-" + id)
@@ -51,13 +90,15 @@ final class LocalKeys {
         return ["ok": true]
     }
     func usage(_ id: String, force: Bool) throws -> JSONObject {
+        let url = try usageURL()
         lock.lock()
         guard let items = try? records(), items.contains(where: { $0["id"] as? String == id }), let key = try? Secrets.get("company-" + id) else { lock.unlock(); throw ControlError("Key 不存在") }
-        if !force, let entry = cache[id], entry.0 == key, Date().timeIntervalSince1970 - (number(entry.1["updatedAt"]) ?? 0) < 60 { lock.unlock(); return entry.1 }
+        let cacheIdentity = url.absoluteString + "\n" + key
+        if !force, let entry = cache[id], entry.0 == cacheIdentity, Date().timeIntervalSince1970 - (number(entry.1["updatedAt"]) ?? 0) < 60 { lock.unlock(); return entry.1 }
         lock.unlock()
         var result: JSONObject
         do {
-            guard let data = try HTTPFetch.request(URL(string: "https://sub2api.818tu.com/v1/usage")!, token: "Bearer " + key, timeout: 12, limit: 1_000_000, header: "Authorization") as? JSONObject,
+            guard let data = try HTTPFetch.request(url, token: "Bearer " + key, timeout: 12, limit: 1_000_000, header: "Authorization") as? JSONObject,
                   data["isValid"] as? Bool == true else { throw ControlError("Key 无效") }
             let subscription = data["subscription"] as? JSONObject ?? [:]
             func amount(_ value: Any?) -> Any { if let value = number(value), abs(value) < 1e15 { return value }; return NSNull() }
@@ -66,8 +107,8 @@ final class LocalKeys {
         } catch { result = ["error": "查询失败，请检查 Key 或稍后重试"] }
         result["updatedAt"] = Date().timeIntervalSince1970
         lock.lock(); defer { lock.unlock() }
-        guard (try Secrets.get("company-" + id)) == key, try records().contains(where: { $0["id"] as? String == id }) else { throw ControlError("Key 已变更") }
-        cache[id] = (key, result); return result
+        guard try usageURL() == url, (try Secrets.get("company-" + id)) == key, try records().contains(where: { $0["id"] as? String == id }) else { throw ControlError("Key 已变更") }
+        cache[id] = (cacheIdentity, result); return result
     }
 }
 
