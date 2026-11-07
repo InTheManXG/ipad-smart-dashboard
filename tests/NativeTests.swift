@@ -104,6 +104,23 @@ import SQLite3
         try check(expiring.complete(oldCode, now: 1600).0 == 401, "配对码过期")
         for _ in 0..<9 { _ = expiring.complete("INVALID!", now: 1601) }
         try check(expiring.complete("INVALID!", now: 1601).0 == 429, "本地配对限流")
+        let screensPath = root.appendingPathComponent("local-screens.json")
+        let screens = LocalScreens(path: screensPath)
+        let multi = LocalPairing(secret: "multi", screens: screens)
+        let firstWeb = multi.complete(multi.current(now: 2000), userAgent: "iPad Safari", now: 2001).1["token"] as! String
+        let secondWeb = multi.complete(multi.current(now: 2002), userAgent: "Chrome", now: 2003).1["token"] as! String
+        try check(multi.authorized(firstWeb, now: 2004) && multi.authorized(secondWeb, now: 2004), "本地多个网页会话同时有效")
+        let firstScreen = try screens.list(now: 2004).first { $0["ua"] as? String == "iPad Safari" }!
+        let screenID = firstScreen["id"] as! String
+        try screens.remark(id: screenID, note: "办公室", now: 2005)
+        let reopened = LocalScreens(path: screensPath)
+        let restarted = LocalPairing(secret: "multi", screens: reopened)
+        try check(restarted.authorized(firstWeb, userAgent: "Updated Safari", now: 2070), "重启后会话有效并更新 UA")
+        let screen = try reopened.list(now: 2071).first { $0["id"] as? String == screenID }!
+        try check(screen["remark"] as? String == "办公室" && screen["ua"] as? String == "Updated Safari", "跨进程备注与 UA 持久化互不覆盖")
+        try check(!(try String(contentsOf: screensPath)).contains(firstWeb), "本地登记不保存会话令牌")
+        try rejects("拒绝过长网页备注") { try reopened.remark(id: screenID, note: String(repeating: "字", count: 81), now: 2071) }
+        try check(try reopened.list(now: 2001 + 31 * 86400).isEmpty, "列表清理过期网页")
         let disabledMusic = NativeMusic()
         disabledMusic.setEnabled(false)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用音乐明确通知网页隐藏歌词")
@@ -111,7 +128,7 @@ import SQLite3
         try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用时晚到采集不能重新启用")
         disabledMusic.setEnabled(true)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == true, "启用但离线仍保留音乐区域")
-        let backend = try NativeBackend(token: "test-only")
+        let backend = try NativeBackend(token: "test-only", screens: LocalScreens())
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)
         while !server.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }

@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import threading
 import time
@@ -9,6 +10,69 @@ import pairing
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_multiple_screens_remarks_ua_and_legacy_sessions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'pairing.sqlite'
+            store = pairing.Store(path)
+            first, other = str(uuid.uuid4()), str(uuid.uuid4())
+            store.register({'deviceId': first, 'deviceToken': 'a' * 64})
+            store.register({'deviceId': other, 'deviceToken': 'b' * 64})
+            web1 = store.complete({'code': store.code(first)['code']}, 'iPad Safari')['token']
+            web2 = store.complete({'code': store.code(first)['code']}, 'Chrome Desktop')['token']
+            self.assertEqual(store.authenticate(web1, 'web'), first)
+            self.assertEqual(store.authenticate(web2, 'web'), first)
+            screens = store.screens(first)['screens']
+            self.assertEqual(len(screens), 2)
+            self.assertEqual({s['ua'] for s in screens}, {'iPad Safari', 'Chrome Desktop'})
+            screen = next(s for s in screens if s['ua'] == 'iPad Safari')
+            self.assertNotIn('secret', screen)
+            self.assertNotIn('token', screen)
+            store.remark(first, {'id': screen['id'], 'remark': '办公室'})
+            with self.assertRaises(pairing.Failure):
+                store.remark(other, {'id': screen['id'], 'remark': '越权'})
+            with self.assertRaises(pairing.Failure):
+                store.remark(first, {'id': screen['id'], 'remark': 'x' * 81})
+            store.close()
+            store = pairing.Store(path)
+            store.authenticate(web1, 'web', 'Updated Safari')
+            changed = next(s for s in store.screens(first)['screens'] if s['id'] == screen['id'])
+            self.assertEqual((changed['remark'], changed['ua']), ('办公室', 'Updated Safari'))
+            # 模拟升级前只有 sessions 记录的旧网页，不要求重新配对。
+            legacy = 'c' * 64
+            store.db.execute('INSERT INTO sessions VALUES(?,?,?)', (pairing.digest(legacy), first, time.time()+100))
+            store.db.commit()
+            self.assertEqual(store.authenticate(legacy, 'web', 'Legacy UA'), first)
+            self.assertEqual(len(store.screens(first)['screens']), 3)
+            store.leave(web2)
+            self.assertEqual(len(store.screens(first)['screens']), 2)
+            self.assertEqual(store.db.execute('SELECT COUNT(*) FROM screens WHERE secret=?', (pairing.digest(web2),)).fetchone()[0], 0)
+            store.close()
+
+    def test_two_web_screens_can_queue_usage_queries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = pairing.Store(Path(folder) / 'pairing.sqlite')
+            ident = str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            tokens = [store.complete({'code': store.code(ident)['code']})['token'] for _ in range(2)]
+            key = str(uuid.uuid4())
+            store.exchange(ident, {'status': {}, 'keys': [{'id': key, 'name': '测试'}]})
+            results, errors = [], []
+            def query(token):
+                try: results.append(store.command(ident, {'id': key}, 'usage', token, wait=2))
+                except Exception as exc: errors.append(exc)
+            workers = [threading.Thread(target=query, args=(token,)) for token in tokens]
+            for worker in workers: worker.start()
+            deadline = time.monotonic() + 4
+            while any(w.is_alive() for w in workers) and time.monotonic() < deadline:
+                response = store.exchange(ident, {'status': {}})
+                for command in response['commands']:
+                    store.exchange(ident, {'acks': [{'requestId': command['requestId'], 'ok': True, 'usage': {'remaining': 12}}]})
+                time.sleep(.01)
+            for worker in workers: worker.join(3)
+            self.assertEqual(errors, [])
+            self.assertEqual(results, [{'remaining': 12}, {'remaining': 12}])
+            store.close()
+
     def test_music_enabled_survives_exchange_and_disconnect(self):
         with tempfile.TemporaryDirectory() as folder:
             store = pairing.Store(Path(folder) / 'pairing.sqlite')

@@ -16,6 +16,13 @@ struct ManagedKey: Identifiable {
     let maskedKey: String
 }
 
+struct PairedScreen: Identifiable {
+    let id: String
+    let scope: String
+    let remark: String
+    let ua: String
+}
+
 @MainActor final class ControlModel: ObservableObject {
     @Published var dashboard = "正在检查…"
     @Published var musicEnabled = false
@@ -23,6 +30,12 @@ struct ManagedKey: Identifiable {
     @Published var appLogin = false
     @Published var publicURL = ""
     @Published var paired = false
+    @Published var publicScreens: [PairedScreen] = []
+    @Published var localScreens: [PairedScreen] = []
+    @Published var publicScreensError = ""
+    @Published var extraCode = ""
+    @Published var extraCodeExpiry: Double = 0
+    private var extraCodeCount = 0
     @Published var localPairingCode = ""
     @Published var pairingCode = ""
     @Published var pairingExpiresAt: Double = 0
@@ -75,7 +88,9 @@ struct ManagedKey: Identifiable {
             self.musicEnabled = result["musicEnabled"] as? Bool ?? false
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
-            self.publicURL = result["publicURL"] as? String ?? ""
+            let address = result["publicURL"] as? String ?? ""
+            if self.publicURL != address { self.extraCode = ""; self.publicScreens = [] }
+            self.publicURL = address
             self.paired = result["paired"] as? Bool ?? false
             self.localPairingCode = result["localPairingCode"] as? String ?? ""
             self.pairingCode = result["pairingCode"] as? String ?? ""
@@ -92,6 +107,29 @@ struct ManagedKey: Identifiable {
         if let enabled { body["enabled"] = enabled }
         await perform(body, success: "设置已更新")
         if !failed { await refresh() }
+    }
+
+    func loadScreens() async {
+        await perform(["action": "screens"]) { result in
+            func screens(_ key: String, scope: String) -> [PairedScreen] {
+                (result[key] as? [[String: Any]] ?? []).compactMap {
+                    guard let id = $0["id"] as? String else { return nil }
+                    return PairedScreen(id: id, scope: scope, remark: $0["remark"] as? String ?? "", ua: $0["ua"] as? String ?? "")
+                }
+            }
+            self.publicScreens = screens("publicScreens", scope: "public")
+            self.localScreens = screens("localScreens", scope: "local")
+            self.publicScreensError = result["publicError"] as? String ?? ""
+            if self.publicScreens.count > self.extraCodeCount || Date().timeIntervalSince1970 >= self.extraCodeExpiry { self.extraCode = "" }
+        }
+    }
+    func refreshConnections() async { await refresh(); if !failed { await loadScreens() } }
+    func newCode() async {
+        await perform(["action": "pairing-code"], success: "请在新网页输入此码；完成后刷新列表。") { result in
+            self.extraCode = result["code"] as? String ?? ""
+            self.extraCodeExpiry = result["expiresAt"] as? Double ?? 0
+            self.extraCodeCount = result["screenCount"] as? Int ?? self.publicScreens.count
+        }
     }
 
     func loadKeys() async {
@@ -121,6 +159,7 @@ struct ControlView: View {
     @ViewState private var stationURL = ""
     @ViewState private var confirmStationChange = false
     @ViewState private var publicEditor = false
+    @ViewState private var editingScreen: PairedScreen?
 
     var body: some View {
         NavigationSplitView {
@@ -163,7 +202,7 @@ struct ControlView: View {
         .task { await model.refresh() }
         .onChange(of: section) { value in
             resetEditor()
-            Task { if value == "Key" { await model.loadKeys() } else { await model.refresh() } }
+            Task { if value == "Key" { await model.loadKeys() } else if value == "连接" { await model.refreshConnections() } else { await model.refresh() } }
         }
         .alert("删除 Key？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("取消", role: .cancel) { deleting = nil }
@@ -249,6 +288,15 @@ struct ControlView: View {
                         Text("尚未取得公网配对码，请确认后台服务和网络连接正常。")
                             .foregroundStyle(.secondary)
                     }
+                    if !model.publicURL.isEmpty {
+                        Button("配对新网页") { Task { await model.newCode() } }
+                        if !model.extraCode.isEmpty {
+                            Text(model.extraCode).font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                            Text("10 分钟有效、仅使用一次；不会断开已配对的网页。").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !model.publicScreensError.isEmpty { Text(model.publicScreensError).foregroundStyle(.red) }
+                        screenList(model.publicScreens)
+                    }
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }
             // 仅在本地监听就绪时提供局域网入口，避免展示无法访问的地址。
@@ -275,22 +323,42 @@ struct ControlView: View {
                         }
                         Divider()
                         if !model.localPairingCode.isEmpty {
-                            Text("本地配对码")
+                            Text("配对新网页 · 本地配对码")
                             Text(model.localPairingCode).font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
                             Text("配对码 10 分钟有效，使用后更新。与公网配对码分别使用。")
                                 .font(.caption).foregroundStyle(.secondary)
                         } else {
                             Text("正在准备本地配对码，请稍后刷新。").foregroundStyle(.secondary)
                         }
+                        screenList(model.localScreens)
                         Button("在这台 Mac 上打开") { open("http://127.0.0.1:18088") }
                         Text("此方式无需公网服务。Mac 需保持开机；HTTP 地址仅用于可信局域网。")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            Button("刷新连接状态与地址") { Task { await model.refresh() } }
+            Button("刷新连接状态与地址") { Task { await model.refreshConnections() } }
         }
         .sheet(isPresented: $publicEditor) { PublicAddressEditor(model: model) }
+        .sheet(item: $editingScreen) { ScreenRemarkEditor(model: model, screen: $0) }
+    }
+
+    func screenList(_ screens: [PairedScreen]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("已配对网页 · \(screens.count)").font(.headline)
+            ForEach(screens) { screen in
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(screen.remark.isEmpty ? "未备注网页" : screen.remark).font(.subheadline.bold())
+                        Text(screen.ua.isEmpty ? "UA 尚未上报，请在对应网页刷新。" : "UA：" + screen.ua)
+                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("备注") { editingScreen = screen }
+                }.padding(10).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+            }
+            Text("每个浏览器会话单独配对，最多 16 个；UA 是浏览器上报信息。").font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     var keySettings: some View {
@@ -402,6 +470,34 @@ struct ControlView: View {
     }
     func resetEditor() { editingID = nil; name = ""; key = "" }
     func open(_ address: String) { if let url = URL(string: address) { NSWorkspace.shared.open(url) } }
+}
+
+struct ScreenRemarkEditor: View {
+    @ObservedObject var model: ControlModel
+    let screen: PairedScreen
+    @Environment(\.dismiss) private var dismiss
+    @ViewState private var note: String
+    init(model: ControlModel, screen: PairedScreen) {
+        self.model = model; self.screen = screen; _note = ViewState(initialValue: screen.remark)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("网页备注").font(.title2.bold())
+            TextField("例如：办公室 iPad、客厅大屏", text: $note).textFieldStyle(.roundedBorder)
+            Text("UA：" + (screen.ua.isEmpty ? "尚未上报" : screen.ua)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            if model.failed { Text(model.message).foregroundStyle(.red) }
+            HStack {
+                Button("取消") { dismiss() }
+                Spacer()
+                Button("保存") {
+                    Task {
+                        await model.perform(["action": "screen-remark", "scope": screen.scope, "id": screen.id, "remark": note], success: "备注已保存")
+                        if !model.failed { dismiss(); await model.loadScreens() }
+                    }
+                }.buttonStyle(.borderedProminent).disabled(note.trimmingCharacters(in: .whitespacesAndNewlines).count > 80)
+            }
+        }.padding(24).frame(width: 480).disabled(model.busy)
+    }
 }
 
 // 表单独立持有草稿，让首次弹出时的按钮校验与输入值保持同步。

@@ -49,6 +49,23 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         status["lanAddresses"] = lanAddresses()
         return status
     }
+    if action == "pairing-code" { return try pairingNewCode() }
+    if action == "screens" {
+        var result: JSONObject = ["localScreens": try LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json")).list(), "publicScreens": [JSONObject]()]
+        if !publicAddress(config).isEmpty {
+            do { result["publicScreens"] = try pairingManage("api/pairing/screens")["screens"] ?? [JSONObject]() }
+            catch { result["publicError"] = "公网网页列表读取失败，请确认服务已更新且连接正常。" }
+        }
+        return result
+    }
+    if action == "screen-remark" {
+        guard let id = value["id"] as? String, let note = value["remark"] as? String, let scope = value["scope"] as? String,
+              UUID(uuidString: id) != nil, trimmed(note).count <= 80 else { throw ControlError("网页标识或备注不正确") }
+        if scope == "local" { try LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json")).remark(id: id, note: note) }
+        else if scope == "public" { _ = try pairingManage("api/pairing/screen", body: ["id": id, "remark": trimmed(note)]) }
+        else { throw ControlError("未知配对类型") }
+        return ["ok": true]
+    }
     if action == "public-save" {
         guard let address = value["url"] as? String else { throw ControlError("公网地址不正确") }
         let validated = try validatePublicAddress(address)

@@ -219,9 +219,9 @@ final class NativeBackend {
     var cloudPairing: JSONObject = ["paired": false]
     let token: String
     let localPairing: LocalPairing
-    init(token: String? = nil) throws {
+    init(token: String? = nil, screens: LocalScreens = LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json"))) throws {
         self.token = try token ?? displayToken()
-        self.localPairing = LocalPairing(secret: self.token)
+        self.localPairing = LocalPairing(secret: self.token, screens: screens)
     }
     func status() -> JSONObject {
         lock.lock(); defer { lock.unlock() }
@@ -271,11 +271,11 @@ final class NativeBackend {
         if request.method == "POST", request.path == "/api/pairing/complete" {
             guard request.body.count <= 1024, let value = try? jsonObject(request.body),
                   let code = value["code"] as? String, code.count == 8 else { return json([:], 400) }
-            let result = localPairing.complete(code)
+            let result = localPairing.complete(code, userAgent: request.headers["user-agent"] ?? "")
             return json(result.1, result.0)
         }
         let manager = secureEqual(request.headers["x-display-token"] ?? "", token)
-        guard manager || localPairing.authorized(request.headers["x-pairing-token"] ?? "") else { return json([:], 401) }
+        guard manager || localPairing.authorized(request.headers["x-pairing-token"] ?? "", userAgent: request.headers["user-agent"] ?? "") else { return json([:], 401) }
         do {
             let parts = URLComponents(string: "http://localhost" + request.path)
             let path = parts?.path ?? ""

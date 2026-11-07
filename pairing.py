@@ -79,10 +79,13 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path, check_same_thread=False)
         os.chmod(path, 0o600)
+        self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript('''
             CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, secret TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
               code TEXT UNIQUE, expires REAL NOT NULL DEFAULT 0, seen REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS sessions (secret TEXT PRIMARY KEY, device TEXT NOT NULL, expires REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS screens (secret TEXT PRIMARY KEY REFERENCES sessions(secret) ON DELETE CASCADE,
+              id TEXT UNIQUE NOT NULL, remark TEXT NOT NULL DEFAULT '', ua TEXT NOT NULL DEFAULT '', seen REAL NOT NULL DEFAULT 0);
         ''')
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
@@ -118,14 +121,38 @@ class Store:
             self.db.execute('UPDATE devices SET name=?,seen=? WHERE id=?', (name, time.time(), ident))
             return self.state(ident)
 
-    def authenticate(self, token, role):
+    def _screen(self, hashed, user_agent=None):
+        # 旧会话不失效；首次访问或管理列表时补登记，UA 仅作展示而非身份认证。
+        self.db.execute('INSERT OR IGNORE INTO screens(secret,id) VALUES(?,?)', (hashed, str(uuid.uuid4())))
+        if user_agent is not None:
+            ua, now = user_agent[:1024], time.time()
+            self.db.execute('UPDATE screens SET ua=?,seen=? WHERE secret=? AND (ua!=? OR seen<?)',
+                            (ua, now, hashed, ua, now-60))
+
+    def screens(self, ident):
+        with self.lock, self.db:
+            for (hashed,) in self.db.execute('SELECT secret FROM sessions WHERE device=? AND expires>?', (ident, time.time())).fetchall():
+                self._screen(hashed)
+            rows = self.db.execute('SELECT c.id,c.remark,c.ua,c.seen,s.expires FROM screens c JOIN sessions s ON c.secret=s.secret WHERE s.device=? AND s.expires>? ORDER BY c.seen DESC,c.id', (ident, time.time())).fetchall()
+            return {'screens': [dict(zip(('id','remark','ua','seen','expires'), row)) for row in rows]}
+
+    def remark(self, ident, value):
+        screen_id, note = identity(value.get('id')), value.get('remark')
+        if not isinstance(note, str) or len(note.strip()) > 80: raise Failure(400, 'invalid_remark')
+        with self.lock, self.db:
+            changed = self.db.execute('UPDATE screens SET remark=? WHERE id=? AND secret IN (SELECT secret FROM sessions WHERE device=? AND expires>?)', (note.strip(), screen_id, ident, time.time())).rowcount
+            if not changed: raise Failure(404, 'screen_not_found')
+            return {'ok': True}
+
+    def authenticate(self, token, role, user_agent=None):
         hashed = credential(token)
-        with self.lock:
+        with self.lock, self.db:
             if role == 'device':
                 row = self.db.execute('SELECT id FROM devices WHERE secret=?', (hashed,)).fetchone()
             else:
                 row = self.db.execute('SELECT device FROM sessions WHERE secret=? AND expires>?', (hashed, time.time())).fetchone()
             if not row: raise Failure(401, 'unauthorized')
+            if role == 'web': self._screen(hashed, user_agent)
             return row[0]
 
     def state(self, ident):
@@ -143,7 +170,7 @@ class Store:
             self.db.execute('UPDATE devices SET code=?,expires=?,seen=? WHERE id=?', (digest(raw), expiry, time.time(), ident))
             return self.state(ident) | {'code': raw, 'expiresAt': expiry}
 
-    def complete(self, value):
+    def complete(self, value, user_agent=""):
         code = value.get('code')
         if not isinstance(code, str) or not re.fullmatch(r'[23456789A-HJKMNP-Z]{8}', code.upper()):
             raise Failure(401, 'invalid_pairing_code')
@@ -153,6 +180,7 @@ class Store:
             if self.state(row[0])['screenCount'] >= 16: raise Failure(409, 'screen_limit')
             token = secrets.token_urlsafe(32)
             self.db.execute('INSERT INTO sessions VALUES(?,?,?)', (digest(token), row[0], time.time()+SESSION_TTL))
+            self._screen(digest(token), user_agent)
             # 消费与写会话同一事务，两个网页抢同一码最多一个成功。
             self.db.execute('UPDATE devices SET code=NULL,expires=0 WHERE id=?', (row[0],))
             return {'token': token, 'name': row[1]}
@@ -254,6 +282,9 @@ class Store:
             self.read(ident, 'usage', value.get('id'))
             payload = {'kind': 'usage', 'id': value['id']}
         with self.condition:
+            # 多网页可能同时刷新额度；只读查询排队，控制指令仍避免重复执行。
+            if kind == 'usage' and not self.condition.wait_for(lambda: not self.pending.get(ident), timeout=wait):
+                raise Failure(409, 'device_busy')
             commands = self.pending.setdefault(ident, {})
             if commands: raise Failure(409, 'device_busy')
             request_id = str(uuid.uuid4())
@@ -268,6 +299,7 @@ class Store:
                 return item['result'].get('usage', item['result'])
             finally:
                 self.pending.pop(ident, None)
+                self.condition.notify_all()
 
 
 def route(handler):
@@ -298,18 +330,20 @@ def route(handler):
             result = store.register(value)
         elif method == 'POST' and path == '/api/pairing/complete':
             store.throttle(('complete', peer), 10, 60); store.throttle(('complete-global', ''), 300, 60)
-            result = store.complete(value)
-        elif path in ('/api/device/exchange', '/api/pairing/code', '/api/pairing/revoke', '/api/pairing/device'):
+            result = store.complete(value, handler.headers.get('User-Agent', ''))
+        elif path in ('/api/device/exchange', '/api/pairing/code', '/api/pairing/revoke', '/api/pairing/device', '/api/pairing/screens', '/api/pairing/screen'):
             ident = store.authenticate(handler.headers.get('X-Device-Token', ''), 'device')
             store.throttle(('device', ident), 600, 60)
             if path == '/api/device/exchange' and method == 'POST': result = store.exchange(ident, value)
             elif path == '/api/pairing/code' and method == 'POST': result = store.code(ident)
             elif path == '/api/pairing/revoke' and method == 'POST': result = store.revoke(ident)
             elif path == '/api/pairing/device' and method == 'GET': result = store.state(ident)
+            elif path == '/api/pairing/screens' and method == 'GET': result = store.screens(ident)
+            elif path == '/api/pairing/screen' and method == 'POST': result = store.remark(ident, value)
             else: raise Failure(405, 'method_not_allowed')
         else:
             token = handler.headers.get('X-Pairing-Token', '')
-            ident = store.authenticate(token, 'web')
+            ident = store.authenticate(token, 'web', handler.headers.get('User-Agent', ''))
             store.throttle(('web', digest(token)), 360, 60)
             if path == '/api/pairing/leave' and method == 'POST': result = store.leave(token)
             elif path == '/api/pairing/status' and method == 'GET': result = store.state(ident)

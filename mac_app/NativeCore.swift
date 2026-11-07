@@ -137,6 +137,16 @@ func pairingStart() throws -> JSONObject {
     guard let code = try? HTTPFetch.request(target.url("api/pairing/code"), token: token, body: JSONObject(), header: "X-Device-Token") as? JSONObject else { return result }
     return code
 }
+func pairingNewCode() throws -> JSONObject {
+    if try PairingConnection(config: configuration()).token() == nil { _ = try pairingStart() }
+    return try pairingManage("api/pairing/code", body: JSONObject())
+}
+func pairingManage(_ path: String, body: JSONObject? = nil) throws -> JSONObject {
+    let target = try PairingConnection(config: configuration())
+    guard let token = try target.token() else { throw ControlError("尚未连接公网配对服务") }
+    guard let result = try HTTPFetch.request(target.url(path), token: token, body: body, timeout: 8, header: "X-Device-Token") as? JSONObject else { throw ControlError("配对服务返回无效数据") }
+    return result
+}
 func pairingStatus() throws -> JSONObject {
     let target = try PairingConnection(config: configuration())
     guard let token = try target.token() else { return ["paired": false] }
