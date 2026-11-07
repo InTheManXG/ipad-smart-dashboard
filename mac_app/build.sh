@@ -14,7 +14,7 @@ cp -R "$root/web" "$contents/Resources/"
 for size in 16 32 128 256 512; do
   for scale in 1 2; do
     suffix=""; if [ "$scale" = 2 ]; then suffix="@2x"; fi
-    sips -z "$((size * scale))" "$((size * scale))" "$root/web/codex-icon.png" --out "$root/.build/control.iconset/icon_${size}x${size}${suffix}.png" >/dev/null
+    sips -z "$((size * scale))" "$((size * scale))" "$root/mac_app/assets/app-icon.png" --out "$root/.build/control.iconset/icon_${size}x${size}${suffix}.png" >/dev/null
   done
 done
 iconutil -c icns "$root/.build/control.iconset" -o "$contents/Resources/AppIcon.icns"
