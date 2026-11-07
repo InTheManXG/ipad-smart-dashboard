@@ -295,7 +295,6 @@ struct ControlView: View {
                             Text("10 分钟有效、仅使用一次；不会断开已配对的网页。").font(.caption).foregroundStyle(.secondary)
                         }
                         if !model.publicScreensError.isEmpty { Text(model.publicScreensError).foregroundStyle(.red) }
-                        screenList(model.publicScreens)
                     }
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -330,34 +329,71 @@ struct ControlView: View {
                         } else {
                             Text("正在准备本地配对码，请稍后刷新。").foregroundStyle(.secondary)
                         }
-                        screenList(model.localScreens)
                         Button("在这台 Mac 上打开") { open("http://127.0.0.1:18088") }
                         Text("此方式无需公网服务。Mac 需保持开机；HTTP 地址仅用于可信局域网。")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            Button("刷新连接状态与地址") { Task { await model.refreshConnections() } }
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("已配对网页").font(.title3.bold())
+                    Text("\(visibleScreens.count)").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("刷新连接状态与地址") { Task { await model.refreshConnections() } }
+                }
+                Text("公网和局域网分别最多配对 16 个网页；可为每个端添加位置备注，UA 为浏览器上报信息。")
+                    .font(.caption).foregroundStyle(.secondary)
+                screenCards
+            }
         }
         .sheet(isPresented: $publicEditor) { PublicAddressEditor(model: model) }
         .sheet(item: $editingScreen) { ScreenRemarkEditor(model: model, screen: $0) }
     }
 
-    func screenList(_ screens: [PairedScreen]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("已配对网页 · \(screens.count)").font(.headline)
-            ForEach(screens) { screen in
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(screen.remark.isEmpty ? "未备注网页" : screen.remark).font(.subheadline.bold())
-                        Text(screen.ua.isEmpty ? "UA 尚未上报，请在对应网页刷新。" : "UA：" + screen.ua)
-                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Button("备注") { editingScreen = screen }
-                }.padding(10).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+    private var visibleScreens: [PairedScreen] {
+        model.publicScreens + (model.dashboard == "运行中" ? model.localScreens : [])
+    }
+
+    var screenCards: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if visibleScreens.isEmpty {
+                Text(model.publicScreensError.isEmpty ? "暂无已配对网页，可使用上方配对码连接新设备。" : "网页列表暂不可用，请刷新重试。")
+                    .foregroundStyle(.secondary).padding(.vertical, 12)
             }
-            Text("每个浏览器会话单独配对，最多 16 个；UA 是浏览器上报信息。").font(.caption).foregroundStyle(.secondary)
+            // 一个会话一张卡片，连接类型保留在卡片内，公共说明只在列表上方展示。
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14, alignment: .top)], alignment: .leading, spacing: 14) {
+                ForEach(visibleScreens) { screen in
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "display").font(.title2).foregroundStyle(Color.accentColor)
+                                .frame(width: 36, height: 36)
+                                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(screen.remark.isEmpty ? "未备注网页" : screen.remark)
+                                    .font(.headline).fixedSize(horizontal: false, vertical: true)
+                                Text(screen.scope == "public" ? "公网" : "局域网")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(Color.primary.opacity(0.05), in: Capsule())
+                            }
+                            Spacer(minLength: 4)
+                            Button("编辑备注") { editingScreen = screen }
+                                .controlSize(.small)
+                        }
+                        Divider()
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("User Agent").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                            Text(screen.ua.isEmpty ? "尚未上报，请在对应网页刷新。" : screen.ua)
+                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(16).frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)
+                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
+                }
+            }
         }
     }
 
