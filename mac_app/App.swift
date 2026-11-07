@@ -161,6 +161,7 @@ struct ControlView: View {
     @ViewState private var publicEditor = false
     @ViewState private var editingScreen: PairedScreen?
     @ViewState private var kickingScreen: PairedScreen?
+    @ViewState private var expandedScreens: Set<String> = []
 
     var body: some View {
         NavigationSplitView {
@@ -378,6 +379,7 @@ struct ControlView: View {
             // 一个会话一张卡片，连接类型保留在卡片内，公共说明只在列表上方展示。
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14, alignment: .top)], alignment: .leading, spacing: 14) {
                 ForEach(visibleScreens) { screen in
+                    let detailID = screen.scope + ":" + screen.id
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: "display").font(.title2).foregroundStyle(Color.accentColor)
@@ -399,13 +401,25 @@ struct ControlView: View {
                         }
                         Divider()
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(userAgentSummary(screen.ua)).font(.subheadline).foregroundStyle(.secondary)
-                            DisclosureGroup("详细信息") {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text(userAgentSummary(screen.ua)).font(.subheadline).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                                Button {
+                                    if expandedScreens.contains(detailID) { expandedScreens.remove(detailID) }
+                                    else { expandedScreens.insert(detailID) }
+                                } label: {
+                                    Label("详细信息", systemImage: expandedScreens.contains(detailID) ? "chevron.up" : "chevron.down")
+                                }
+                                .buttonStyle(.plain).font(.caption).foregroundStyle(Color.accentColor)
+                                .fixedSize().accessibilityValue(expandedScreens.contains(detailID) ? "已展开" : "已收起")
+                            }
+                            if expandedScreens.contains(detailID) {
                                 Text(screen.ua.isEmpty ? "尚未上报，请在对应网页刷新。" : screen.ua)
                                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
-                            }.font(.caption)
+                            }
                         }
                     }
                     .padding(16).frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)
