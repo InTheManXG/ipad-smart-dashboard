@@ -236,39 +236,42 @@ struct ControlView: View {
                     }
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }
-            GroupBox("局域网连接") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("iPad 与 Mac 连接可互通的网络，打开以下任一地址。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    ForEach(model.lanAddresses) { item in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.label).font(.caption).foregroundStyle(.secondary)
-                                Text(item.url).textSelection(.enabled)
-                            }
-                            Spacer()
-                            Button("复制地址") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(item.url, forType: .string)
-                            }.accessibilityLabel("复制 " + item.label + " 访问地址")
-                        }
-                    }
-                    if model.lanAddresses.isEmpty {
-                        Text("未检测到可用的 Wi-Fi 或网线地址").foregroundStyle(.secondary)
-                    }
-                    Divider()
-                    if model.dashboard == "运行中", !model.localPairingCode.isEmpty {
-                        Text("本地配对码")
-                        Text(model.localPairingCode).font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
-                        Text("配对码 10 分钟有效，使用后更新。与公网配对码分别使用。")
+            // 仅在本地监听就绪时提供局域网入口，避免展示无法访问的地址。
+            if model.dashboard == "运行中" {
+                GroupBox("局域网连接") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("iPad 与 Mac 连接可互通的网络，打开以下任一地址。")
                             .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("请先在“服务管理”中启动本地看板。").foregroundStyle(.secondary)
-                    }
-                    Button("在这台 Mac 上打开") { open("http://127.0.0.1:18088") }
-                    Text("此方式无需公网服务。Mac 需保持开机；HTTP 地址仅用于可信局域网。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        ForEach(model.lanAddresses) { item in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.label).font(.caption).foregroundStyle(.secondary)
+                                    Text(item.url).textSelection(.enabled)
+                                }
+                                Spacer()
+                                Button("复制地址") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(item.url, forType: .string)
+                                }.accessibilityLabel("复制 " + item.label + " 访问地址")
+                            }
+                        }
+                        if model.lanAddresses.isEmpty {
+                            Text("未检测到可用的 Wi-Fi 或网线地址").foregroundStyle(.secondary)
+                        }
+                        Divider()
+                        if !model.localPairingCode.isEmpty {
+                            Text("本地配对码")
+                            Text(model.localPairingCode).font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                            Text("配对码 10 分钟有效，使用后更新。与公网配对码分别使用。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("正在准备本地配对码，请稍后刷新。").foregroundStyle(.secondary)
+                        }
+                        Button("在这台 Mac 上打开") { open("http://127.0.0.1:18088") }
+                        Text("此方式无需公网服务。Mac 需保持开机；HTTP 地址仅用于可信局域网。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             Button("刷新连接状态与地址") { Task { await model.refresh() } }
         }
