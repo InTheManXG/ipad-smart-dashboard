@@ -14,6 +14,12 @@
 
 ### 多 App 配对
 
+公网配对和快照上传固定使用 `https://ipad.iamxg.com`，与 App 的本地/远程 Key 管理地址独立；选择 `http://127.0.0.1:18088` 不会改变公网注册目标。
+
+2026-11-07 公网发布：已在原 1Panel 目录 `/opt/1panel/docker/compose/codex-ipad-dashboard` 更新配对服务，备份位于同目录 `backup-pairing-20261107-144715`，包含原 app、Compose、环境文件和 relay-data。仅重建 `codex-ipad-dashboard`；其他运行容器 ID 保持不变，未修改 OpenResty 或 ESP 状态中继。原服务器 Key 数据保留，不自动复制到 Mac。回滚时从备份恢复 app 和 compose.yaml，再在原目录重建该服务；配对数据库应保留，避免丢失新会话。
+
+验证：59 项原生断言、29 项 Python 回归、5 组前端检查和 App 构建签名通过；公网模式接口 200、未认证状态 401，公网页面与本地发布资源一致。已安装 App 成功注册，服务器已有实际网页配对；短期验收会话读取到真实任务、额度和音乐状态。浏览器新版配对入口已核对；iPad 真机及实际播放控制未验收。
+
 `ipad.iamxg.com` 在配对模式下只承载网页，不再绑定某一台 Mac。Mac App 首次启动会向服务器注册一个随机设备令牌，并显示一次性 8 位配对码；网页没有配对会自动弹出输入框，输入配对码后得到仅对应这台 Mac 的网页会话。服务器按设备保存任务、额度、音乐和控制指令快照，多个 Mac 的内容彼此隔离。配对码 10 分钟过期且只能使用一次，网页会话 30 天过期；服务端只保存设备令牌和网页令牌的 SHA-256 摘要，配对数据库位于 `RELAY_DATA_DIR/pairing.sqlite`，权限为 `600`。
 
 设备端使用 `X-Device-Token` 上传快照，网页使用 `X-Pairing-Token` 读取和操作；旧 `X-Display-Token` 仅作为迁移兼容入口。服务器部署需将 `DISPLAY_MODE` 设为 `pairing`，本地旧版或未升级服务器仍会继续使用旧口令模式。配对服务不把完整 API Key 回传网页，Key 的额度查询由对应 Mac 代执行。

@@ -177,6 +177,11 @@ class Store:
             return {'ok': True}
 
     def exchange(self, ident, value):
+        # 状态和音乐由不同上传线程发送，合并快照必须与写入处于同一锁内。
+        with self.condition:
+            return self._exchange(ident, value)
+
+    def _exchange(self, ident, value):
         previous = self.snapshots.get(ident)
         status = clean_status(value['status']) if 'status' in value else (previous[1] if previous else {'schema': 1, 'conversations': []})
         raw_music = value['music'] if 'music' in value else (previous[2] if previous else {'state': 'offline'})
@@ -201,6 +206,9 @@ class Store:
                         command['result']['usage'] = ack['usage']
             commands = []
             for key, item in pending.items():
+                # 只交给能处理该指令的上传线程，避免音乐线程抢走任务/额度指令。
+                channel = 'music' if item['payload']['kind'] == 'music' else 'status'
+                if channel not in value: continue
                 if item['deadline'] > now and not item['sent'] and item['result'] is None:
                     item['sent'] = True
                     commands.append(item['payload'] | {'requestId': key, 'expiresIn': item['deadline']-now})
@@ -293,7 +301,7 @@ def route(handler):
             result = store.complete(value)
         elif path in ('/api/device/exchange', '/api/pairing/code', '/api/pairing/revoke', '/api/pairing/device'):
             ident = store.authenticate(handler.headers.get('X-Device-Token', ''), 'device')
-            store.throttle(('device', ident), 180, 60)
+            store.throttle(('device', ident), 600, 60)
             if path == '/api/device/exchange' and method == 'POST': result = store.exchange(ident, value)
             elif path == '/api/pairing/code' and method == 'POST': result = store.code(ident)
             elif path == '/api/pairing/revoke' and method == 'POST': result = store.revoke(ident)
@@ -310,8 +318,7 @@ def route(handler):
             elif path == '/api/relay/keys' and method == 'GET': result = store.read(ident, 'keys')
             elif path == '/api/relay/usage' and method == 'GET':
                 query = parse_qs(urlsplit(handler.path).query); key = query.get('id', [''])[0]
-                if query.get('refresh') == ['1']: store.command(ident, {'id': key}, 'usage', token)
-                result = store.read(ident, 'usage', key)
+                result = store.command(ident, {'id': key}, 'usage', token) if query.get('refresh') == ['1'] else store.read(ident, 'usage', key)
             elif path == '/api/subscriptions' and method == 'GET':
                 result = [{'id': 'paoluz', 'remark': 'Paoluz'}, {'id': 'sc', 'remark': '顺畅网络'}, {'id': 'just', 'remark': '管人痴·ZDQ'}]
             elif path == '/api/subscriptions/update' and method == 'POST':

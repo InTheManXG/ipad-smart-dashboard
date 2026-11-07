@@ -1,4 +1,6 @@
 import tempfile
+import threading
+import time
 import uuid
 import unittest
 from pathlib import Path
@@ -32,6 +34,30 @@ class PairingStoreTests(unittest.TestCase):
             with self.assertRaises(pairing.Failure):
                 store.read(second, 'status')
             store.close()
+
+    def test_command_only_delivered_to_matching_uploader(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = pairing.Store(Path(folder) / 'pairing.sqlite')
+            ident = str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            token = store.complete({'code': store.code(ident)['code']})['token']
+            key = str(uuid.uuid4())
+            store.exchange(ident, {'status': {}, 'keys': [{'id': key, 'name': '测试'}]})
+            result = []
+            worker = threading.Thread(target=lambda: result.append(store.command(ident, {'id': key}, 'usage', token)))
+            worker.start()
+            try:
+                deadline = time.monotonic() + 2
+                while not store.pending.get(ident) and time.monotonic() < deadline: time.sleep(.01)
+                self.assertEqual(store.exchange(ident, {'music': {'state': 'idle'}})['commands'], [])
+                command = store.exchange(ident, {'status': {}})['commands'][0]
+                self.assertEqual(command['kind'], 'usage')
+                store.exchange(ident, {'acks': [{'requestId': command['requestId'], 'ok': True, 'usage': {'remaining': 12}}]})
+                worker.join(2)
+                self.assertEqual(result, [{'remaining': 12}])
+            finally:
+                worker.join(9)
+                store.close()
 
 
 if __name__ == '__main__':

@@ -104,8 +104,8 @@ func pairingDeviceID() throws -> String {
     let value = UUID().uuidString.lowercased(); try Secrets.set("device-id", value); return value
 }
 func pairingURL(_ path: String) throws -> URL {
-    let config = try configuration()
-    return (try endpoint(config["url"] as? String ?? "https://ipad.iamxg.com")).appendingPathComponent(path)
+    // 公网配对独立于本地 Key 管理地址，切换管理目标不能把注册请求发给本机。
+    return URL(string: "https://ipad.iamxg.com")!.appendingPathComponent(path)
 }
 func pairingStart() throws -> JSONObject {
     let token = try pairingDeviceToken() ?? (UUID().uuidString.lowercased() + UUID().uuidString.lowercased())

@@ -20,6 +20,7 @@ import SQLite3
             try rejects("拒绝不安全地址") { _ = try endpoint(address) }
         }
         try check(try endpoint("http://127.0.0.1:18088").port == 18088, "本机地址可用")
+        try check(try pairingURL("api/pairing/register").absoluteString == "https://ipad.iamxg.com/api/pairing/register", "公网配对不复用本地管理地址")
         try check(number(true) == nil && number(Double.infinity) == nil && number(1) == 1, "数字边界")
         try check(lanAddress("192.168.1.2", interface: "en0", type: "IEEE80211", active: true)?["label"] as? String == "Wi-Fi · en0", "Wi-Fi 地址标签")
         try check(lanAddress("10.0.0.2", interface: "en7", type: "Ethernet", active: true)?["url"] as? String == "http://10.0.0.2:18088", "网线地址与端口")
