@@ -21,6 +21,7 @@ struct ManagedKey: Identifiable {
     @Published var music = "正在检查…"
     @Published var musicLogin = false
     @Published var appLogin = false
+    @Published var publicURL = ""
     @Published var paired = false
     @Published var localPairingCode = ""
     @Published var pairingCode = ""
@@ -74,6 +75,7 @@ struct ManagedKey: Identifiable {
             self.music = result["music"] as? String ?? "未知"
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
+            self.publicURL = result["publicURL"] as? String ?? ""
             self.paired = result["paired"] as? Bool ?? false
             self.localPairingCode = result["localPairingCode"] as? String ?? ""
             self.pairingCode = result["pairingCode"] as? String ?? ""
@@ -118,6 +120,7 @@ struct ControlView: View {
     @ViewState private var stationName = ""
     @ViewState private var stationURL = ""
     @ViewState private var confirmStationChange = false
+    @ViewState private var publicEditor = false
 
     var body: some View {
         NavigationSplitView {
@@ -218,11 +221,14 @@ struct ControlView: View {
             GroupBox("公网连接") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("https://ipad.iamxg.com").textSelection(.enabled)
+                        Text(model.publicURL.isEmpty ? "尚未配置公网服务" : model.publicURL).textSelection(.enabled)
                         Spacer()
-                        Button("打开公网看板") { open("https://ipad.iamxg.com") }
+                        if !model.publicURL.isEmpty { Button("打开公网看板") { open(model.publicURL) } }
+                        Button("配置地址") { model.failed = false; publicEditor = true }
                     }
-                    if model.paired {
+                    if model.publicURL.isEmpty {
+                        Text("填写你部署的看板服务地址，保存后获取配对码。").foregroundStyle(.secondary)
+                    } else if model.paired {
                         Label("已配对", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         Text("在已配对的浏览器中打开上方地址，即可查看这台 Mac 的内容。")
                             .font(.caption).foregroundStyle(.secondary)
@@ -276,6 +282,7 @@ struct ControlView: View {
             }
             Button("刷新连接状态与地址") { Task { await model.refresh() } }
         }
+        .sheet(isPresented: $publicEditor) { PublicAddressEditor(model: model) }
     }
 
     var keySettings: some View {
@@ -387,6 +394,36 @@ struct ControlView: View {
     }
     func resetEditor() { editingID = nil; name = ""; key = "" }
     func open(_ address: String) { if let url = URL(string: address) { NSWorkspace.shared.open(url) } }
+}
+
+// 表单独立持有草稿，让首次弹出时的按钮校验与输入值保持同步。
+struct PublicAddressEditor: View {
+    @ObservedObject var model: ControlModel
+    @Environment(\.dismiss) private var dismiss
+    @ViewState private var address: String
+    init(model: ControlModel) {
+        self.model = model
+        _address = ViewState(initialValue: model.publicURL)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("公网服务地址").font(.title2.bold())
+            TextField("https://你的看板域名", text: $address).textFieldStyle(.roundedBorder)
+            Text("填写已部署本项目配对服务的 HTTPS 根地址。保存后，任务、额度与音乐数据会同步到该服务；更换服务器需在对应网页重新配对。")
+                .font(.callout).foregroundStyle(.secondary)
+            if model.failed { Text(model.message).foregroundStyle(.red) }
+            HStack {
+                Button("取消") { dismiss() }
+                Spacer()
+                Button("验证并保存") {
+                    Task {
+                        await model.perform(["action": "public-save", "url": address], success: "公网地址已保存")
+                        if !model.failed { dismiss(); await model.refresh() }
+                    }
+                }.buttonStyle(.borderedProminent).disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }.padding(24).frame(width: 480).disabled(model.busy)
+    }
 }
 
 @main struct IPadControlApp: App {

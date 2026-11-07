@@ -20,7 +20,14 @@ import SQLite3
             try rejects("拒绝不安全地址") { _ = try endpoint(address) }
         }
         try check(try endpoint("http://127.0.0.1:18088").port == 18088, "本机地址可用")
-        try check(try pairingURL("api/pairing/register").absoluteString == "https://ipad.iamxg.com/api/pairing/register", "公网配对不复用本地管理地址")
+        let legacyTarget = try PairingConnection(config: [:])
+        let customTarget = try PairingConnection(config: ["publicURL": "https://display.example.com"])
+        try check(legacyTarget.account("device-token") == "device-token", "升级保留旧站点凭据")
+        try check(customTarget.url("api/pairing/register").absoluteString == "https://display.example.com/api/pairing/register", "公网注册使用配置地址")
+        try check(customTarget.account("device-token") != legacyTarget.account("device-token"), "新服务器不能复用旧凭据")
+        try check(try PairingConnection(config: ["publicURL": "https://display.example.com/"]).account("device-token") == customTarget.account("device-token"), "末尾斜杠不改变凭据归属")
+        try rejects("未配置时不连接公网") { _ = try PairingConnection(config: ["publicURL": ""]) }
+
         try check(number(true) == nil && number(Double.infinity) == nil && number(1) == 1, "数字边界")
         try check(lanAddress("192.168.1.2", interface: "en0", type: "IEEE80211", active: true)?["label"] as? String == "Wi-Fi · en0", "Wi-Fi 地址标签")
         try check(lanAddress("10.0.0.2", interface: "en7", type: "Ethernet", active: true)?["url"] as? String == "http://10.0.0.2:18088", "网线地址与端口")
@@ -124,6 +131,21 @@ import SQLite3
         while !fixed.isRunning && Date() < fixedDeadline { Thread.sleep(forTimeInterval: 0.01) }
         try check(fixed.isRunning && fixed.listener.port == port, "固定监听端口不能被改成随机端口")
         try check((try HTTPFetch.request(url, token: "test-only") as? JSONObject)?["schema"] as? Int == 1, "固定端口重新绑定回归")
+        let publicServer = try LocalHTTPServer(port: 0) { request in
+            let valid = request.path == "/api/mode" && request.headers["x-device-token"] == nil && request.headers["x-display-token"] == nil
+            return (valid ? 200 : 400, "application/json", Data("{\"mode\":\"pairing\"}".utf8))
+        }
+        publicServer.start(); defer { publicServer.stop() }
+        let publicDeadline = Date().addingTimeInterval(5)
+        while !publicServer.isRunning && Date() < publicDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        guard let publicPort = publicServer.listener.port else { throw ControlError("公网配置测试监听失败") }
+        try check(try validatePublicAddress("http://127.0.0.1:\(publicPort.rawValue)/") == "http://127.0.0.1:\(publicPort.rawValue)", "保存前实际探测配对能力且不携带凭据")
+        let legacyServer = try LocalHTTPServer(port: 0) { _ in (200, "application/json", Data("{\"mode\":\"legacy\"}".utf8)) }
+        legacyServer.start(); defer { legacyServer.stop() }
+        let legacyDeadline = Date().addingTimeInterval(5)
+        while !legacyServer.isRunning && Date() < legacyDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        guard let legacyPort = legacyServer.listener.port else { throw ControlError("旧模式测试监听失败") }
+        try rejects("拒绝普通网站或旧版接口") { _ = try validatePublicAddress("http://127.0.0.1:\(legacyPort.rawValue)") }
         let keyStore = LocalKeys(path: root.appendingPathComponent("keys.json"))
         try check((try managedKeys(localStore: keyStore) as? [JSONObject])?.isEmpty == true, "无需启动看板即可读取空 Key 列表")
         try check(try keyStore.station() == nil, "新安装先添加站点")

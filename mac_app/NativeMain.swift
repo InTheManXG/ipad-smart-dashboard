@@ -35,17 +35,40 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     var config = try configuration()
     let action = value["action"] as? String ?? ""
     if action == "status" {
-        var status: JSONObject = ["url": config["url"] ?? "https://ipad.iamxg.com", "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
+        var status: JSONObject = ["publicURL": publicAddress(config), "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
                                   "appLogin": FileManager.default.fileExists(atPath: NativePaths.agents.appendingPathComponent("com.iamxg.ipad-control.plist").path)]
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]
             status["localPairingCode"] = runtime["localPairingCode"] ?? ""
-            status["paired"] = runtime["paired"] as? Bool ?? false
-            status["pairingCode"] = runtime["pairingCode"] ?? NSNull()
-            status["pairingExpiresAt"] = runtime["pairingExpiresAt"] ?? NSNull()
+            if (runtime["publicURL"] as? String ?? "https://ipad.iamxg.com") == publicAddress(config) {
+                status["paired"] = runtime["paired"] as? Bool ?? false
+                status["pairingCode"] = runtime["pairingCode"] ?? NSNull()
+                status["pairingExpiresAt"] = runtime["pairingExpiresAt"] ?? NSNull()
+            }
         }
         status["lanAddresses"] = lanAddresses()
         return status
+    }
+    if action == "public-save" {
+        guard let address = value["url"] as? String else { throw ControlError("公网地址不正确") }
+        let validated = try validatePublicAddress(address)
+        let previous = config, loaded = serviceLoaded()
+        config["publicURL"] = validated
+        if validated == publicAddress(previous).trimmingCharacters(in: CharacterSet(charactersIn: "/")) {
+            try writeJSON(config, NativePaths.config)
+            return ["ok": true]
+        }
+        // 先停旧服务再切换地址，避免在途指令的回执和旧配对状态跨服务器串用。
+        if loaded { _ = try launch(["bootout", NativePaths.domain + "/" + NativePaths.label]) }
+        do {
+            try writeJSON(config, NativePaths.config)
+            if loaded { try installService(start: true) }
+        } catch {
+            try writeJSON(previous, NativePaths.config)
+            if loaded { try? installService(start: true) }
+            throw error
+        }
+        return ["ok": true]
     }
     if action == "keys" { return ["keys": try managedKeys(), "station": try LocalKeys().station() as Any? ?? NSNull()] }
     if action == "station-save" { return try LocalKeys().saveStation(value) }
@@ -56,11 +79,11 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         let localKeys = try HTTPFetch.request(base.appendingPathComponent("api/relay/keys"), token: token) as? [JSONObject] ?? []
         let managed = try managedKeys() as? [JSONObject] ?? []
         let music = try HTTPFetch.request(base.appendingPathComponent("api/music"), token: token) as? JSONObject ?? [:]
-        let online = try HTTPFetch.request(URL(string: "https://ipad.iamxg.com/api/music")!, token: token) as? JSONObject ?? [:]
+        let online = try pairingStatus()
         _ = try media(["test"])
         return ["ok": true, "quotaAvailable": snapshot["quotaAvailable"] as? Bool ?? false,
                 "taskCount": snapshot["conversationsTotal"] ?? 0, "localKeyCount": localKeys.count, "managedKeyCount": managed.count,
-                "musicState": music["state"] ?? "unknown", "onlineMusicState": online["state"] ?? "unknown"]
+                "musicState": music["state"] ?? "unknown", "onlinePaired": online["paired"] as? Bool ?? false]
     }
     if ["key-save", "key-delete"].contains(action) {
         var body = value; body["action"] = action == "key-save" ? "save" : "delete"

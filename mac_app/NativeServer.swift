@@ -386,6 +386,7 @@ final class NativeBackend {
             if server?.isRunning == true { listenerError = "" }
             lock.lock(); let pairing = cloudPairing; lock.unlock()
             var runtime: JSONObject = ["dashboard": server?.isRunning == true ? "运行中" : "已停止或端口被占用", "listenerError": listenerError, "music": music.isEnabled() ? "运行中" : "已停止", "updatedAt": Date().timeIntervalSince1970]
+            runtime["publicURL"] = publicAddress(config)
             runtime["localPairingCode"] = localPairing.current()
             runtime["paired"] = pairing["paired"] as? Bool ?? false
             runtime["pairingCode"] = pairing["code"] ?? NSNull()

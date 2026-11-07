@@ -86,7 +86,7 @@ func writeJSON(_ value: Any, _ url: URL) throws {
 }
 func configuration() throws -> JSONObject {
     if !FileManager.default.fileExists(atPath: NativePaths.config.path) {
-        return ["url": "https://ipad.iamxg.com", "musicEnabled": true, "dashboardEnabled": true, "musicLogin": true]
+        return ["publicURL": "", "musicEnabled": true, "dashboardEnabled": true, "musicLogin": true]
     }
     return try readJSON(NativePaths.config)
 }
@@ -98,31 +98,54 @@ func displayToken() throws -> String {
     return token
 }
 
-func pairingDeviceToken() throws -> String? { try Secrets.get("device-token") }
-func pairingDeviceID() throws -> String {
-    if let value = try Secrets.get("device-id"), UUID(uuidString: value) != nil { return value }
-    let value = UUID().uuidString.lowercased(); try Secrets.set("device-id", value); return value
+// 缺少字段代表升级前的安装；新安装显式保存空值，不自动连接公共服务器。
+func publicAddress(_ config: JSONObject) -> String { config["publicURL"] as? String ?? "https://ipad.iamxg.com" }
+struct PairingConnection {
+    let base: URL
+    init(config: JSONObject) throws {
+        let address = publicAddress(config)
+        guard !address.isEmpty else { throw ControlError("请先配置公网服务地址") }
+        base = try endpoint(address)
+    }
+    func url(_ path: String) -> URL { base.appendingPathComponent(path) }
+    func account(_ name: String) -> String {
+        // 原站点沿用原凭据，其余地址隔离，切换地址不能泄露旧令牌。
+        let origin = base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if origin == "https://ipad.iamxg.com" { return name }
+        let suffix = SHA256.hash(data: Data(origin.utf8)).map { String(format: "%02x", $0) }.joined()
+        return name + "-" + suffix
+    }
+    func token() throws -> String? { try Secrets.get(account("device-token")) }
+    func deviceID() throws -> String {
+        if let value = try Secrets.get(account("device-id")), UUID(uuidString: value) != nil { return value }
+        let value = UUID().uuidString.lowercased(); try Secrets.set(account("device-id"), value); return value
+    }
 }
-func pairingURL(_ path: String) throws -> URL {
-    // 公网配对独立于本地 Key 管理地址，切换管理目标不能把注册请求发给本机。
-    return URL(string: "https://ipad.iamxg.com")!.appendingPathComponent(path)
+func validatePublicAddress(_ address: String) throws -> String {
+    let base = try endpoint(trimmed(address))
+    guard let result = try HTTPFetch.request(base.appendingPathComponent("api/mode"), timeout: 8) as? JSONObject,
+          result["mode"] as? String == "pairing" else { throw ControlError("该地址不是支持配对的看板服务") }
+    return base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 }
 func pairingStart() throws -> JSONObject {
-    let token = try pairingDeviceToken() ?? (UUID().uuidString.lowercased() + UUID().uuidString.lowercased())
-    let body: JSONObject = ["deviceId": try pairingDeviceID(), "deviceToken": token, "name": Host.current().localizedName ?? "Mac App"]
-    guard let result = try HTTPFetch.request(pairingURL("api/pairing/register"), token: token, body: body, header: "X-Device-Token") as? JSONObject else { throw ControlError("配对服务返回无效数据") }
-    if try pairingDeviceToken() == nil { try Secrets.set("device-token", token) }
+    let target = try PairingConnection(config: configuration())
+    let token = try target.token() ?? (UUID().uuidString.lowercased() + UUID().uuidString.lowercased())
+    let body: JSONObject = ["deviceId": try target.deviceID(), "deviceToken": token, "name": Host.current().localizedName ?? "Mac App"]
+    guard let result = try HTTPFetch.request(target.url("api/pairing/register"), token: token, body: body, header: "X-Device-Token") as? JSONObject else { throw ControlError("配对服务返回无效数据") }
+    if try target.token() == nil { try Secrets.set(target.account("device-token"), token) }
     if result["paired"] as? Bool == true { return result }
-    guard let code = try? HTTPFetch.request(pairingURL("api/pairing/code"), token: token, body: JSONObject(), header: "X-Device-Token") as? JSONObject else { return result }
+    guard let code = try? HTTPFetch.request(target.url("api/pairing/code"), token: token, body: JSONObject(), header: "X-Device-Token") as? JSONObject else { return result }
     return code
 }
 func pairingStatus() throws -> JSONObject {
-    guard let token = try pairingDeviceToken() else { return ["paired": false] }
-    return try HTTPFetch.request(pairingURL("api/pairing/device"), token: token, header: "X-Device-Token") as? JSONObject ?? ["paired": false]
+    let target = try PairingConnection(config: configuration())
+    guard let token = try target.token() else { return ["paired": false] }
+    return try HTTPFetch.request(target.url("api/pairing/device"), token: token, header: "X-Device-Token") as? JSONObject ?? ["paired": false]
 }
 func publishDevice(_ path: String, _ body: JSONObject) throws -> JSONObject {
-    guard let token = try pairingDeviceToken() else { throw ControlError("本机尚未完成配对注册") }
-    return try HTTPFetch.request(pairingURL("api/device/exchange"), token: token, body: body, timeout: 5, limit: 600_000, header: "X-Device-Token") as? JSONObject ?? [:]
+    let target = try PairingConnection(config: configuration())
+    guard let token = try target.token() else { throw ControlError("本机尚未完成配对注册") }
+    return try HTTPFetch.request(target.url(path), token: token, body: body, timeout: 5, limit: 600_000, header: "X-Device-Token") as? JSONObject ?? [:]
 }
 
 // 每个子进程都有超时和输出上限，退出异常不会把原始输出中的私人数据带到界面。
