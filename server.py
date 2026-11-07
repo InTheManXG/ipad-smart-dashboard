@@ -7,6 +7,7 @@ import secrets
 import subprocess
 import threading
 import uuid
+import pairing
 from urllib.parse import urlsplit, parse_qs
 import relay
 import music
@@ -20,7 +21,6 @@ FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascrip
          '/style.css': ('style.css', 'text/css'), '/manifest.json': ('manifest.json', 'application/manifest+json'),
          '/icon.svg': ('icon.svg', 'image/svg+xml'), '/codex-icon.png': ('codex-icon.png', 'image/png'), '/netease-music.png': ('netease-music.png', 'image/png')}
 
-
 SUBSCRIPTION_ROOT = Path('/path/to/subscription-bridge')
 SUBSCRIPTION_SCRIPT = SUBSCRIPTION_ROOT / 'manage.py'
 SUBSCRIPTION_IDS = {'paoluz', 'sc', 'just'}
@@ -28,22 +28,35 @@ SUBSCRIPTION_LOCK = threading.Lock()
 
 def subscription_command(identity=None):
     """只调用固定订阅入口，不把订阅 URL、凭据或脚本输出回传网页。"""
-    if not SUBSCRIPTION_SCRIPT.is_file(): raise FileNotFoundError('subscription script unavailable')
-    if identity is not None and identity not in SUBSCRIPTION_IDS: raise ValueError('unknown subscription')
-    if not SUBSCRIPTION_LOCK.acquire(blocking=False): raise RuntimeError('subscription update is already running')
+    if not SUBSCRIPTION_SCRIPT.is_file():
+        raise FileNotFoundError('subscription script unavailable')
+    if identity is not None and identity not in SUBSCRIPTION_IDS:
+        raise ValueError('unknown subscription')
+    if not SUBSCRIPTION_LOCK.acquire(blocking=False):
+        raise RuntimeError('subscription update is already running')
     try:
-        command = ['python3', str(SUBSCRIPTION_SCRIPT), 'sync'] + ([] if identity is None else ['--id', identity])
-        result = subprocess.run(command, cwd=SUBSCRIPTION_ROOT, capture_output=True, text=True, timeout=300, check=False)
-    finally: SUBSCRIPTION_LOCK.release()
-    if result.returncode != 0: raise RuntimeError('subscription update failed')
+        command = ['python3', str(SUBSCRIPTION_SCRIPT), 'sync']
+        if identity is not None:
+            command += ['--id', identity]
+        result = subprocess.run(command, cwd=SUBSCRIPTION_ROOT, capture_output=True,
+                                text=True, timeout=300, check=False)
+    finally:
+        SUBSCRIPTION_LOCK.release()
+    if result.returncode != 0:
+        raise RuntimeError('subscription update failed')
     return {'ok': True}
 
 def subscription_list():
     """只返回订阅 ID 和备注，避免把私密订阅地址带到界面。"""
-    if not SUBSCRIPTION_SCRIPT.is_file(): raise FileNotFoundError('subscription script unavailable')
-    result = subprocess.run(['python3', str(SUBSCRIPTION_SCRIPT), 'list'], cwd=SUBSCRIPTION_ROOT, capture_output=True, text=True, timeout=20, check=False)
-    if result.returncode != 0: raise RuntimeError('subscription list failed')
-    return [{'id': identity, 'remark': remark} for line in result.stdout.splitlines() for identity, separator, remark in [line.partition('\t')] if separator and identity in SUBSCRIPTION_IDS and remark]
+    if not SUBSCRIPTION_SCRIPT.is_file():
+        raise FileNotFoundError('subscription script unavailable')
+    result = subprocess.run(['python3', str(SUBSCRIPTION_SCRIPT), 'list'], cwd=SUBSCRIPTION_ROOT,
+                            capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode != 0:
+        raise RuntimeError('subscription list failed')
+    return [{'id': identity, 'remark': remark} for line in result.stdout.splitlines()
+            for identity, separator, remark in [line.partition('\t')]
+            if separator and identity in SUBSCRIPTION_IDS and remark]
 
 
 def authorized(header, token):
@@ -125,20 +138,28 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, b'{"error":"storage_unavailable"}', 'application/json')
 
     def do_POST(self):
-
+        if pairing.route(self): return
         if self.path == '/api/subscriptions/update':
-            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token): self.reply(401, b'{}', 'application/json'); return
+            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
+                self.reply(401, b'{}', 'application/json')
+                return
             try:
                 length = int(self.headers.get('Content-Length', '0'))
-                if not 0 < length <= 256: raise ValueError('invalid body size')
+                if not 0 < length <= 256:
+                    raise ValueError('invalid body size')
                 value = json.loads(self.rfile.read(length))
-                if not isinstance(value, dict): raise ValueError('invalid body')
+                if not isinstance(value, dict):
+                    raise ValueError('invalid body')
                 identity = value.get('id')
-                if identity is not None and not isinstance(identity, str): raise ValueError('invalid identity')
+                if identity is not None and not isinstance(identity, str):
+                    raise ValueError('invalid identity')
                 self.reply(200, json.dumps(subscription_command(identity)).encode(), 'application/json')
-            except ValueError: self.reply(400, b'{"error":"invalid_request"}', 'application/json')
-            except RuntimeError as error: self.reply(409 if 'already running' in str(error) else 503, b'{"error":"subscription_update_failed"}', 'application/json')
-            except (OSError, subprocess.SubprocessError): self.reply(503, b'{"error":"subscription_unavailable"}', 'application/json')
+            except ValueError:
+                self.reply(400, b'{"error":"invalid_request"}', 'application/json')
+            except RuntimeError as error:
+                self.reply(409 if 'already running' in str(error) else 503, b'{"error":"subscription_update_failed"}', 'application/json')
+            except (OSError, subprocess.SubprocessError):
+                self.reply(503, b'{"error":"subscription_unavailable"}', 'application/json')
             return
         if self.path in ('/api/music/control', '/api/music/ack'):
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
@@ -207,27 +228,31 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, b'{}', 'application/json')
 
     def do_GET(self):
-
+        if pairing.route(self): return
         if self.path == '/api/subscriptions':
-            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token): self.reply(401, b'{}', 'application/json'); return
-            try: self.reply(200, json.dumps(subscription_list(), ensure_ascii=False).encode(), 'application/json')
-            except (OSError, RuntimeError, subprocess.SubprocessError): self.reply(503, b'{"error":"subscription_unavailable"}', 'application/json')
-            return
-        if self.path == '/api/music':
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
                 self.reply(401, b'{}', 'application/json')
                 return
-            self.reply(200, json.dumps(music.get(), ensure_ascii=False).encode(), 'application/json')
+            try:
+                self.reply(200, json.dumps(subscription_list(), ensure_ascii=False).encode(), 'application/json')
+            except (OSError, RuntimeError, subprocess.SubprocessError):
+                self.reply(503, b'{"error":"subscription_unavailable"}', 'application/json')
+            return
+        if self.path == '/api/music':
+            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
+                self.reply(401, b'{}', 'application/json'); return
+            value = music.get()
+            self.reply(200, json.dumps(value, ensure_ascii=False).encode(), 'application/json')
             return
         if urlsplit(self.path).path in ('/api/relay/keys', '/api/relay/usage'):
             self.relay_api()
             return
         if self.path == '/api/status':
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
-                self.reply(401, b'{"error":"unauthorized"}', 'application/json')
-                return
+                self.reply(401, b'{}', 'application/json'); return
             try:
-                self.reply(200, json.dumps(read_status(), ensure_ascii=False).encode(), 'application/json')
+                value = read_status()
+                self.reply(200, json.dumps(value, ensure_ascii=False).encode(), 'application/json')
             except (OSError, ValueError, KeyError):
                 self.reply(503, b'{"error":"bridge_unavailable"}', 'application/json')
         elif self.path in FILES:
@@ -246,6 +271,8 @@ def main():
             output.write(secrets.token_urlsafe(24))
     server = ThreadingHTTPServer((os.environ.get('DISPLAY_BIND', '0.0.0.0'), 18086), Handler)
     server.token = path.read_text().strip()
+    if os.environ.get('DISPLAY_MODE', 'legacy') == 'pairing':
+        server.pairing = pairing.Store(Path(os.environ.get('RELAY_DATA_DIR', ROOT / '.relay-data')) / 'pairing.sqlite')
     print('iPad 看板已启动，端口 18086', flush=True)
     server.serve_forever()
 

@@ -23,6 +23,9 @@ struct ManagedKey: Identifiable {
     @Published var music = "正在检查…"
     @Published var musicLogin = false
     @Published var appLogin = false
+    @Published var paired = false
+    @Published var pairingCode = ""
+    @Published var pairingExpiresAt: Double = 0
     @Published var lanAddresses: [LANAddress] = []
     @Published var keys: [ManagedKey] = []
     @Published var busy = false
@@ -71,6 +74,9 @@ struct ManagedKey: Identifiable {
             self.music = result["music"] as? String ?? "未知"
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
+            self.paired = result["paired"] as? Bool ?? false
+            self.pairingCode = result["pairingCode"] as? String ?? ""
+            self.pairingExpiresAt = result["pairingExpiresAt"] as? Double ?? 0
             self.lanAddresses = (result["lanAddresses"] as? [[String: Any]] ?? []).compactMap {
                 guard let id = $0["id"] as? String, let label = $0["label"] as? String, let url = $0["url"] as? String else { return nil }
                 return LANAddress(id: id, label: label, url: url)
@@ -174,6 +180,22 @@ struct ControlView: View {
                     }
                     Text("由 App 内置后台提供服务，无需 Docker。停止本地看板不影响线上站点。")
                         .font(.caption).foregroundStyle(.secondary)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            GroupBox("网页配对") {
+                VStack(alignment: .leading, spacing: 10) {
+                    if model.paired {
+                        Text("已配对").font(.headline).foregroundStyle(.green)
+                        Text("打开 ipad.iamxg.com，输入配对码后即可查看这台 Mac 的内容。")
+                    } else if !model.pairingCode.isEmpty {
+                        Text("在网页输入下面的配对码")
+                        Text(model.pairingCode).font(.system(size: 34, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                        Text("8 位配对码有效期约 10 分钟；网页完成配对后这里会自动变为已配对。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("正在生成配对码，或暂时无法连接配对服务…").foregroundStyle(.secondary)
+                    }
+                    Button("刷新配对码") { Task { await model.refresh() } }
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
             GroupBox("音乐与歌词同步") {

@@ -161,13 +161,21 @@ final class NativeMusic {
             let started = ProcessInfo.processInfo.systemUptime
             if isEnabled() {
                 do {
-                    let token = try displayToken()
-                    let url = URL(string: "https://ipad.iamxg.com/api/music")!
-                    let response = try HTTPFetch.request(url, token: token, body: snapshot(), timeout: 4) as? JSONObject
-                    if let command = response?["command"] as? JSONObject, let id = command["requestId"] as? String {
+                    let response: JSONObject?
+                    if (try? pairingDeviceToken()) != nil {
+                        response = try publishDevice("api/device/exchange", ["music": snapshot()])
+                    } else {
+                        let token = try displayToken()
+                        response = try HTTPFetch.request(URL(string: "https://ipad.iamxg.com/api/music")!, token: token, body: snapshot(), timeout: 4) as? JSONObject
+                    }
+                    if let command = (response?["commands"] as? [JSONObject])?.first, let id = command["requestId"] as? String {
                         let result = control(command, started: started)
                         var next = snapshot(); next["ack"] = ["requestId": id, "ok": result["ok"] as? Bool == true]
-                        _ = try HTTPFetch.request(url, token: token, body: next, timeout: 4)
+                        if (try? pairingDeviceToken()) != nil {
+                            _ = try publishDevice("api/device/exchange", ["music": next, "acks": [["requestId": id, "ok": result["ok"] as? Bool == true]]])
+                        } else {
+                            _ = try HTTPFetch.request(URL(string: "https://ipad.iamxg.com/api/music")!, token: try displayToken(), body: next, timeout: 4)
+                        }
                     }
                 } catch { }
             }

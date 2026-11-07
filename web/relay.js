@@ -7,12 +7,12 @@ function node(tag, className, text) {
   return value;
 }
 async function api(path) {
-  const token = sessionStorage.getItem('display-token') || '';
+  const token = localStorage.getItem('pairing-token') || '';
   if (!token) throw new Error('请先在工作看板中连接');
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 18000);
   try {
     const response = await fetch(`./api/relay/${path}`, {
-      headers:{'X-Display-Token':token}, signal:controller.signal, cache:'no-store'
+      headers:{'X-Pairing-Token':token}, signal:controller.signal, cache:'no-store'
     });
     if (!response.ok) throw new Error(response.status === 401 ? '访问口令无效，请重新连接' : '操作失败，请检查输入或稍后重试');
     return await response.json();
@@ -81,7 +81,7 @@ async function refreshRelay(force = false) {
 }
 // 手动更新绕过短期缓存，自动轮询仍沿用一分钟缓存。
 $('relay-refresh').onclick = () => refreshRelay(true);
-$('settings-form').addEventListener('submit', () => refreshRelay());
+window.addEventListener('paired', () => refreshRelay());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelay(); });
 setInterval(refreshRelay, 60000);
 refreshRelay();

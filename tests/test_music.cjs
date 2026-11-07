@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const nodes = new Map();
 const node = () => ({textContent:'',className:'',style:{},dataset:{},children:[],setAttribute(name,value){this[name]=value;},replaceChildren(...children){this.children=children;}});
-const context = vm.createContext({document:{hidden:false,addEventListener(){},createElement:node,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);}},sessionStorage:{getItem(){return '';}},performance:{now(){return 0;}},setInterval(){},requestAnimationFrame(){},setTimeout,clearTimeout,AbortController});
+const context = vm.createContext({document:{hidden:false,addEventListener(){},createElement:node,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);}},sessionStorage:{getItem(){return '';}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},performance:{now(){return 0;}},setInterval(){},requestAnimationFrame(){},setTimeout,clearTimeout,AbortController});
 vm.runInContext(fs.readFileSync('web/music.js','utf8'),context);
 const frame = (snapshot, elapsed = 0) => context.lyricFrame(snapshot, elapsed);
 const song = {state:'ready',trackId:'a'.repeat(64),title:'歌',artist:'歌手',source:'网易云音乐',position:0,duration:100,playing:true,lyricsState:'ready',lines:[{time:2,text:'第一句'},{time:5,text:'第二句'},{time:8,text:''},{time:12,text:'第三句'}]};
@@ -63,7 +63,7 @@ assert.equal(track.children[0].textContent,'♪');
 (async () => {
   let now = 1000;
   context.performance.now = () => now;
-  context.sessionStorage.getItem = () => 'test-only';
+  context.localStorage.getItem = () => 'test-only';
   // 模拟往返一秒的网络，服务端进度为请求中点的位置。
   context.fetch = async () => {now += 1000; return {ok:true,json:async()=>({...song,position:25})};};
   await context.refreshMusic();

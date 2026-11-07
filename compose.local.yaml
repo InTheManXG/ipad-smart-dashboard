@@ -9,6 +9,7 @@ services:
     environment:
       RELAY_DATA_DIR: /relay-data
       STATUS_URL: https://esp.iamxg.com/status
+      DISPLAY_MODE: pairing
     volumes:
       - .:/dashboard:ro
       - ./.relay-data:/relay-data

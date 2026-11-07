@@ -39,6 +39,9 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
                                   "appLogin": FileManager.default.fileExists(atPath: NativePaths.agents.appendingPathComponent("com.iamxg.ipad-control.plist").path)]
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]
+            status["paired"] = runtime["paired"] as? Bool ?? false
+            status["pairingCode"] = runtime["pairingCode"] ?? NSNull()
+            status["pairingExpiresAt"] = runtime["pairingExpiresAt"] ?? NSNull()
         }
         status["lanAddresses"] = lanAddresses()
         return status

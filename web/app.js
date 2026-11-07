@@ -6,7 +6,7 @@ function formatPlan(plan) {
   const names = {promax:'Pro 500', pro:'Pro', plus:'Plus', free:'Free', team:'Team', business:'Business', enterprise:'Enterprise', edu:'Edu'};
   return typeof plan === 'string' && plan.trim() ? names[plan.toLowerCase()] || plan : '未知套餐';
 }
-let token = sessionStorage.getItem('display-token') || '';
+let token = localStorage.getItem('pairing-token') || '';
 let busy = false, lastSuccess = 0, wakeLock = null, wantWake = true;
 function element(tag, className, text) {
   const node = document.createElement(tag); node.className = className;
@@ -81,8 +81,8 @@ async function refresh() {
   busy = true;
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 7000);
   try {
-    const response = await fetch('./api/status',{headers:{'X-Display-Token':token},cache:'no-store',signal:controller.signal});
-    if (response.status === 401) throw new Error('口令无效，请重新连接');
+    const response = await fetch('./api/status',{headers:{'X-Pairing-Token':token},cache:'no-store',signal:controller.signal});
+    if (response.status === 401) { localStorage.removeItem('pairing-token'); token = ''; $('settings').showModal(); throw new Error('配对已失效，请重新配对'); }
     if (!response.ok) throw new Error('Mac 状态服务未连接');
     const data = await response.json();
     if (!Number.isFinite(data.servedAt) || Date.now()/1000 - data.servedAt > 20) throw new Error('状态数据已过期');
@@ -125,7 +125,7 @@ async function openConversation(threadId) {
   $('footer-note').textContent = '正在请求 Mac 打开对话…';
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 18000);
   try {
-    const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Display-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
+    const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Pairing-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
     if (!response.ok || (await response.json()).ok !== true) throw new Error('open failed');
     // 状态可能已切换到另一对话，旧请求的回执不能关闭新提醒。
     $('footer-note').textContent = '';
@@ -137,7 +137,16 @@ async function openConversation(threadId) {
     if (attention?.threadId === threadId) $('open-result').textContent = '未能确认打开，请检查 Mac 是否在线或任务是否仍待处理，然后重试。';
   } finally { clearTimeout(timeout); opening = false; $('open-codex').disabled = false; }
 }
-$('settings-form').addEventListener('submit',event => {event.preventDefault(); token = $('token').value.trim(); sessionStorage.setItem('display-token',token); $('token').value = ''; $('settings').close(); refresh();});
+$('settings-form').addEventListener('submit', async event => {
+  event.preventDefault(); $('pairing-error').textContent = '';
+  try {
+    const response = await fetch('./api/pairing/complete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code:$('token').value.trim().toUpperCase()})});
+    if (!response.ok) throw new Error('配对码无效或已过期，请查看 Mac App');
+    const result = await response.json(); token = result.token;
+    localStorage.setItem('pairing-token', token); $('token').value = ''; $('settings').close();
+    window.dispatchEvent(new Event('paired')); refresh();
+  } catch (error) { $('pairing-error').textContent = error.message; }
+});
 $('cancel').onclick = () => $('settings').close();
 $('connect').onclick = () => $('settings').showModal();
 $('refresh').onclick = refresh;

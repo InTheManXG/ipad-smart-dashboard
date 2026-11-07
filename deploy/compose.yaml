@@ -9,6 +9,7 @@ services:
       RELAY_DATA_DIR: /relay-data
       STATUS_URL: http://127.0.0.1:8787/status
       DISPLAY_BIND: 127.0.0.1
+      DISPLAY_MODE: pairing
     env_file: .env
     volumes:
       - ./app:/dashboard:ro

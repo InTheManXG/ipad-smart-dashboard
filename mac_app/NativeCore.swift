@@ -95,6 +95,33 @@ func displayToken() throws -> String {
     return token
 }
 
+func pairingDeviceToken() throws -> String? { try Secrets.get("device-token") }
+func pairingDeviceID() throws -> String {
+    if let value = try Secrets.get("device-id"), UUID(uuidString: value) != nil { return value }
+    let value = UUID().uuidString.lowercased(); try Secrets.set("device-id", value); return value
+}
+func pairingURL(_ path: String) throws -> URL {
+    let config = try configuration()
+    return (try endpoint(config["url"] as? String ?? "https://ipad.iamxg.com")).appendingPathComponent(path)
+}
+func pairingStart() throws -> JSONObject {
+    let token = try pairingDeviceToken() ?? (UUID().uuidString.lowercased() + UUID().uuidString.lowercased())
+    let body: JSONObject = ["deviceId": try pairingDeviceID(), "deviceToken": token, "name": Host.current().localizedName ?? "Mac App"]
+    guard let result = try HTTPFetch.request(pairingURL("api/pairing/register"), token: token, body: body, header: "X-Device-Token") as? JSONObject else { throw ControlError("配对服务返回无效数据") }
+    if try pairingDeviceToken() == nil { try Secrets.set("device-token", token) }
+    if result["paired"] as? Bool == true { return result }
+    guard let code = try? HTTPFetch.request(pairingURL("api/pairing/code"), token: token, body: JSONObject(), header: "X-Device-Token") as? JSONObject else { return result }
+    return code
+}
+func pairingStatus() throws -> JSONObject {
+    guard let token = try pairingDeviceToken() else { return ["paired": false] }
+    return try HTTPFetch.request(pairingURL("api/pairing/device"), token: token, header: "X-Device-Token") as? JSONObject ?? ["paired": false]
+}
+func publishDevice(_ path: String, _ body: JSONObject) throws -> JSONObject {
+    guard let token = try pairingDeviceToken() else { throw ControlError("本机尚未完成配对注册") }
+    return try HTTPFetch.request(pairingURL("api/device/exchange"), token: token, body: body, timeout: 5, limit: 600_000, header: "X-Device-Token") as? JSONObject ?? [:]
+}
+
 // 每个子进程都有超时和输出上限，退出异常不会把原始输出中的私人数据带到界面。
 func execute(_ executable: String, _ args: [String], input: Data? = nil, timeout: Double = 10, limit: Int = 2_000_000) throws -> (Int32, Data) {
     let process = Process(), output = Pipe(), stdin = Pipe()

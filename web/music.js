@@ -79,14 +79,14 @@ function renderMusic() {
 
 async function controlMusic(action) {
   if (musicControlBusy || !musicSnapshot?.trackId || (performance.now() - musicReceived) / 1000 > 8) return;
-  const token = sessionStorage.getItem('display-token');
+  const token = localStorage.getItem('pairing-token');
   if (!token) return;
   musicControlBusy = true;
   musicNode('music-control-result').textContent = '';
   renderMusic();
   const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch('./api/music/control', {method:'POST',headers:{'Content-Type':'application/json','X-Display-Token':token},
+    const response = await fetch('./api/music/control', {method:'POST',headers:{'Content-Type':'application/json','X-Pairing-Token':token},
       body:JSON.stringify({action,trackId:musicSnapshot.trackId}),signal:controller.signal});
     if (!response.ok) throw new Error('unconfirmed');
     const result = await response.json();
@@ -108,13 +108,13 @@ musicNode('music-toggle').onclick = () => controlMusic(musicSnapshot?.playing ? 
 
 async function refreshMusic() {
   if (musicBusy || document.hidden) return;
-  const token = sessionStorage.getItem('display-token');
+  const token = localStorage.getItem('pairing-token');
   if (!token) { musicSnapshot = null; renderMusic(); return; }
   musicBusy = true;
   const started = performance.now(), revision = musicRevision;
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch('./api/music', {headers:{'X-Display-Token':token}, cache:'no-store', signal:controller.signal});
+    const response = await fetch('./api/music', {headers:{'X-Pairing-Token':token}, cache:'no-store', signal:controller.signal});
     if (!response.ok) throw new Error('music unavailable');
     const snapshot = await response.json();
     if (revision !== musicRevision) return;
@@ -136,3 +136,5 @@ function animateMusic() {
 requestAnimationFrame(animateMusic);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshMusic(); });
 refreshMusic();
+
+if (typeof window !== 'undefined') window.addEventListener('paired', () => refreshMusic());

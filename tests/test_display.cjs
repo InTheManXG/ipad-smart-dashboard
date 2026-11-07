@@ -11,7 +11,7 @@ let requests = 0, releases = 0, enter = 0, exit = 0, reloads = 0;
 const notices = [], timeouts = new Map();
 const document = {body:{append(node){notices.push(node);nodes.set(node.id,node);}},createElement(){return {setAttribute(){},remove(){nodes.delete(this.id);}};},hidden:false,getElementById:get,addEventListener(name, fn){events[name]=fn;},fullscreenEnabled:true,documentElement:{async requestFullscreen(){enter++;}},async exitFullscreen(){exit++;}};
 const navigator = {wakeLock:{async request(){requests++;let listener;return {addEventListener(_,fn){listener=fn;},async release(){releases++;listener?.();}};}}};
-const context = vm.createContext({document,navigator,location:{reload(){reloads++;}},sessionStorage:{getItem(){return '';}},setInterval(fn,ms){timers.set(ms,fn);},setTimeout(fn,ms){timeouts.set(ms,fn);return ms;},clearTimeout(id){timeouts.delete(id);},Date});
+const context = vm.createContext({document,navigator,location:{reload(){reloads++;}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},sessionStorage:{getItem(){return '';}},setInterval(fn,ms){timers.set(ms,fn);},setTimeout(fn,ms){timeouts.set(ms,fn);return ms;},clearTimeout(id){timeouts.delete(id);},Date,fetch:async()=>({ok:false,status:401})});
 vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));

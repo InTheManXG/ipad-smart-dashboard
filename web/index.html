@@ -45,7 +45,7 @@
 <dialog id="wake-dialog" aria-labelledby="wake-heading" aria-describedby="wake-message">
   <button id="restore-wake"><span id="wake-heading">点击任意位置恢复常亮</span><span id="wake-message">常亮已中断</span></button>
 </dialog>
-<dialog id="settings"><form id="settings-form"><h2>连接你的 Codex</h2><p>输入此 Mac 上生成的看板访问口令。</p><label>访问口令<input id="token" type="password" autocomplete="off" required></label><div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit">连接</button></div></form></dialog>
+<dialog id="settings"><form id="settings-form"><h2>配对你的 Mac App</h2><p>在 Mac App 的“网页配对”区域找到 8 位配对码，输入后显示对应内容。</p><label>配对码<input id="token" inputmode="text" autocomplete="one-time-code" maxlength="8" required></label><p id="pairing-error" class="note" role="alert"></p><div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit">完成配对</button></div></form></dialog>
 <dialog id="attention-dialog" aria-labelledby="attention-heading" aria-describedby="attention-title">
   <div class="attention-card">
   <div class="attention-content">

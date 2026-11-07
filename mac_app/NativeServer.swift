@@ -176,6 +176,12 @@ final class NativeBackend {
         value["state"] = "unknown"; value["schema"] = 1; value["servedAt"] = Date().timeIntervalSince1970
         return value
     }
+    func publicKeys() -> [JSONObject] {
+        (try? keys.list())?.compactMap { item in
+            guard let id = item["id"] as? String, let name = item["name"] as? String else { return nil }
+            return ["id": id, "name": name, "usage": JSONObject()]
+        } ?? []
+    }
     func subscriptions() throws -> [JSONObject] {
         let script = subscriptionRoot.appendingPathComponent("manage.py")
         guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
@@ -193,10 +199,15 @@ final class NativeBackend {
         defer { subscriptionLock.unlock() }
         let script = subscriptionRoot.appendingPathComponent("manage.py")
         guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
-        var args = [script.path, "sync"]; if let identity { args += ["--id", identity] }
+        var args = [script.path, "sync"]
+        if let identity { args += ["--id", identity] }
         let result = try execute("/usr/bin/python3", args, timeout: 300)
         guard result.0 == 0 else { throw ControlError("订阅更新失败，请检查 Surge 和订阅配置") }
         return ["ok": true]
+    }
+    func executeOpen(_ thread: String) throws -> Bool {
+        let result = try execute("/usr/bin/open", ["-b", "com.openai.codex", "codex://threads/\(thread)?hostId=local"], timeout: 5)
+        return result.0 == 0
     }
     func handle(_ request: HTTPMessage) -> (Int, String, Data) {
         func json(_ value: Any, _ code: Int = 200) -> (Int, String, Data) { (code, "application/json", (try? jsonData(value)) ?? Data("{}".utf8)) }
@@ -238,8 +249,39 @@ final class NativeBackend {
     }
     func run() throws {
         var listenerError = ""
+        var pairing: JSONObject = ["paired": false]
+        do {
+            pairing = try pairingStatus()
+            if pairing["paired"] as? Bool != true { pairing = try pairingStart() }
+        } catch { pairing = ["paired": false, "error": "配对服务暂不可用"] }
         DispatchQueue.global().async { self.music.run() }
         DispatchQueue.global().async { self.music.publish() }
+        DispatchQueue.global().async {
+            while true {
+                do {
+                    var response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys()])
+                    if let command = (response["commands"] as? [JSONObject])?.first,
+                       let id = command["requestId"] as? String {
+                        let ok: Bool
+                        if command["kind"] as? String == "open", let thread = command["threadId"] as? String {
+                            ok = (try? self.executeOpen(thread)) == true
+                        } else if command["kind"] as? String == "subscriptions" {
+                            ok = (try? self.updateSubscription(command["id"] as? String)) != nil
+                        } else if command["kind"] as? String == "usage", let key = command["id"] as? String {
+                            let usage = try? self.keys.usage(key, force: true)
+                            ok = usage != nil
+                            response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "acks": [["requestId": id, "ok": ok, "usage": usage ?? JSONObject()] ]])
+                            _ = response
+                            Thread.sleep(forTimeInterval: 0.05)
+                            continue
+                        } else { ok = false }
+                        response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "acks": [["requestId": id, "ok": ok]]])
+                        _ = response
+                    }
+                } catch { }
+                Thread.sleep(forTimeInterval: 1)
+            }
+        }
         DispatchQueue.global().async {
             while true {
                 let result = Result { try readQuota() }
@@ -262,7 +304,16 @@ final class NativeBackend {
             let snapshot = autoreleasepool { collector.snapshot() }
             lock.lock(); conversations = snapshot; lock.unlock()
             if server?.isRunning == true { listenerError = "" }
-            try writeJSON(["dashboard": server?.isRunning == true ? "运行中" : "已停止或端口被占用", "listenerError": listenerError, "music": music.isEnabled() ? "运行中" : "已停止", "updatedAt": Date().timeIntervalSince1970], NativePaths.data.appendingPathComponent("runtime.json"))
+            if pairing["paired"] as? Bool == true {
+                if let current = try? pairingStatus() { pairing = current }
+            } else if (number(pairing["pairingExpiresAt"] ?? pairing["expiresAt"]) ?? 0) <= Date().timeIntervalSince1970 {
+                if let current = try? pairingStart() { pairing = current }
+            }
+            var runtime: JSONObject = ["dashboard": server?.isRunning == true ? "运行中" : "已停止或端口被占用", "listenerError": listenerError, "music": music.isEnabled() ? "运行中" : "已停止", "updatedAt": Date().timeIntervalSince1970]
+            runtime["paired"] = pairing["paired"] as? Bool ?? false
+            runtime["pairingCode"] = pairing["code"] ?? NSNull()
+            runtime["pairingExpiresAt"] = pairing["expiresAt"] ?? NSNull()
+            try writeJSON(runtime, NativePaths.data.appendingPathComponent("runtime.json"))
             Thread.sleep(forTimeInterval: 1)
         }
     }
