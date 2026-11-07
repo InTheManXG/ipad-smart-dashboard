@@ -53,6 +53,10 @@ function renderLyrics(snapshot, frame) {
 }
 
 function renderMusic() {
+  // 未配置或已停用时不占位；启用但暂时未播放仍保留音乐区域。
+  const visible = !!musicSnapshot && (musicSnapshot.enabled === true || (musicSnapshot.enabled !== false && musicSnapshot.state !== 'offline'));
+  musicNode('music-panel').hidden = !visible;
+  musicNode('home').classList.toggle('music-hidden', !visible);
   const frame = lyricFrame(musicSnapshot, (performance.now() - musicReceived) / 1000);
   // 其他播放器及断线状态不显示网易云品牌图标。
   musicNode('music-source-logo').hidden = frame.source !== '网易云音乐';

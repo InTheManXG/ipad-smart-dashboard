@@ -35,7 +35,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     var config = try configuration()
     let action = value["action"] as? String ?? ""
     if action == "status" {
-        var status: JSONObject = ["publicURL": publicAddress(config), "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
+        var status: JSONObject = ["musicEnabled": config["musicEnabled"] as? Bool ?? true, "publicURL": publicAddress(config), "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
                                   "appLogin": FileManager.default.fileExists(atPath: NativePaths.agents.appendingPathComponent("com.iamxg.ipad-control.plist").path)]
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]

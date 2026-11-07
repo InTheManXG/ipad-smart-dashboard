@@ -185,7 +185,7 @@ class Store:
         previous = self.snapshots.get(ident)
         status = clean_status(value['status']) if 'status' in value else (previous[1] if previous else {'schema': 1, 'conversations': []})
         raw_music = value['music'] if 'music' in value else (previous[2] if previous else {'state': 'offline'})
-        song = {'state': 'offline'} if raw_music == {'state': 'offline'} else music.validate(raw_music)
+        song = music.validate(raw_music)
         keys = clean_keys(value['keys']) if 'keys' in value else (previous[3] if previous else [])
         acks = value.get('acks', [])
         if not isinstance(acks, list) or len(acks) > 8: raise Failure(400, 'invalid_acks')
@@ -219,7 +219,7 @@ class Store:
         with self.lock:
             item = self.snapshots.get(ident)
             if not item or time.monotonic()-item[0] > FRESH_TTL:
-                if kind == 'music': return {'state': 'offline'}
+                if kind == 'music': return {'state': 'offline', 'enabled': bool(item and item[2].get('enabled', True))}
                 raise Failure(503, 'device_offline')
             age, status, song, keys = time.monotonic()-item[0], item[1], item[2], item[3]
             if kind == 'status': return status | {'servedAt': time.time()}

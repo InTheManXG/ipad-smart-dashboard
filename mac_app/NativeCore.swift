@@ -86,7 +86,7 @@ func writeJSON(_ value: Any, _ url: URL) throws {
 }
 func configuration() throws -> JSONObject {
     if !FileManager.default.fileExists(atPath: NativePaths.config.path) {
-        return ["publicURL": "", "musicEnabled": true, "dashboardEnabled": true, "musicLogin": true]
+        return ["publicURL": "", "musicEnabled": false, "dashboardEnabled": true, "musicLogin": true]
     }
     return try readJSON(NativePaths.config)
 }

@@ -3,9 +3,15 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const nodes = new Map();
-const node = () => ({textContent:'',className:'',style:{},dataset:{},children:[],setAttribute(name,value){this[name]=value;},replaceChildren(...children){this.children=children;}});
+const node = () => ({textContent:'',className:'',classList:{toggle(name,on){this[name]=on;}},style:{},dataset:{},children:[],setAttribute(name,value){this[name]=value;},replaceChildren(...children){this.children=children;}});
 const context = vm.createContext({document:{hidden:false,addEventListener(){},createElement:node,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);}},sessionStorage:{getItem(){return '';}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},performance:{now(){return 0;}},setInterval(){},requestAnimationFrame(){},setTimeout,clearTimeout,AbortController});
 vm.runInContext(fs.readFileSync('web/music.js','utf8'),context);
+for (const [snapshot, visible] of [[null,false],[{state:'offline',enabled:false},false],[{state:'idle',enabled:true},true],[{state:'offline',enabled:true},true],[{state:'unavailable',enabled:true},true],[{state:'idle'},true]]) {
+  context.visibilitySnapshot = snapshot;
+  vm.runInContext('musicSnapshot = visibilitySnapshot; renderMusic()', context);
+  assert.equal(nodes.get('music-panel').hidden, !visible, '按启用状态控制整个音乐区域');
+  assert.equal(nodes.get('home').classList['music-hidden'], !visible, '停用时任务扩展布局');
+}
 const frame = (snapshot, elapsed = 0) => context.lyricFrame(snapshot, elapsed);
 const song = {state:'ready',trackId:'a'.repeat(64),title:'歌',artist:'歌手',source:'网易云音乐',position:0,duration:100,playing:true,lyricsState:'ready',lines:[{time:2,text:'第一句'},{time:5,text:'第二句'},{time:8,text:''},{time:12,text:'第三句'}]};
 assert.equal(frame(song).current,'前奏');

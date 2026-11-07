@@ -312,6 +312,7 @@ final class NativeBackend {
         } catch { return json(["error": "操作失败，请检查输入或服务状态"], 400) }
     }
     func run() throws {
+        music.setEnabled(try configuration()["musicEnabled"] as? Bool ?? true)
         var listenerError = ""
         // 公网不可用不能阻塞本地监听、采集和 App 状态刷新。
         Thread.detachNewThread {

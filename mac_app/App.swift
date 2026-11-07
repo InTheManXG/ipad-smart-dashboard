@@ -18,7 +18,7 @@ struct ManagedKey: Identifiable {
 
 @MainActor final class ControlModel: ObservableObject {
     @Published var dashboard = "正在检查…"
-    @Published var music = "正在检查…"
+    @Published var musicEnabled = false
     @Published var musicLogin = false
     @Published var appLogin = false
     @Published var publicURL = ""
@@ -72,7 +72,7 @@ struct ManagedKey: Identifiable {
     func refresh() async {
         await perform(["action": "status"]) { result in
             self.dashboard = result["dashboard"] as? String ?? "未知"
-            self.music = result["music"] as? String ?? "未知"
+            self.musicEnabled = result["musicEnabled"] as? Bool ?? false
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
             self.publicURL = result["publicURL"] as? String ?? ""
@@ -127,6 +127,7 @@ struct ControlView: View {
             List(selection: $section) {
                 Label("服务管理", systemImage: "switch.2").tag("服务")
                 Label("连接与配对", systemImage: "network").tag("连接")
+                Label("音乐同步", systemImage: "music.note").tag("音乐")
                 Label("中转站 Key", systemImage: "key.horizontal").tag("Key")
             }
             .navigationTitle("iPad 控制台")
@@ -136,9 +137,9 @@ struct ControlView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : "中转站 Key")
+                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : section == "音乐" ? "音乐同步" : "中转站 Key")
                             .font(.largeTitle.bold())
-                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : "管理这台 Mac 的中转站 Key")
+                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : section == "音乐" ? "控制看板的音乐与歌词显示" : "管理这台 Mac 的中转站 Key")
                             .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     Spacer()
@@ -148,6 +149,7 @@ struct ControlView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         if section == "服务" { services }
                         else if section == "连接" { connection }
+                        else if section == "音乐" { musicSettings }
                         else { keySettings }
                     }.padding(2)
                 }
@@ -189,17 +191,6 @@ struct ControlView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
-            GroupBox("音乐与歌词同步") {
-                VStack(alignment: .leading, spacing: 12) {
-                    status(model.music)
-                    HStack {
-                        Button("启动同步") { Task { await model.service("music-start") } }
-                        Button("停止同步") { Task { await model.service("music-stop") } }
-                    }
-                    Text("同时服务本地和线上看板；停止后，两端歌词和播放控制将离线。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-            }
             GroupBox("登录启动") {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("登录 Mac 时启动后台服务", isOn: Binding(get: { model.musicLogin }, set: { enabled in
@@ -213,6 +204,23 @@ struct ControlView: View {
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
             Button("刷新服务状态") { Task { await model.refresh() } }
+        }
+    }
+
+    var musicSettings: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            GroupBox("音乐与歌词") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("启用音乐同步", isOn: Binding(get: { model.musicEnabled }, set: { enabled in
+                        Task { await model.service(enabled ? "music-start" : "music-stop") }
+                    }))
+                    Text("启用后，网页显示音乐、歌词和播放控制；关闭后隐藏整个音乐区域，任务现场占满剩余空间。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Text("同时作用于公网和局域网看板，不会退出或暂停 Mac 上的音乐播放器。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button("刷新同步状态") { Task { await model.refresh() } }
         }
     }
 

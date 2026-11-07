@@ -9,6 +9,23 @@ import pairing
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_music_enabled_survives_exchange_and_disconnect(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = pairing.Store(Path(folder) / 'pairing.sqlite')
+            ident = str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            for enabled in (False, True, False):
+                store.exchange(ident, {'music': {'state': 'offline', 'enabled': enabled}})
+                self.assertEqual(store.read(ident, 'music')['enabled'], enabled)
+                store.exchange(ident, {'status': {}})
+                self.assertEqual(store.read(ident, 'music')['enabled'], enabled)
+                item = store.snapshots[ident]
+                store.snapshots[ident] = (time.monotonic() - 100,) + item[1:]
+                self.assertEqual(store.read(ident, 'music')['enabled'], enabled)
+            with self.assertRaises(ValueError):
+                store.exchange(ident, {'music': {'state': 'offline', 'enabled': 'false'}})
+            store.close()
+
     def test_code_binds_browser_to_one_device(self):
         with tempfile.TemporaryDirectory() as folder:
             store = pairing.Store(Path(folder) / 'pairing.sqlite')

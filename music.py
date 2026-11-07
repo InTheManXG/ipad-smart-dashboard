@@ -14,9 +14,14 @@ ACTIONS = ('previous', 'replay', 'play', 'pause', 'next')
 
 
 def validate(value):
-    if not isinstance(value, dict) or value.get('state') not in ('idle', 'ready', 'unavailable'):
+    if not isinstance(value, dict) or value.get('state') not in ('idle', 'ready', 'unavailable', 'offline'):
         raise ValueError('invalid music state')
     result = {'state': value['state']}
+    # 显式开关与断线状态独立，禁止字符串等伪布尔值影响网页布局。
+    if 'enabled' in value:
+        if type(value['enabled']) is not bool:
+            raise ValueError('invalid music enabled')
+        result['enabled'] = value['enabled']
     if value['state'] != 'ready':
         return result
     for key in ('title', 'artist', 'source', 'lyricsState'):

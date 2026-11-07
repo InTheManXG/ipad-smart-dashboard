@@ -104,6 +104,13 @@ import SQLite3
         try check(expiring.complete(oldCode, now: 1600).0 == 401, "配对码过期")
         for _ in 0..<9 { _ = expiring.complete("INVALID!", now: 1601) }
         try check(expiring.complete("INVALID!", now: 1601).0 == 429, "本地配对限流")
+        let disabledMusic = NativeMusic()
+        disabledMusic.setEnabled(false)
+        try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用音乐明确通知网页隐藏歌词")
+        disabledMusic.update(["state": "idle"])
+        try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用时晚到采集不能重新启用")
+        disabledMusic.setEnabled(true)
+        try check(disabledMusic.snapshot()["enabled"] as? Bool == true, "启用但离线仍保留音乐区域")
         let backend = try NativeBackend(token: "test-only")
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)

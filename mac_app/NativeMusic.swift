@@ -87,8 +87,10 @@ final class NativeMusic {
     func isEnabled() -> Bool { lock.lock(); defer { lock.unlock() }; return enabled }
     func snapshot() -> JSONObject {
         lock.lock(); defer { lock.unlock() }
-        guard enabled && ProcessInfo.processInfo.systemUptime - received <= 8 else { return ["state": "offline"] }
-        var result = value
+        // 停用与采集离线必须区分，网页用此开关决定是否为歌词保留布局空间。
+        guard enabled else { return ["state": "offline", "enabled": false] }
+        guard ProcessInfo.processInfo.systemUptime - received <= 8 else { return ["state": "offline", "enabled": true] }
+        var result = value; result["enabled"] = true
         if result["state"] as? String == "ready", result["playing"] as? Bool == true {
             result["position"] = min(number(result["duration"]) ?? 0, (number(result["position"]) ?? 0) + ProcessInfo.processInfo.systemUptime - received)
         }
@@ -159,17 +161,16 @@ final class NativeMusic {
     func publish() {
         while true {
             let started = ProcessInfo.processInfo.systemUptime
-            if isEnabled() {
-                do {
-                    let response = try publishDevice("api/device/exchange", ["music": snapshot()])
-                    if let command = (response["commands"] as? [JSONObject])?.first, let id = command["requestId"] as? String {
-                        let result = control(command, started: started)
-                        let next = snapshot()
-                        _ = try publishDevice("api/device/exchange", ["music": next, "acks": [["requestId": id, "ok": result["ok"] as? Bool == true]]])
-                    }
-                } catch { }
-            }
-            Thread.sleep(forTimeInterval: max(0, 0.25 - (ProcessInfo.processInfo.systemUptime - started)))
+            do {
+                let response = try publishDevice("api/device/exchange", ["music": snapshot()])
+                if let command = (response["commands"] as? [JSONObject])?.first, let id = command["requestId"] as? String {
+                    let result = control(command, started: started)
+                    let next = snapshot()
+                    _ = try publishDevice("api/device/exchange", ["music": next, "acks": [["requestId": id, "ok": result["ok"] as? Bool == true]]])
+                }
+            } catch { }
+            // 停用后仍同步开关，避免公网保留最后一份启用状态。
+            Thread.sleep(forTimeInterval: max(0, (isEnabled() ? 0.25 : 1) - (ProcessInfo.processInfo.systemUptime - started)))
         }
     }
 }
