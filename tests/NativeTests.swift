@@ -12,6 +12,19 @@ import SQLite3
         try check(rejected, message)
     }
     static func main() throws {
+        // UA 只做展示，覆盖重叠标识、桌面模式与未知客户端，不能用作设备认证。
+        for (ua, expected) in [
+            ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0", "Windows · Edge 156"),
+            ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/18.7.6 Safari/605.1.15", "Mac / iPad（桌面模式） · Safari 18"),
+            ("Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) Version/18.0 Safari/604.1", "iPad · iPadOS · Safari 18"),
+            ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) CriOS/130.0 Safari/604.1", "iPhone · iOS · Chrome 130"),
+            ("Mozilla/5.0 (Linux; Android 14) Chrome/130.0 Safari/537.36 EdgA/130.0", "Android · Edge 130"),
+            ("Mozilla/5.0 (Linux) Firefox/132.0", "Linux · Firefox 132"),
+            ("Mozilla/5.0 (Windows NT 10.0) Chrome/130.0 OPR/115.0", "Windows · Opera 115"),
+            ("custom-agent", "未知设备 · 未知浏览器"),
+            ("Chrome/", "未知设备 · Chrome"),
+            (" \n", "尚未上报设备信息")
+        ] { try check(userAgentSummary(ua) == expected, "UA 简介：" + expected) }
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/native-test-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

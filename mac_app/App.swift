@@ -399,10 +399,13 @@ struct ControlView: View {
                         }
                         Divider()
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("User Agent").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                            Text(screen.ua.isEmpty ? "尚未上报，请在对应网页刷新。" : screen.ua)
-                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            Text(userAgentSummary(screen.ua)).font(.subheadline).foregroundStyle(.secondary)
+                            DisclosureGroup("详细信息") {
+                                Text(screen.ua.isEmpty ? "尚未上报，请在对应网页刷新。" : screen.ua)
+                                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+                            }.font(.caption)
                         }
                     }
                     .padding(16).frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)
