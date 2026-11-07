@@ -65,10 +65,16 @@ async function refreshRelay(force = false) {
       return card;
     });
     $('relay-cards').replaceChildren(...cards);
-    await Promise.all(keys.map(async (item, index) => {
-      try { renderUsage(cards[index], item, await api(`usage?id=${encodeURIComponent(item.id)}${force ? '&refresh=1' : ''}`)); }
-      catch { renderUsage(cards[index], item, {error:'查询失败，请稍后重试'}); }
-    }));
+    // 同一 Mac 的配对指令只能串行执行，并发刷新会被服务端拒绝为 device_busy。
+    for (const [index, item] of keys.entries()) {
+      try {
+        const path = `usage?id=${encodeURIComponent(item.id)}`;
+        let data = await api(`${path}${force ? '&refresh=1' : ''}`);
+        // 公网仅收到 Key 名单时可能尚无额度快照，不能把空对象画成查询成功。
+        if (!force && !data.error && !Number.isFinite(data.updatedAt)) data = await api(`${path}&refresh=1`);
+        renderUsage(cards[index], item, data.error || Number.isFinite(data.updatedAt) ? data : {error:'尚未收到额度，请稍后更新'});
+      } catch { renderUsage(cards[index], item, {error:'查询失败，请稍后重试'}); }
+    }
   } catch (error) {
     // 认证或网络失败时移除旧额度，避免误认为仍是当前值。
     $('relay-cards').replaceChildren();
