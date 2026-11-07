@@ -72,5 +72,26 @@ class ServerTests(unittest.TestCase):
             self.assertIn('任务现场', response.read().decode())
 
 
+    def test_subscription_update_auth_and_modes(self):
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(self.url + '/api/subscriptions'))
+        self.assertEqual(error.exception.code, 401)
+        headers = {'X-Display-Token': 'test-only'}
+        with patch('server.subscription_list', return_value=[{'id': 'sc', 'remark': '顺畅网络'}]):
+            with urlopen(Request(self.url + '/api/subscriptions', headers=headers)) as response:
+                self.assertEqual(json.load(response), [{'id': 'sc', 'remark': '顺畅网络'}])
+        with patch('server.subscription_command', return_value={'ok': True}) as update:
+            with urlopen(Request(self.url + '/api/subscriptions/update', data=b'{}', headers=headers)) as response:
+                self.assertEqual(json.load(response), {'ok': True})
+            update.assert_called_once_with(None)
+            with urlopen(Request(self.url + '/api/subscriptions/update', data=b'{"id":"sc"}', headers=headers)) as response:
+                self.assertEqual(json.load(response), {'ok': True})
+            update.assert_called_with('sc')
+        with patch('server.subscription_command', side_effect=ValueError):
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(self.url + '/api/subscriptions/update', data=b'{"id":"bad"}', headers=headers))
+            self.assertEqual(error.exception.code, 400)
+
+
 if __name__ == '__main__':
     unittest.main()

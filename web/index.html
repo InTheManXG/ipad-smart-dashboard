@@ -4,7 +4,11 @@
 <div class="pages" tabindex="0" aria-label="看板页面">
 <section id="console" class="dashboard-page console-page" aria-labelledby="console-title">
   <h1 id="console-title">快捷控制台</h1>
-  <p class="empty">暂无独立控制项</p>
+  <section class="subscriptions" aria-labelledby="subscriptions-title">
+    <div class="section-head"><div><h2 id="subscriptions-title">更新订阅</h2><p class="section-description">更新前会由 Mac 上的订阅脚本校验并回滚失败变更。</p></div><span id="subscription-status" role="status"></span></div>
+    <button id="update-all-subscriptions" class="subscription-all" type="button">更新全部订阅</button>
+    <div id="subscription-list" class="subscription-list"><p class="empty">正在读取订阅列表…</p></div>
+  </section>
 </section>
 <div id="home" class="dashboard-page home-page">
 <header>
@@ -54,4 +58,4 @@
   </div>
   <button id="attention-dismiss">稍后处理</button>
 </dialog>
-<script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script><script src="./music.js" type="module"></script></body></html>
+<script src="./app.js" type="module"></script><script src="./relay.js" type="module"></script><script src="./music.js" type="module"></script><script src="./subscriptions.js" type="module"></script></body></html>

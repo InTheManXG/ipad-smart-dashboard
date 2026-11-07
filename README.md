@@ -160,3 +160,6 @@ Mac 使用 Homebrew 的 `media-control` 读取系统 Now Playing（兼容新 mac
 本次更新现有 OrbStack 本地挂载，未发布公网或替换已安装原生 App。5 组 Node 自检、JavaScript 语法及 diff 检查通过；浏览器验证首页默认位置、控制台清空、公司页直达和窄屏布局。iPad 真机手势仍待验收。
 
 2026-11-04 公网更新：已将去重后的四个前端文件发布到原 1Panel 目录 `/opt/1panel/docker/compose/codex-ipad-dashboard/app/web`，备份位于同目录上级 `backup-console-20261104-112634`。无需重启容器，口令、Key 数据与 Compose 校验保持原值。公网 HTTPS 资源与本地逐字节一致，状态和 Key 接口认证请求 200、无认证请求 401；浏览器使用模拟任务验证线上首页定位、左侧空页卡、公司页直达/刷新和 390px 布局，无脚本异常。已安装原生 App 未更新，iPad 真机手势仍待验收。
+
+
+2026-11-07：左侧快捷控制台增加订阅更新。页面只显示订阅备注和固定 ID，支持“更新全部订阅”和单独更新 `paoluz`、`sc`、`just`；网页不接触订阅 URL、节点凭据或脚本输出。Mac 服务固定调用 `/path/to/subscription-bridge/manage.py sync`，沿用脚本已有的备份、校验和失败回滚；同一时间只允许一个更新任务。

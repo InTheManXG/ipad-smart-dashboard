@@ -163,6 +163,8 @@ final class LocalHTTPServer {
 
 final class NativeBackend {
     let lock = NSLock(), collector = CodexCollector(), music = NativeMusic(), keys = LocalKeys()
+    let subscriptionLock = NSLock()
+    let subscriptionRoot = URL(fileURLWithPath: "/path/to/subscription-bridge", isDirectory: true)
     var quota: JSONObject = ["plan": "未知", "primary": NSNull(), "secondary": NSNull(), "quotaAvailable": false]
     var conversations: JSONObject = ["conversationsAvailable": false, "conversations": [JSONObject]()]
     var server: LocalHTTPServer?
@@ -174,9 +176,31 @@ final class NativeBackend {
         value["state"] = "unknown"; value["schema"] = 1; value["servedAt"] = Date().timeIntervalSince1970
         return value
     }
+    func subscriptions() throws -> [JSONObject] {
+        let script = subscriptionRoot.appendingPathComponent("manage.py")
+        guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
+        let result = try execute("/usr/bin/python3", [script.path, "list"], timeout: 20)
+        guard result.0 == 0, let text = String(data: result.1, encoding: .utf8) else { throw ControlError("无法读取订阅列表") }
+        return text.split(whereSeparator: { $0.isNewline }).compactMap { line in
+            let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
+            guard parts.count == 2, ["paoluz", "sc", "just"].contains(parts[0]) else { return nil }
+            return ["id": parts[0], "remark": parts[1]]
+        }
+    }
+    func updateSubscription(_ identity: String?) throws -> JSONObject {
+        guard identity == nil || ["paoluz", "sc", "just"].contains(identity!) else { throw ControlError("订阅 ID 不正确") }
+        guard subscriptionLock.try() else { throw ControlError("已有订阅更新正在进行") }
+        defer { subscriptionLock.unlock() }
+        let script = subscriptionRoot.appendingPathComponent("manage.py")
+        guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
+        var args = [script.path, "sync"]; if let identity { args += ["--id", identity] }
+        let result = try execute("/usr/bin/python3", args, timeout: 300)
+        guard result.0 == 0 else { throw ControlError("订阅更新失败，请检查 Surge 和订阅配置") }
+        return ["ok": true]
+    }
     func handle(_ request: HTTPMessage) -> (Int, String, Data) {
         func json(_ value: Any, _ code: Int = 200) -> (Int, String, Data) { (code, "application/json", (try? jsonData(value)) ?? Data("{}".utf8)) }
-        let files = ["/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/relay.js": ("relay.js", "text/javascript"), "/music.js": ("music.js", "text/javascript"), "/style.css": ("style.css", "text/css"), "/manifest.json": ("manifest.json", "application/manifest+json"), "/icon.svg": ("icon.svg", "image/svg+xml"), "/codex-icon.png": ("codex-icon.png", "image/png"), "/netease-music.png": ("netease-music.png", "image/png")]
+        let files = ["/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/relay.js": ("relay.js", "text/javascript"), "/music.js": ("music.js", "text/javascript"), "/subscriptions.js": ("subscriptions.js", "text/javascript"), "/style.css": ("style.css", "text/css"), "/manifest.json": ("manifest.json", "application/manifest+json"), "/icon.svg": ("icon.svg", "image/svg+xml"), "/codex-icon.png": ("codex-icon.png", "image/png"), "/netease-music.png": ("netease-music.png", "image/png")]
         if request.method == "GET", let file = files[request.path], let data = try? Data(contentsOf: NativePaths.resources.appendingPathComponent("web/" + file.0)) { return (200, file.1, data) }
         guard request.path.hasPrefix("/api/") else { return json([:], 404) }
         guard secureEqual(request.headers["x-display-token"] ?? "", token) else { return json([:], 401) }
@@ -186,6 +210,7 @@ final class NativeBackend {
             if request.method == "GET" {
                 switch path {
                 case "/api/status": return json(status())
+                case "/api/subscriptions": return json(try subscriptions())
                 case "/api/music": return json(music.snapshot())
                 case "/api/relay/keys": return json(try keys.list())
                 case "/api/relay/usage":
@@ -196,6 +221,7 @@ final class NativeBackend {
             }
             let value = try jsonObject(request.body)
             switch path {
+            case "/api/subscriptions/update": return json(try updateSubscription(value["id"] as? String))
             case "/api/relay/keys": return json(try keys.change(value))
             case "/api/music/control":
                 let result = music.control(value)
