@@ -194,14 +194,25 @@ class Store:
             self.snapshots.pop(ident, None)
             return {'ok': True}
 
+    def _remove_session(self, hashed):
+        self.db.execute('DELETE FROM sessions WHERE secret=?', (hashed,))
+        for commands in self.pending.values():
+            for command in commands.values():
+                if command['owner'] == hashed: command['result'] = {'ok': False, 'error': 'revoked'}
+        self.condition.notify_all()
+
+    def kick(self, ident, value):
+        screen_id = identity(value.get('id'))
+        with self.condition, self.db:
+            row = self.db.execute('SELECT s.secret FROM sessions s JOIN screens c ON c.secret=s.secret WHERE c.id=? AND s.device=? AND s.expires>?', (screen_id, ident, time.time())).fetchone()
+            if not row: raise Failure(404, 'screen_not_found')
+            # 只撤销所属 Mac 的这一个会话，同时终止该会话等待中的指令。
+            self._remove_session(row[0])
+            return {'ok': True}
+
     def leave(self, token):
         with self.condition, self.db:
-            hashed = credential(token)
-            self.db.execute('DELETE FROM sessions WHERE secret=?', (hashed,))
-            for commands in self.pending.values():
-                for command in commands.values():
-                    if command['owner'] == hashed: command['result'] = {'ok': False, 'error': 'revoked'}
-            self.condition.notify_all()
+            self._remove_session(credential(token))
             return {'ok': True}
 
     def exchange(self, ident, value):
@@ -227,7 +238,7 @@ class Store:
             for ack in acks:
                 if not isinstance(ack, dict) or type(ack.get('ok')) is not bool: raise Failure(400, 'invalid_acks')
                 command = pending.get(ack.get('requestId'))
-                if command and command['deadline'] > now:
+                if command and command['deadline'] > now and command['result'] is None:
                     command['result'] = {'ok': ack['ok']}
                     if command['payload']['kind'] == 'music': command['result']['snapshot'] = song
                     if command['payload']['kind'] == 'usage' and isinstance(ack.get('usage'), dict):
@@ -285,6 +296,7 @@ class Store:
             # 多网页可能同时刷新额度；只读查询排队，控制指令仍避免重复执行。
             if kind == 'usage' and not self.condition.wait_for(lambda: not self.pending.get(ident), timeout=wait):
                 raise Failure(409, 'device_busy')
+            self.authenticate(owner, 'web')
             commands = self.pending.setdefault(ident, {})
             if commands: raise Failure(409, 'device_busy')
             request_id = str(uuid.uuid4())
@@ -331,7 +343,7 @@ def route(handler):
         elif method == 'POST' and path == '/api/pairing/complete':
             store.throttle(('complete', peer), 10, 60); store.throttle(('complete-global', ''), 300, 60)
             result = store.complete(value, handler.headers.get('User-Agent', ''))
-        elif path in ('/api/device/exchange', '/api/pairing/code', '/api/pairing/revoke', '/api/pairing/device', '/api/pairing/screens', '/api/pairing/screen'):
+        elif path in ('/api/device/exchange', '/api/pairing/code', '/api/pairing/revoke', '/api/pairing/device', '/api/pairing/screens', '/api/pairing/screen', '/api/pairing/kick'):
             ident = store.authenticate(handler.headers.get('X-Device-Token', ''), 'device')
             store.throttle(('device', ident), 600, 60)
             if path == '/api/device/exchange' and method == 'POST': result = store.exchange(ident, value)
@@ -340,6 +352,7 @@ def route(handler):
             elif path == '/api/pairing/device' and method == 'GET': result = store.state(ident)
             elif path == '/api/pairing/screens' and method == 'GET': result = store.screens(ident)
             elif path == '/api/pairing/screen' and method == 'POST': result = store.remark(ident, value)
+            elif path == '/api/pairing/kick' and method == 'POST': result = store.kick(ident, value)
             else: raise Failure(405, 'method_not_allowed')
         else:
             token = handler.headers.get('X-Pairing-Token', '')

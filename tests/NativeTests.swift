@@ -120,6 +120,14 @@ import SQLite3
         try check(screen["remark"] as? String == "办公室" && screen["ua"] as? String == "Updated Safari", "跨进程备注与 UA 持久化互不覆盖")
         try check(!(try String(contentsOf: screensPath)).contains(firstWeb), "本地登记不保存会话令牌")
         try rejects("拒绝过长网页备注") { try reopened.remark(id: screenID, note: String(repeating: "字", count: 81), now: 2071) }
+        try reopened.revoke(id: screenID, now: 2072)
+        try check(!multi.authorized(firstWeb, userAgent: "尝试重新登记", now: 2073), "其他进程踢下线后旧令牌不能重新登记")
+        let afterKick = LocalPairing(secret: "multi", screens: LocalScreens(path: screensPath))
+        try check(!afterKick.authorized(firstWeb, now: 2074) && afterKick.authorized(secondWeb, now: 2074), "重启后仅被踢端失效，其他端保持连接")
+        try check(try reopened.list(now: 2074).count == 1, "已撤销会话不在卡片列表显示")
+        try rejects("不能修改已撤销网页") { try reopened.remark(id: screenID, note: "重新备注", now: 2074) }
+        let repaired = afterKick.complete(afterKick.current(now: 2075), userAgent: "重新配对", now: 2076).1["token"] as! String
+        try check(afterKick.authorized(repaired, now: 2077) && !afterKick.authorized(firstWeb, now: 2077), "重新配对只授予新令牌权限")
         try check(try reopened.list(now: 2001 + 31 * 86400).isEmpty, "列表清理过期网页")
         let disabledMusic = NativeMusic()
         disabledMusic.setEnabled(false)

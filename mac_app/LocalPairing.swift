@@ -31,24 +31,33 @@ final class LocalScreens {
         return result
     }
     func list(now: TimeInterval = Date().timeIntervalSince1970) throws -> [JSONObject] {
-        try access(now: now) { $0.sorted { (number($0["seen"]) ?? 0) > (number($1["seen"]) ?? 0) } }
+        try access(now: now) { $0.filter { $0["revoked"] as? Bool != true }.sorted { (number($0["seen"]) ?? 0) > (number($1["seen"]) ?? 0) } }
     }
-    func touch(id: String, expires: TimeInterval, ua: String, now: TimeInterval) throws {
+    func touch(id: String, expires: TimeInterval, ua: String?, now: TimeInterval) throws -> Bool {
         try access(now: now) { records in
-            let agent = String(ua.prefix(1024))
+            let agent = ua.map { String($0.prefix(1024)) }
             if let index = records.firstIndex(where: { $0["id"] as? String == id }) {
-                if records[index]["ua"] as? String != agent || now - (number(records[index]["seen"]) ?? 0) >= 60 {
+                guard records[index]["revoked"] as? Bool != true else { return false }
+                if let agent, records[index]["ua"] as? String != agent || now - (number(records[index]["seen"]) ?? 0) >= 60 {
                     records[index]["ua"] = agent; records[index]["seen"] = now
                 }
             } else {
-                records.append(["id": id, "remark": "", "ua": agent, "seen": now, "expires": expires])
+                records.append(["id": id, "remark": "", "ua": agent ?? "", "seen": now, "expires": expires])
             }
+            return true
+        }
+    }
+    func revoke(id: String, now: TimeInterval = Date().timeIntervalSince1970) throws {
+        try access(now: now) { records in
+            guard let index = records.firstIndex(where: { $0["id"] as? String == id && $0["revoked"] as? Bool != true }) else { throw ControlError("网页配对已过期或不存在") }
+            // 签名令牌不能靠删登记失效；保留撤销标记至令牌过期，阻止旧令牌再次登记。
+            records[index]["revoked"] = true
         }
     }
     func remark(id: String, note: String, now: TimeInterval = Date().timeIntervalSince1970) throws {
         guard UUID(uuidString: id) != nil, trimmed(note).count <= 80 else { throw ControlError("备注不能超过 80 个字符") }
         try access(now: now) { records in
-            guard let index = records.firstIndex(where: { $0["id"] as? String == id }) else { throw ControlError("网页配对已过期或不存在") }
+            guard let index = records.firstIndex(where: { $0["id"] as? String == id && $0["revoked"] as? Bool != true }) else { throw ControlError("网页配对已过期或不存在") }
             records[index]["remark"] = trimmed(note)
         }
     }
@@ -85,7 +94,7 @@ final class LocalPairing {
         let id = UUID().uuidString.lowercased(), expiry = now + 30 * 86400
         do {
             guard try screens.list(now: now).count < 16 else { return (409, ["error": "screen_limit"]) }
-            try screens.touch(id: id, expires: expiry, ua: userAgent, now: now)
+            _ = try screens.touch(id: id, expires: expiry, ua: userAgent, now: now)
         } catch { return (503, ["error": "storage_unavailable"]) }
         let payload = id + "." + String(Int(expiry))
         rotate(now) // 同一码只能消费一次，其他屏幕须使用新码。
@@ -97,8 +106,7 @@ final class LocalPairing {
         guard parts.count == 3, UUID(uuidString: String(parts[0])) != nil,
               let expiry = TimeInterval(parts[1]), expiry.isFinite, expiry > now else { return false }
         guard secureEqual(String(parts[2]), signature(String(parts[0]) + "." + String(parts[1]))) else { return false }
-        // 旧签名会话继续有效，访问时补全 UA；展示信息写入失败不撤销已有访问权。
-        if let userAgent { try? screens.touch(id: String(parts[0]), expires: expiry, ua: userAgent, now: now) }
-        return true
+        // 每次访问都核对持久化撤销状态；无法读取记录时拒绝访问，不能绕过踢下线。
+        return (try? screens.touch(id: String(parts[0]), expires: expiry, ua: userAgent, now: now)) ?? false
     }
 }

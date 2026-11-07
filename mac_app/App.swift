@@ -160,6 +160,7 @@ struct ControlView: View {
     @ViewState private var confirmStationChange = false
     @ViewState private var publicEditor = false
     @ViewState private var editingScreen: PairedScreen?
+    @ViewState private var kickingScreen: PairedScreen?
 
     var body: some View {
         NavigationSplitView {
@@ -349,6 +350,19 @@ struct ControlView: View {
         }
         .sheet(isPresented: $publicEditor) { PublicAddressEditor(model: model) }
         .sheet(item: $editingScreen) { ScreenRemarkEditor(model: model, screen: $0) }
+        .confirmationDialog("将此网页踢下线？", isPresented: Binding(get: { kickingScreen != nil }, set: { if !$0 { kickingScreen = nil } }), titleVisibility: .visible) {
+            Button("踢下线", role: .destructive) {
+                guard let screen = kickingScreen else { return }
+                kickingScreen = nil
+                Task {
+                    await model.perform(["action": "screen-kick", "scope": screen.scope, "id": screen.id], success: "该网页已下线")
+                    if !model.failed { await model.refreshConnections() }
+                }
+            }
+            Button("取消", role: .cancel) { kickingScreen = nil }
+        } message: {
+            Text("“\(kickingScreen?.remark.isEmpty == false ? kickingScreen!.remark : "未备注网页")”将失去访问权限，需要重新配对。其他端不受影响。")
+        }
     }
 
     private var visibleScreens: [PairedScreen] {
@@ -387,6 +401,10 @@ struct ControlView: View {
                             Text(screen.ua.isEmpty ? "尚未上报，请在对应网页刷新。" : screen.ua)
                                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        }
+                        HStack {
+                            Spacer()
+                            Button("踢下线", role: .destructive) { kickingScreen = screen }.controlSize(.small)
                         }
                     }
                     .padding(16).frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)

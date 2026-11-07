@@ -86,6 +86,15 @@ context.document.hidden = false;
   context.fetch = success;
   await run('refresh()');
   assert.equal(get('connection').className,'connected');
+  // 被 App 踢下线后，清除旧会话并要求重新配对。
+  let removed;
+  context.localStorage.removeItem = key => { removed = key; };
+  context.fetch = async () => ({ok:false,status:401});
+  get('settings').close();
+  await run('refresh()');
+  assert.equal(run('token'), '');
+  assert.equal(removed, 'pairing-token');
+  assert.equal(get('settings').open, true);
   run("token = ''");
   await run('refresh()');
   assert.equal(get('connection').className,'disconnected');

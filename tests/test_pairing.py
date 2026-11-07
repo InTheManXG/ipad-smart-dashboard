@@ -10,6 +10,44 @@ import pairing
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_kick_only_owned_screen_and_cancel_pending(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'pairing.sqlite'
+            store = pairing.Store(path)
+            ident, other = str(uuid.uuid4()), str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            store.register({'deviceId': other, 'deviceToken': 'b' * 64})
+            first = store.complete({'code': store.code(ident)['code']}, 'first')['token']
+            second = store.complete({'code': store.code(ident)['code']}, 'second')['token']
+            screen = next(s for s in store.screens(ident)['screens'] if s['ua'] == 'first')
+            with self.assertRaises(pairing.Failure): store.kick(other, {'id': screen['id']})
+            self.assertEqual(store.authenticate(first, 'web'), ident)
+            key = str(uuid.uuid4())
+            store.exchange(ident, {'status': {}, 'keys': [{'id': key, 'name': '测试'}]})
+            errors = []
+            def query():
+                try: store.command(ident, {'id': key}, 'usage', first, wait=2)
+                except pairing.Failure as error: errors.append(error.message)
+            worker = threading.Thread(target=query); worker.start()
+            deadline = time.monotonic() + 2
+            while not store.pending.get(ident) and time.monotonic() < deadline: time.sleep(.01)
+            command = store.exchange(ident, {'status': {}})['commands'][0]
+            store.kick(ident, {'id': screen['id']})
+            store.exchange(ident, {'acks': [{'requestId': command['requestId'], 'ok': True, 'usage': {'remaining': 12}}]})
+            worker.join(3)
+            self.assertFalse(worker.is_alive())
+            self.assertTrue(errors, '撤销后晚到的成功回执不能恢复访问')
+            self.assertEqual(len(store.screens(ident)['screens']), 1)
+            self.assertEqual(store.authenticate(second, 'web'), ident)
+            with self.assertRaises(pairing.Failure): store.authenticate(first, 'web')
+            store.close(); store = pairing.Store(path)
+            with self.assertRaises(pairing.Failure): store.authenticate(first, 'web')
+            self.assertEqual(store.authenticate(second, 'web'), ident)
+            fresh = store.complete({'code': store.code(ident)['code']}, 'first')['token']
+            self.assertNotEqual(first, fresh)
+            self.assertEqual(store.authenticate(fresh, 'web'), ident)
+            store.close()
+
     def test_multiple_screens_remarks_ua_and_legacy_sessions(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'pairing.sqlite'

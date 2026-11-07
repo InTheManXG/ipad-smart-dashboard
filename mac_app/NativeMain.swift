@@ -58,6 +58,13 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         }
         return result
     }
+    if action == "screen-kick" {
+        guard let id = value["id"] as? String, UUID(uuidString: id) != nil, let scope = value["scope"] as? String else { throw ControlError("网页标识不正确") }
+        if scope == "local" { try LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json")).revoke(id: id) }
+        else if scope == "public" { _ = try pairingManage("api/pairing/kick", body: ["id": id]) }
+        else { throw ControlError("未知配对类型") }
+        return ["ok": true]
+    }
     if action == "screen-remark" {
         guard let id = value["id"] as? String, let note = value["remark"] as? String, let scope = value["scope"] as? String,
               UUID(uuidString: id) != nil, trimmed(note).count <= 80 else { throw ControlError("网页标识或备注不正确") }
