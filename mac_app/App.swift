@@ -17,8 +17,6 @@ struct ManagedKey: Identifiable {
 }
 
 @MainActor final class ControlModel: ObservableObject {
-    @Published var url = "https://ipad.iamxg.com"
-    @Published var token = ""
     @Published var dashboard = "正在检查…"
     @Published var music = "正在检查…"
     @Published var musicLogin = false
@@ -33,7 +31,6 @@ struct ManagedKey: Identifiable {
     @Published var busy = false
     @Published var message = ""
     @Published var failed = false
-    @Published var connectedURL = ""
 
     nonisolated static func request(_ payload: [String: Any]) throws -> [String: Any] {
         let process = Process(), input = Pipe(), output = Pipe()
@@ -70,7 +67,7 @@ struct ManagedKey: Identifiable {
         busy = false
     }
 
-    func refresh(initial: Bool = false) async {
+    func refresh() async {
         await perform(["action": "status"]) { result in
             self.dashboard = result["dashboard"] as? String ?? "未知"
             self.music = result["music"] as? String ?? "未知"
@@ -84,8 +81,6 @@ struct ManagedKey: Identifiable {
                 guard let id = $0["id"] as? String, let label = $0["label"] as? String, let url = $0["url"] as? String else { return nil }
                 return LANAddress(id: id, label: label, url: url)
             }
-            self.connectedURL = result["url"] as? String ?? ""
-            if initial { self.url = self.connectedURL }
         }
     }
 
@@ -134,7 +129,7 @@ struct ControlView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : "中转站 Key")
                             .font(.largeTitle.bold())
-                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : "当前管理：\(model.connectedURL)")
+                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : "管理这台 Mac 的中转站 Key")
                             .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     Spacer()
@@ -154,7 +149,7 @@ struct ControlView: View {
             }.padding(28).disabled(model.busy)
         }
         .frame(minWidth: 820, minHeight: 620)
-        .task { await model.refresh(initial: true) }
+        .task { await model.refresh() }
         .onChange(of: section) { value in
             resetEditor()
             Task { if value == "Key" { await model.loadKeys() } else { await model.refresh() } }
@@ -169,7 +164,7 @@ struct ControlView: View {
                     if !model.failed { resetEditor(); await model.loadKeys() }
                 }
             }
-        } message: { Text("将从 \(model.connectedURL) 删除“\(deleting?.name ?? "")”，不会撤销服务商的 Key。") }
+        } message: { Text("将从这台 Mac 删除“\(deleting?.name ?? "")”，不会撤销服务商的 Key。") }
     }
 
     var services: some View {
@@ -277,40 +272,11 @@ struct ControlView: View {
         }
     }
 
-    var managementConnection: some View {
-        DisclosureGroup("管理连接设置") {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Button("线上看板") { model.url = "https://ipad.iamxg.com" }
-                    Button("本地看板") { model.url = "http://127.0.0.1:18088" }
-                }
-                TextField("看板地址", text: $model.url).textFieldStyle(.roundedBorder)
-                SecureField("访问口令（留空沿用已保存的口令）", text: $model.token).textFieldStyle(.roundedBorder)
-                Text("仅用于选择 Key 的管理目标，不影响 iPad 的公网或局域网配对。保存前会验证访问权限。")
-                    .font(.callout).foregroundStyle(.secondary)
-                Button("验证并保存连接") {
-                    Task {
-                        await model.perform(["action": "connection-save", "url": model.url, "token": model.token], success: "连接验证通过，已保存") { _ in
-                            model.connectedURL = model.url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                            model.token = ""; model.keys = []; resetEditor()
-                        }
-                        if !model.failed { await model.loadKeys() }
-                    }
-                }.buttonStyle(.borderedProminent)
-                Text("管理口令保存在 macOS 钥匙串中，与网页配对码不同。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-
     var keySettings: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("目前支持 Sub2API · 额度查询：sub2api.818tu.com")
                 .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-            // 管理目标只影响 Key 接口，与公网配对和本地服务启停无关。
-            managementConnection
-            Text("本地 Key 由 App 管理，关闭本地看板仍可编辑；本地与远程配置独立。")
+            Text("Key 保存在这台 Mac 的钥匙串中；公网和局域网看板展示同一份额度数据，关闭本地看板仍可管理。")
                 .font(.callout).foregroundStyle(.secondary)
             ForEach(model.keys) { item in
                 HStack {
