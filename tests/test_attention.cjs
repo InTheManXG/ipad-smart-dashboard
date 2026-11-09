@@ -86,7 +86,12 @@ context.document.hidden = false;
   context.fetch = success;
   await run('refresh()');
   assert.equal(get('connection').className,'connected');
-  // 被 App 踢下线后，清除旧会话并要求重新配对。
+  // 被踢下线须立即隐藏旧页面并重载，清除各模块缓存；网络失败不走此路径。
+  let reloads = 0;
+  const pages = {style:{}};
+  context.document.querySelector = selector => selector === '.pages' ? pages : null;
+  context.location = {reload(){reloads++;}};
+  run("render({conversationsAvailable:true,conversations:[{title:'旧任务',threadId:'old',state:'running'}],quotaAvailable:false})");
   let removed;
   context.localStorage.removeItem = key => { removed = key; };
   context.fetch = async () => ({ok:false,status:401});
@@ -94,7 +99,8 @@ context.document.hidden = false;
   await run('refresh()');
   assert.equal(run('token'), '');
   assert.equal(removed, 'pairing-token');
-  assert.equal(get('settings').open, true);
+  assert.equal(pages.style.display, 'none', '失效后不能继续展示旧看板');
+  assert.equal(reloads, 1, '重载销毁任务、音乐、额度和控制台的旧模块状态');
   run("token = ''");
   await run('refresh()');
   assert.equal(get('connection').className,'disconnected');

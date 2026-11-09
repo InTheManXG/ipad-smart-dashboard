@@ -82,7 +82,14 @@ async function refresh() {
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 7000);
   try {
     const response = await fetch('./api/status',{headers:{'X-Pairing-Token':token},cache:'no-store',signal:controller.signal});
-    if (response.status === 401) { localStorage.removeItem('pairing-token'); token = ''; $('settings').showModal(); throw new Error('配对已失效，请重新配对'); }
+    if (response.status === 401) {
+      localStorage.removeItem('pairing-token'); token = '';
+      // 撤销配对后销毁整页模块状态，避免旧额度、歌词或迟到响应继续留在界面。
+      document.querySelector('.pages').style.display = 'none';
+      updateAttention(null);
+      location.reload();
+      return;
+    }
     if (!response.ok) throw new Error('Mac 状态服务未连接');
     const data = await response.json();
     if (!Number.isFinite(data.servedAt) || Date.now()/1000 - data.servedAt > 20) throw new Error('状态数据已过期');
