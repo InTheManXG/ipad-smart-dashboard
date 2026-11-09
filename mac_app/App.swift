@@ -435,7 +435,8 @@ struct ControlView: View {
                             }
                         }
                     }
-                    .padding(16).frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)
+                    // 收起详情时按内容高度布局，不为隐藏的 UA 预留空白。
+                    .padding(16).frame(maxWidth: .infinity, alignment: .topLeading)
                     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
                 }
