@@ -253,7 +253,7 @@ struct ControlView: View {
                     Toggle("登录 Mac 时打开控制台", isOn: Binding(get: { model.appLogin }, set: { enabled in
                         Task { await model.service("app-login", enabled: enabled) }
                     }))
-                    Text("退出控制台不会停止后台服务。")
+                    Text("关闭窗口后可从菜单栏重新打开；退出控制台会停止后台服务。")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -612,9 +612,56 @@ struct PublicAddressEditor: View {
     }
 }
 
+@MainActor final class ControlAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // 登录时后台启动不抢占窗口，但 Dock 与菜单栏始终提供返回入口。
+        if CommandLine.arguments.contains("--background") { NSApp.hide(nil) }
+        Task {
+            do { _ = try await Task.detached { try ControlModel.request(["action": "service-start"]) }.value }
+            catch { showFailure("后台服务启动失败", error) }
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // 先卸载 launchd 服务再退出，防止 KeepAlive 留下没有控制入口的后台。
+        Task {
+            do {
+                _ = try await Task.detached { try ControlModel.request(["action": "service-stop"]) }.value
+                sender.reply(toApplicationShouldTerminate: true)
+            } catch {
+                showFailure("后台服务停止失败", error)
+                sender.reply(toApplicationShouldTerminate: false)
+            }
+        }
+        return .terminateLater
+    }
+
+    private func showFailure(_ title: String, _ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = title; alert.informativeText = (error as NSError).domain
+        alert.runModal()
+    }
+}
+
+struct ControlMenu: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Button("打开 iPad 控制台") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        Divider()
+        Button("退出 iPad 控制台（停止后台服务）") { NSApp.terminate(nil) }
+    }
+}
+
 @main struct IPadControlApp: App {
+    @NSApplicationDelegateAdaptor(ControlAppDelegate.self) private var delegate
     var body: some Scene {
         Window("iPad 控制台", id: "main") { ControlView() }
             .defaultSize(width: 900, height: 680)
+        MenuBarExtra("iPad 控制台", systemImage: "ipad.landscape") { ControlMenu() }
     }
 }

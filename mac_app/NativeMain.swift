@@ -34,6 +34,11 @@ func migrate(_ root: URL) throws -> JSONObject {
 func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     var config = try configuration()
     let action = value["action"] as? String ?? ""
+    if action == "service-start" { try installService(start: true); return ["ok": true] }
+    if action == "service-stop" {
+        if serviceLoaded() { _ = try launch(["bootout", NativePaths.domain + "/" + NativePaths.label]) }
+        return ["ok": true]
+    }
     if action == "status" {
         var status: JSONObject = ["musicEnabled": config["musicEnabled"] as? Bool ?? true, "publicURL": publicAddress(config), "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
                                   "appLogin": FileManager.default.fileExists(atPath: NativePaths.agents.appendingPathComponent("com.iamxg.ipad-control.plist").path)]
@@ -159,6 +164,9 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
                 let fd = open(NativePaths.data.appendingPathComponent("service.lock").path, O_CREAT | O_RDWR, 0o600)
                 guard fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else { throw ControlError("后台服务已在运行") }
                 defer { close(fd) }
+                // 后台登录项也必须带起可见的管理入口，不依赖另一个可选登录项。
+                let opened = try execute("/usr/bin/open", ["-g", "-a", NativePaths.app.path, "--args", "--background"])
+                guard opened.0 == 0 else { throw ControlError("无法打开控制台管理入口") }
                 let backend = try NativeBackend()
                 // macOS 网络与子进程回调需要主事件循环，采集循环不能占住主线程。
                 Thread.detachNewThread {
