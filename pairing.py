@@ -270,8 +270,15 @@ class Store:
                     if command['payload']['kind'] == 'music': command['result']['snapshot'] = song
                     if command['payload']['kind'] == 'usage' and isinstance(ack.get('usage'), dict):
                         command['result']['usage'] = ack['usage']
+            # 等待期间释放锁；点击入队即唤醒，最长 0.8 秒仍会返回以刷新任务快照。
+            if value.get('waitForCommand') is True and 'status' in value and not acks:
+                self.condition.wait_for(lambda: any(
+                    item['payload']['kind'] != 'music' and not item['sent']
+                    and item['result'] is None and item['deadline'] > time.monotonic()
+                    for item in self.pending.get(ident, {}).values()), timeout=.8)
+            now = time.monotonic()
             commands = []
-            for key, item in pending.items():
+            for key, item in self.pending.get(ident, {}).items():
                 # 只交给能处理该指令的上传线程，避免音乐线程抢走任务/额度指令。
                 channel = 'music' if item['payload']['kind'] == 'music' else 'status'
                 if channel not in value: continue
@@ -339,6 +346,7 @@ class Store:
             request_id = str(uuid.uuid4())
             item = {'payload': payload, 'deadline': time.monotonic()+wait, 'sent': False, 'result': None, 'owner': credential(owner)}
             commands[request_id] = item
+            self.condition.notify_all()
             try:
                 self.condition.wait_for(lambda: item['result'] is not None, timeout=wait)
                 if item['result'] is None: raise Failure(504, 'unconfirmed')

@@ -10,6 +10,51 @@ import pairing
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_waiting_exchange_wakes_on_open_and_preserves_parallel_music(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = pairing.Store(Path(folder) / 'pairing.sqlite')
+            ident, target = str(uuid.uuid4()), str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            token = store.complete({'code': store.code(ident)['code']})['token']
+            status = {'conversations': [{'threadId': target, 'title': '测试', 'state': 'running'}]}
+            waiting, delivered = threading.Event(), threading.Event()
+            responses, results = [], []
+            original_wait = store.condition.wait_for
+            def observed_wait(predicate, timeout=None):
+                if timeout == .8: waiting.set()
+                return original_wait(predicate, timeout)
+            store.condition.wait_for = observed_wait
+            def exchange():
+                responses.append(store.exchange(ident, {'status': status, 'waitForCommand': True}))
+                delivered.set()
+            uploader = threading.Thread(target=exchange)
+            uploader.start()
+            self.assertTrue(waiting.wait(1))
+            # 等待指令不能锁住其他上传，也不能在醒来后覆盖较新的音乐快照。
+            store.exchange(ident, {'music': {'state': 'idle', 'enabled': False}})
+            started = time.monotonic()
+            caller = threading.Thread(target=lambda: results.append(store.command(
+                ident, {'threadId': target}, 'open', token, wait=2)))
+            caller.start()
+            self.assertTrue(delivered.wait(.6), '点击必须唤醒等待请求，而非等满轮询周期')
+            self.assertLess(time.monotonic() - started, .6)
+            uploader.join(1)
+            command = responses[0]['commands'][0]
+            self.assertEqual(command['threadId'], target)
+            self.assertEqual(store.exchange(ident, {'status': status})['commands'], [])
+            store.exchange(ident, {'acks': [{'requestId': command['requestId'], 'ok': True}]})
+            caller.join(2)
+            self.assertEqual(results, [{'ok': True}])
+            self.assertFalse(store.read(ident, 'music')['enabled'])
+            # 没有新指令时有界返回；旧客户端不指定等待时仍立即返回。
+            started = time.monotonic()
+            self.assertEqual(store.exchange(ident, {'status': status, 'waitForCommand': True})['commands'], [])
+            self.assertLess(time.monotonic() - started, 1.5)
+            started = time.monotonic()
+            store.exchange(ident, {'status': status})
+            self.assertLess(time.monotonic() - started, .2)
+            store.close()
+
     def test_console_private_fields_routing_and_freshness(self):
         with tempfile.TemporaryDirectory() as folder:
             store = pairing.Store(Path(folder) / 'pairing.sqlite')

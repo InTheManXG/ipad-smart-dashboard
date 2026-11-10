@@ -342,7 +342,7 @@ final class NativeBackend {
         Thread.detachNewThread {
             while true {
                 do {
-                    var response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject]()])
+                    let response = try publishDevice("api/device/exchange", ["waitForCommand": true, "status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject]()])
                     if let command = (response["commands"] as? [JSONObject])?.first,
                        let id = command["requestId"] as? String {
                         let ok: Bool
@@ -355,16 +355,18 @@ final class NativeBackend {
                         } else if command["kind"] as? String == "usage", let key = command["id"] as? String {
                             let usage = try? self.keys.usage(key, force: true)
                             ok = usage != nil
-                            response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject](), "acks": [["requestId": id, "ok": ok, "usage": usage ?? JSONObject()] ]])
-                            _ = response
+                            _ = try publishDevice("api/device/exchange", ["acks": [["requestId": id, "ok": ok, "usage": usage ?? JSONObject()] ]])
                             Thread.sleep(forTimeInterval: 0.05)
                             continue
                         } else { ok = false }
-                        response = try publishDevice("api/device/exchange", ["status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject](), "acks": [["requestId": id, "ok": ok]]])
-                        _ = response
+                        _ = try publishDevice("api/device/exchange", ["acks": [["requestId": id, "ok": ok]]])
                     }
-                } catch { }
-                Thread.sleep(forTimeInterval: 1)
+                } catch {
+                    // 失败时退避，避免离线时空转；已下发的控制指令不自动重试。
+                    Thread.sleep(forTimeInterval: 1)
+                }
+                // 服务端等待指令时立即唤醒，不再在每次成功交换后固定睡一秒。
+                Thread.sleep(forTimeInterval: 0.05)
             }
         }
         Thread.detachNewThread {
