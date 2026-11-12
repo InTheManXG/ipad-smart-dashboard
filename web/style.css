@@ -187,10 +187,9 @@ body{max-width:none;padding:0}
 .console-action--app strong{line-height:1.4}
 
 /* 订阅名称与更新按钮分离，普通列表不承载点击；按钮保留足够的触摸面积。 */
-.console-group--subscriptions{max-width:360px}
-.console-group--subscriptions .console-group-grid{grid-template-columns:minmax(0,1fr);gap:0}
-.console-subscription-row{display:flex;align-items:center;gap:20px;min-height:76px;padding:16px 0}
-.console-subscription-row+.console-subscription-row{border-top:1px solid var(--line)}
+/* 按配置顺序横排，项目不随剩余宽度拉伸；窄屏自动换行，名称可自然撑高。 */
+.console-group--subscriptions .console-group-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 24px}
+.console-subscription-row{display:flex;align-items:center;gap:16px;flex:0 1 216px;max-width:100%;min-height:60px;padding:8px 0}
 .console-subscription-info{display:flex;flex:1;min-width:0;flex-direction:column;gap:5px}
 .console-subscription-info strong{font-size:15px;font-weight:500;line-height:1.5;overflow-wrap:anywhere}
 .console-subscription-info .console-action-state{color:var(--muted)}
