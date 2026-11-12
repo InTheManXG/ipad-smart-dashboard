@@ -34,13 +34,14 @@ function renderConsole(items) {
   for (const [kind, title] of [['app', '应用'], ['script', '脚本'], ['command', '命令'], ['subscription', '订阅更新']]) {
     const entries = items.filter(item => item.kind === kind);
     if (!entries.length) continue;
-    const group = document.createElement('section'); group.className = 'console-group';
+    const group = document.createElement('section'); group.className = kind === 'subscription' ? 'console-group console-group--subscriptions' : 'console-group';
     const heading = document.createElement('h3'); heading.textContent = title;
     const grid = document.createElement('div'); grid.className = 'console-group-grid';
     for (const item of entries) {
-      const card = document.createElement('button'); card.type = 'button'; card.className = 'console-action'; card.disabled = busy;
+      const card = document.createElement('button'); card.type = 'button'; card.className = kind === 'subscription' ? 'console-action console-action--subscription' : 'console-action'; card.disabled = busy;
       const icon = document.createElement('span'); icon.className = 'console-icon';
-      icon.textContent = kind === 'app' ? '▦' : kind === 'script' ? '≡' : '>_';
+      icon.textContent = kind === 'app' ? '▦' : kind === 'subscription' ? '↻' : kind === 'script' ? '≡' : '>_';
+      if (kind === 'subscription') icon.setAttribute('aria-hidden', 'true');
       if (kind === 'app' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon || '')) {
         const image = document.createElement('img'); image.src = item.icon; image.alt = '';
         icon.replaceChildren(image);
@@ -51,7 +52,10 @@ function renderConsole(items) {
       // 应用常态只显示图标和名称；处理中及失败仍提示，避免重复点击或误判结果。
       if (kind !== 'app' || item.state === 'running' || item.state === 'failed') {
         const state = document.createElement('span'); state.className = 'console-action-state';
-        state.textContent = item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? '执行完成' : item.state === 'failed' ? '执行失败或超时' : '执行';
+        state.textContent = kind === 'subscription'
+          ? (item.state === 'running' ? '更新中…' : item.state === 'succeeded' ? '已更新' : item.state === 'failed' ? '更新失败' : '更新')
+          : (item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? '执行完成' : item.state === 'failed' ? '执行失败或超时' : '执行');
+        if (item.state === 'failed') state.className += ' console-action-state--failed';
         card.append(state);
       }
       grid.append(card);

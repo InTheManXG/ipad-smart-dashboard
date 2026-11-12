@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 function node() {
-  return {children: [], textContent: '',open:false,showModal(){this.open=true;},close(){this.open=false;},addEventListener(){}, append(...items){this.children.push(...items);}, replaceChildren(...items){this.children = items;},
+  return {children: [], textContent: '',open:false,showModal(){this.open=true;},close(){this.open=false;},addEventListener(){}, setAttribute(name,value){this[name]=value;}, append(...items){this.children.push(...items);}, replaceChildren(...items){this.children = items;},
     querySelectorAll(tag){return this.children.flatMap(child => [...(child.tag === tag ? [child] : []), ...child.querySelectorAll(tag)]);}};
 }
 const nodes = new Map(['console-actions', 'console-status', 'console-refresh','console-confirm','console-confirm-name','console-confirm-run','console-confirm-cancel'].map(id => [id, node()]));
@@ -56,6 +56,13 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   }
   items = [{...item,kind:'subscription',name:'更新全部订阅'}]; await run('loadConsole()');
   assert.equal(list.children[0].children[0].textContent,'订阅更新');
+  assert.match(list.children[0].className, /console-group--subscriptions/);
+  assert.equal(list.querySelectorAll('button')[0].children[0]['aria-hidden'],'true','装饰图标不干扰读屏');
+  for (const [state,label] of [['idle','更新'],['running','更新中…'],['succeeded','已更新'],['failed','更新失败']]) {
+    items = [{...item,kind:'subscription',name:'更新全部订阅',state}]; await run('loadConsole()');
+    assert.equal(list.querySelectorAll('button')[0].children[2].textContent,label);
+    assert.equal(list.querySelectorAll('button')[0].disabled,state === 'running');
+  }
   await run('requestConsoleAction('+JSON.stringify(items[0])+')');
   assert.equal(nodes.get('console-confirm').open,true,'订阅更新必须确认');
   nodes.get('console-confirm-cancel').onclick();
