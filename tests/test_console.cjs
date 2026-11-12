@@ -6,13 +6,14 @@ function node() {
     querySelectorAll(tag){return this.children.flatMap(child => [...(child.tag === tag ? [child] : []), ...child.querySelectorAll(tag)]);}};
 }
 const nodes = new Map(['console-actions', 'console-status', 'console-refresh','console-confirm','console-confirm-name','console-confirm-run','console-confirm-cancel'].map(id => [id, node()]));
-const calls = [], timers = [], item = {id:'d46acd26-c9c3-4afc-9ac6-64b9088c7005',name:'<script>test</script>',kind:'script',state:'idle'};
+const pages = {clientWidth:1024,scrollLeft:1024};
+const calls = [], timers = [], intervals = [], item = {id:'d46acd26-c9c3-4afc-9ac6-64b9088c7005',name:'<script>test</script>',kind:'script',state:'idle'};
 let items = [item], status = 200;
 const ctx = vm.createContext({
-  document:{hidden:false,getElementById:id => nodes.get(id),createElement:tag => Object.assign(node(),{tag}),addEventListener(){}},
+  document:{hidden:false,querySelector(){return pages;},getElementById:id => nodes.get(id),createElement:tag => Object.assign(node(),{tag}),addEventListener(){}},
   window:{addEventListener(){}}, location:{hash:'#console'},
   localStorage:{getItem(){return 'test-only';}},sessionStorage:{getItem(){return null;}}, AbortSignal,
-  setInterval(){},setTimeout(fn){timers.push(fn);},
+  setInterval(fn){intervals.push(fn);},setTimeout(fn){timers.push(fn);},
   fetch:async (path, options) => {calls.push({path,options}); return {ok:status===200,status,json:async()=>options.method==='POST'?{ok:true}:items};}
 });
 const run = code => vm.runInContext(code,ctx);
@@ -66,12 +67,37 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
     assert.equal(row.children[0].children[0].textContent,'更新全部订阅');
     assert.equal(button.textContent,state === 'running' ? '更新中…' : '更新');
     assert.equal(button['aria-label'],'更新：更新全部订阅','独立按钮包含订阅名称以供读屏区分');
-    assert.equal(row.children[0].children[1]?.textContent,state === 'idle' ? undefined : label);
+    assert.equal(row.children[0].children[1]?.textContent,['idle','running'].includes(state) ? undefined : label);
     assert.equal(button.disabled,state === 'running');
   }
   list.querySelectorAll('button')[0].onclick();
   assert.equal(nodes.get('console-confirm').open,true,'独立更新按钮必须先确认');
   nodes.get('console-confirm-cancel').onclick();
+  // 手势只改变滚动位置，网址仍是首页；轮询必须跟随实际可见页。
+  ctx.location.hash = '#home'; pages.scrollLeft = 0;
+  items = [{...item,kind:'subscription',name:'更新全部订阅',state:'idle'}];
+  await run('loadConsole()');
+  list.querySelectorAll('button')[0].onclick();
+  nodes.get('console-confirm-run').onclick(); await new Promise(setImmediate);
+  assert.equal(calls.filter(call=>call.options.method==='POST').length,2,'订阅确认后只提交一次');
+  items = [{...items[0],state:'running'}]; timers.shift()(); await new Promise(setImmediate);
+  const subscriptionRow = () => list.children[0].children[1].children[0];
+  assert.equal(subscriptionRow().children[0].children.length,1,'更新中只在按钮显示一次');
+  assert.equal(list.querySelectorAll('button')[0].textContent,'更新中…');
+  assert.equal(list.querySelectorAll('button')[0].disabled,true);
+  items = [{...items[0],state:'succeeded'}];
+  intervals[0](); await new Promise(setImmediate);
+  assert.equal(subscriptionRow().children[0].children[1]?.textContent,'已更新','完成后定时拉取新结果');
+  assert.equal(list.querySelectorAll('button')[0].textContent,'更新');
+  assert.equal(list.querySelectorAll('button')[0].disabled,false,'自动恢复更新按钮');
+  assert.equal(calls.filter(call=>call.options.method==='POST').length,2,'自动刷新不会再次提交更新');
+  ctx.location.hash = '#console'; pages.scrollLeft = pages.clientWidth;
+  let requestCount = calls.length; intervals[0](); await new Promise(setImmediate);
+  assert.equal(calls.length,requestCount,'网址未变但滑离控制台时停止轮询');
+  pages.scrollLeft = 0; ctx.document.hidden = true;
+  requestCount = calls.length; intervals[0](); await new Promise(setImmediate);
+  assert.equal(calls.length,requestCount,'网页隐藏时不轮询');
+  ctx.document.hidden = false;
   assert.ok(!fs.readFileSync('web/index.html','utf8').includes('id="update-all-subscriptions"'),'网页不再包含固定订阅入口');
   assert.ok(!fs.readFileSync('web/index.html','utf8').includes('src="./subscriptions.js"'));
   status=401;await run('loadConsole()');

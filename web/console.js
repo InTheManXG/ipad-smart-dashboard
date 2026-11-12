@@ -1,4 +1,5 @@
 const consoleList = document.getElementById('console-actions');
+const consolePages = document.querySelector('.pages');
 const consoleStatus = document.getElementById('console-status');
 const consoleRefresh = document.getElementById('console-refresh');
 let consoleSubmitting = false;
@@ -44,9 +45,9 @@ function renderConsole(items) {
         const info = document.createElement('div'); info.className = 'console-subscription-info';
         const name = document.createElement('strong'); name.textContent = item.name;
         info.append(name);
-        if (item.state !== 'idle') {
+        if (item.state === 'succeeded' || item.state === 'failed') {
           const state = document.createElement('span'); state.className = 'console-action-state';
-          state.textContent = item.state === 'running' ? '更新中…' : item.state === 'succeeded' ? '已更新' : '更新失败';
+          state.textContent = item.state === 'succeeded' ? '已更新' : '更新失败';
           if (item.state === 'failed') state.className += ' console-action-state--failed';
           info.append(state);
         }
@@ -123,5 +124,6 @@ consoleConfirm.addEventListener('cancel', () => { consoleSelection = null; });
 consoleRefresh.onclick = loadConsole;
 window.addEventListener('hashchange', loadConsole);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadConsole(); });
-setInterval(() => { if (!document.hidden && location.hash === '#console') loadConsole(); }, 3000);
+// 手势切页不会更新 hash，轮询按实际滚动位置判断控制台是否可见。
+setInterval(() => { if (!document.hidden && Math.round(consolePages.scrollLeft / consolePages.clientWidth) === 0) loadConsole(); }, 3000);
 loadConsole();
