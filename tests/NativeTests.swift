@@ -149,6 +149,15 @@ import SQLite3
         try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用时晚到采集不能重新启用")
         disabledMusic.setEnabled(true)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == true, "启用但离线仍保留音乐区域")
+        let subscriptions = ConsoleActions(path: root.appendingPathComponent("subscriptions.json"))
+        for target in ["all", "paoluz", "sc", "just"] {
+            _ = try subscriptions.save(["name": "订阅更新", "kind": "subscription", "target": target])
+        }
+        try check(try subscriptions.snapshot().count == 4, "订阅配置持久化并纳入快捷快照")
+        try rejects("订阅范围拒绝任意命令") { _ = try subscriptions.save(["name": "非法", "kind": "subscription", "target": "all; echo bad"]) }
+        try ConsoleActions.subscriptionLock.withLock {
+            try rejects("新旧订阅入口共用互斥锁") { _ = try ConsoleActions.updateSubscription(nil) }
+        }
         let console = ConsoleActions(path: root.appendingPathComponent("console.json"))
         let script = root.appendingPathComponent("test script.sh")
         try "sleep 0.2\nprintf done > result.txt\n".write(to: script, atomically: true, encoding: .utf8)

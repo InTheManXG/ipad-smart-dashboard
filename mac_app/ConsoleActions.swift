@@ -4,6 +4,7 @@ import Darwin
 
 // 配置只在 Mac 管理；网页仅能提交已配置项目的 ID，不能传入路径或命令。
 final class ConsoleActions {
+    static let subscriptionLock = NSLock()
     let path: URL
     private let lock = NSLock()
     private var running: String?
@@ -62,7 +63,7 @@ final class ConsoleActions {
 
     func save(_ value: JSONObject) throws -> JSONObject {
         guard let name = value["name"] as? String, !trimmed(name).isEmpty, trimmed(name).count <= 60,
-              let kind = value["kind"] as? String, ["app", "script", "command"].contains(kind),
+              let kind = value["kind"] as? String, ["app", "script", "command", "subscription"].contains(kind),
               let target = value["target"] as? String, !trimmed(target).isEmpty, target.utf8.count <= 4096, !target.contains("\0") else { throw ControlError("请填写名称及有效的应用、脚本或命令") }
         let shell = value["shell"] as? String ?? "/bin/zsh"
         guard ["/bin/zsh", "/bin/bash"].contains(shell) else { throw ControlError("请选择 zsh 或 bash") }
@@ -90,6 +91,10 @@ final class ConsoleActions {
     }
     private func validateTarget(_ item: JSONObject) throws {
         guard let kind = item["kind"] as? String, let target = item["target"] as? String else { throw ControlError("项目配置不完整") }
+        if kind == "subscription" {
+            guard ["all", "paoluz", "sc", "just"].contains(target) else { throw ControlError("请选择有效的订阅范围") }
+            return
+        }
         if kind == "command" { return }
         var directory: ObjCBool = false
         guard target.hasPrefix("/"), FileManager.default.fileExists(atPath: target, isDirectory: &directory) else { throw ControlError("所选文件已移动或不存在") }
@@ -125,8 +130,25 @@ final class ConsoleActions {
             return ["ok": true]
         } catch { lock.unlock(); throw error }
     }
+    // 新旧入口共用互斥锁及原脚本，保留校验和失败回滚。
+    static func updateSubscription(_ identity: String?) throws -> JSONObject {
+        guard identity == nil || ["paoluz", "sc", "just"].contains(identity!) else { throw ControlError("订阅 ID 不正确") }
+        guard subscriptionLock.try() else { throw ControlError("已有订阅更新正在进行") }
+        defer { subscriptionLock.unlock() }
+        let script = URL(fileURLWithPath: "/path/to/subscription-bridge/manage.py")
+        guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
+        var args = [script.path, "sync"]
+        if let identity { args += ["--id", identity] }
+        let result = try execute("/usr/bin/python3", args, timeout: 300)
+        guard result.0 == 0 else { throw ControlError("订阅更新失败，请检查 Surge 和订阅配置") }
+        return ["ok": true]
+    }
     private func run(_ item: JSONObject) throws -> Int32 {
         let process = Process(), kind = item["kind"] as! String, target = item["target"] as! String
+        if kind == "subscription" {
+            _ = try Self.updateSubscription(target == "all" ? nil : target)
+            return 0
+        }
         if kind == "app" {
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open"); process.arguments = ["-a", target]
         } else {

@@ -212,7 +212,6 @@ final class LocalHTTPServer {
 final class NativeBackend {
     let lock = NSLock(), collector = CodexCollector(), music = NativeMusic(), keys = LocalKeys()
     let console: ConsoleActions
-    let subscriptionLock = NSLock()
     let subscriptionRoot = URL(fileURLWithPath: "/path/to/subscription-bridge", isDirectory: true)
     var quota: JSONObject = ["plan": "未知", "primary": NSNull(), "secondary": NSNull(), "quotaAvailable": false]
     var conversations: JSONObject = ["conversationsAvailable": false, "conversations": [JSONObject]()]
@@ -249,16 +248,7 @@ final class NativeBackend {
         }
     }
     func updateSubscription(_ identity: String?) throws -> JSONObject {
-        guard identity == nil || ["paoluz", "sc", "just"].contains(identity!) else { throw ControlError("订阅 ID 不正确") }
-        guard subscriptionLock.try() else { throw ControlError("已有订阅更新正在进行") }
-        defer { subscriptionLock.unlock() }
-        let script = subscriptionRoot.appendingPathComponent("manage.py")
-        guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
-        var args = [script.path, "sync"]
-        if let identity { args += ["--id", identity] }
-        let result = try execute("/usr/bin/python3", args, timeout: 300)
-        guard result.0 == 0 else { throw ControlError("订阅更新失败，请检查 Surge 和订阅配置") }
-        return ["ok": true]
+        try ConsoleActions.updateSubscription(identity)
     }
     func executeOpen(_ thread: String) throws -> Bool {
         let result = try execute("/usr/bin/open", ["-b", "com.openai.codex", "codex://threads/\(thread)?hostId=local"], timeout: 5)

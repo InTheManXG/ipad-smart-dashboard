@@ -8,7 +8,7 @@ struct ConsoleItem: Identifiable {
     let kind: String
     let target: String
     let shell: String
-    var typeName: String { kind == "app" ? "应用" : kind == "script" ? "Shell 脚本" : "Shell 命令" }
+    var typeName: String { kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "Shell 脚本" : "Shell 命令" }
 }
 
 struct ConsoleSettings: View {
@@ -34,10 +34,10 @@ struct ConsoleSettings: View {
                 Text("暂无快捷项目，添加一个应用或脚本开始使用。")
                     .foregroundStyle(.secondary).padding(.vertical, 24)
             }
-            ForEach(["app", "script", "command"], id: \.self) { kind in
+            ForEach(["app", "script", "command", "subscription"], id: \.self) { kind in
                 let items = model.consoleItems.filter { $0.kind == kind }
                 if !items.isEmpty {
-                    Text(kind == "app" ? "应用" : kind == "script" ? "脚本" : "命令").font(.headline)
+                    Text(kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "脚本" : "命令").font(.headline)
                     ForEach(items) { item in
                         GroupBox {
                             HStack(alignment: .top, spacing: 12) {
@@ -106,8 +106,16 @@ struct ConsoleItemEditor: View {
                 Text("应用").tag("app")
                 Text("脚本文件").tag("script")
                 Text("Shell 命令").tag("command")
-            }.pickerStyle(.segmented).onChange(of: kind) { _ in target = "" }
-            if kind == "command" {
+                Text("订阅更新").tag("subscription")
+            }.pickerStyle(.segmented).onChange(of: kind) { _ in target = kind == "subscription" ? "all" : "" }
+            if kind == "subscription" {
+                Picker("更新范围", selection: $target) {
+                    Text("全部订阅").tag("all")
+                    ForEach(["paoluz", "sc", "just"], id: \.self) { Text($0).tag($0) }
+                }
+                Text("使用这台 Mac 现有的订阅更新脚本，保留校验和失败回滚；仅在网页确认执行后更新。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if kind == "command" {
                 Text("Shell 命令").font(.headline)
                 TextEditor(text: $target).font(.system(.body, design: .monospaced)).frame(height: 130)
                     .border(Color.secondary.opacity(0.3)).accessibilityLabel("Shell 命令内容")
@@ -117,7 +125,7 @@ struct ConsoleItemEditor: View {
                     Button("选择文件…") { chooseFile() }
                 }
             }
-            if kind != "app" {
+            if kind == "script" || kind == "command" {
                 Picker("解释器", selection: $shell) {
                     Text("zsh").tag("/bin/zsh"); Text("bash").tag("/bin/bash")
                 }

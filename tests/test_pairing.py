@@ -55,6 +55,12 @@ class PairingStoreTests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, .2)
             store.close()
 
+    def test_subscription_console_item(self):
+        item = {'id': str(uuid.uuid4()), 'name': '更新订阅', 'kind': 'subscription', 'state': 'idle', 'target': 'all'}
+        result = pairing.clean_console([item])
+        self.assertEqual(result[0]['kind'], 'subscription')
+        self.assertNotIn('target', result[0])
+
     def test_console_private_fields_routing_and_freshness(self):
         with tempfile.TemporaryDirectory() as folder:
             store = pairing.Store(Path(folder) / 'pairing.sqlite')

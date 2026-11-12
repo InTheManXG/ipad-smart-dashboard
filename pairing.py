@@ -84,7 +84,7 @@ def clean_console(value):
         ident = identity(item.get('id'))
         if ident in ids or not isinstance(item.get('name'), str) or not 1 <= len(item['name']) <= 60:
             raise Failure(400, 'invalid_console')
-        if item.get('kind') not in ('app', 'script', 'command') or item.get('state') not in ('idle', 'running', 'succeeded', 'failed'):
+        if item.get('kind') not in ('app', 'script', 'command', 'subscription') or item.get('state') not in ('idle', 'running', 'succeeded', 'failed'):
             raise Failure(400, 'invalid_console')
         ids.add(ident)
         # 路径、命令、脚本输出均留在 Mac，只接收展示及执行状态字段。

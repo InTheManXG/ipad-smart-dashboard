@@ -31,7 +31,7 @@ function renderConsole(items) {
   if (renderKey === consoleRenderKey) return;
   consoleRenderKey = renderKey;
   const groups = [];
-  for (const [kind, title] of [['app', '应用'], ['script', '脚本'], ['command', '命令']]) {
+  for (const [kind, title] of [['app', '应用'], ['script', '脚本'], ['command', '命令'], ['subscription', '订阅更新']]) {
     const entries = items.filter(item => item.kind === kind);
     if (!entries.length) continue;
     const group = document.createElement('section'); group.className = 'console-group';
