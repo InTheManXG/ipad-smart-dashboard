@@ -38,10 +38,28 @@ function renderConsole(items) {
     const heading = document.createElement('h3'); heading.textContent = title;
     const grid = document.createElement('div'); grid.className = 'console-group-grid';
     for (const item of entries) {
-      const card = document.createElement('button'); card.type = 'button'; card.className = kind === 'subscription' ? 'console-action console-action--subscription' : 'console-action'; card.disabled = busy;
+      if (kind === 'subscription') {
+        // 只允许独立按钮触发更新，名称与行内空白不绑定操作，避免误触。
+        const row = document.createElement('div'); row.className = 'console-subscription-row';
+        const info = document.createElement('div'); info.className = 'console-subscription-info';
+        const name = document.createElement('strong'); name.textContent = item.name;
+        info.append(name);
+        if (item.state !== 'idle') {
+          const state = document.createElement('span'); state.className = 'console-action-state';
+          state.textContent = item.state === 'running' ? '更新中…' : item.state === 'succeeded' ? '已更新' : '更新失败';
+          if (item.state === 'failed') state.className += ' console-action-state--failed';
+          info.append(state);
+        }
+        const update = document.createElement('button'); update.type = 'button'; update.className = 'console-subscription-update';
+        update.disabled = busy; update.textContent = item.state === 'running' ? '更新中…' : '更新';
+        update.setAttribute('aria-label', `更新：${item.name}`);
+        update.onclick = () => requestConsoleAction(item);
+        row.append(info, update); grid.append(row);
+        continue;
+      }
+      const card = document.createElement('button'); card.type = 'button'; card.className = 'console-action'; card.disabled = busy;
       const icon = document.createElement('span'); icon.className = 'console-icon';
-      icon.textContent = kind === 'app' ? '▦' : kind === 'subscription' ? '↻' : kind === 'script' ? '≡' : '>_';
-      if (kind === 'subscription') icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = kind === 'app' ? '▦' : kind === 'script' ? '≡' : '>_';
       if (kind === 'app' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon || '')) {
         const image = document.createElement('img'); image.src = item.icon; image.alt = '';
         icon.replaceChildren(image);
@@ -52,10 +70,7 @@ function renderConsole(items) {
       // 应用常态只显示图标和名称；处理中及失败仍提示，避免重复点击或误判结果。
       if (kind !== 'app' || item.state === 'running' || item.state === 'failed') {
         const state = document.createElement('span'); state.className = 'console-action-state';
-        state.textContent = kind === 'subscription'
-          ? (item.state === 'running' ? '更新中…' : item.state === 'succeeded' ? '已更新' : item.state === 'failed' ? '更新失败' : '更新')
-          : (item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? '执行完成' : item.state === 'failed' ? '执行失败或超时' : '执行');
-        if (item.state === 'failed') state.className += ' console-action-state--failed';
+        state.textContent = item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? '执行完成' : item.state === 'failed' ? '执行失败或超时' : '执行';
         card.append(state);
       }
       grid.append(card);
