@@ -186,11 +186,10 @@ body{max-width:none;padding:0}
 .console-action--app{min-height:0;padding:16px 12px;gap:8px;align-self:start}
 .console-action--app strong{line-height:1.4}
 
-/* 订阅名称与更新按钮分离，普通列表不承载点击；按钮保留足够的触摸面积。 */
-/* 按配置顺序横排，项目不随剩余宽度拉伸；窄屏自动换行，名称可自然撑高。 */
+/* 每个订阅的名称与按钮上下成组，组内紧凑、组间留距，避免横排时误认操作目标。 */
 .console-group--subscriptions .console-group-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 24px}
-.console-subscription-row{display:flex;align-items:center;gap:16px;flex:0 1 216px;max-width:100%;min-height:60px;padding:8px 0}
-.console-subscription-info{display:flex;flex:1;min-width:0;flex-direction:column;gap:5px}
+.console-subscription-row{display:flex;flex-direction:column;align-items:stretch;gap:10px;flex:0 1 144px;max-width:100%;padding:4px 0}
+.console-subscription-info{display:flex;min-width:0;flex-direction:column;gap:5px;text-align:center}
 .console-subscription-info strong{font-size:15px;font-weight:500;line-height:1.5;overflow-wrap:anywhere}
 .console-subscription-info .console-action-state{color:var(--muted)}
 .console-subscription-info .console-action-state--failed{color:var(--error)}
