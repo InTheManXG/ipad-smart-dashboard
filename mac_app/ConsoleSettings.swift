@@ -77,10 +77,19 @@ private struct ConsoleFrames: PreferenceKey {
             sorting = false
         }
     }
+    private func dragCoordinate(_ pointer: CGPoint, plan: ConsoleReorderPlan) -> CGFloat {
+        let content = geometry["content"] ?? .zero
+        if plan.horizontal {
+            // 横向列表滚动会移动槽位，跟手位置须扣除这段滚动增量。
+            let shift = (geometry[plan.ids[0]]?.minX ?? plan.frames[0].minY) - plan.frames[0].minY
+            return pointer.x - content.minX - shift
+        }
+        return pointer.y - content.minY
+    }
     private func updateDrag(_ pointer: CGPoint) {
         guard var session = drag, !settling else { return }
         session.pointer = pointer
-        let center = pointer.y - (geometry["content"]?.minY ?? 0) + session.grabOffset
+        let center = dragCoordinate(pointer, plan: session.plan) + session.grabOffset
         session.offset = center - session.plan.frames[session.plan.source].midY
         session.plan.update(centerY: center)
         drag = session
@@ -112,8 +121,8 @@ private struct ConsoleFrames: PreferenceKey {
             .onChanged { value in
                 guard !model.busy, !sorting, !settling, !cancelledUntilRelease else { return }
                 if drag == nil {
-                    guard let plan = ConsoleReorderPlan(sourceID: item.id, ids: items.map(\.id), frames: geometry) else { return }
-                    let grab = plan.frames[plan.source].midY - (value.startLocation.y - (geometry["content"]?.minY ?? 0))
+                    guard let plan = ConsoleReorderPlan(sourceID: item.id, ids: items.map(\.id), frames: geometry, horizontal: item.kind == "subscription") else { return }
+                    let grab = plan.frames[plan.source].midY - dragCoordinate(value.startLocation, plan: plan)
                     drag = ConsoleDragSession(plan: plan, grabOffset: grab, pointer: value.location, offset: 0)
                 }
                 guard drag?.plan.sourceID == item.id else { return }
@@ -122,14 +131,17 @@ private struct ConsoleFrames: PreferenceKey {
             .onEnded { value in
                 guard let session = drag, session.plan.sourceID == item.id, !settling else { return }
                 updateDrag(value.location)
-                let center = value.location.y - (geometry["content"]?.minY ?? 0) + session.grabOffset
+                let center = dragCoordinate(value.location, plan: session.plan) + session.grabOffset
+                let row = geometry[item.id] ?? .zero
+                let contentY = value.location.y - (geometry["content"]?.minY ?? 0)
+                let withinRow = !session.plan.horizontal || (row.minY...row.maxY).contains(contentY)
                 let inside = (geometry["viewport"]?.contains(value.location) ?? false) &&
-                    center >= session.plan.frames.first!.minY && center <= session.plan.frames.last!.maxY
+                    center >= session.plan.frames.first!.minY && center <= session.plan.frames.last!.maxY && withinRow
                 finishDrag(save: inside && !cancelledUntilRelease)
             }
     }
     private var scrollDirection: Int {
-        guard let session = drag, !settling, let viewport = geometry["viewport"] else { return 0 }
+        guard let session = drag, !session.plan.horizontal, !settling, let viewport = geometry["viewport"] else { return 0 }
         let top = geometry["content"]?.minY ?? 0
         if session.pointer.y < 36, session.plan.frames.first!.minY + top < 0 { return -1 }
         if session.pointer.y > viewport.height - 36, session.plan.frames.last!.maxY + top > viewport.height { return 1 }
@@ -149,45 +161,73 @@ private struct ConsoleFrames: PreferenceKey {
             do { try await Task.sleep(nanoseconds: 160_000_000) } catch { return }
         }
     }
+    private func typeBadge(_ item: ConsoleItem) -> some View {
+        Text(item.typeName).font(.caption)
+            .foregroundStyle(item.kind == "app" ? Color.blue : Color.primary)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(item.typeColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+    }
+    private func dragHandle(_ item: ConsoleItem, items: [ConsoleItem]) -> some View {
+        let horizontal = item.kind == "subscription"
+        return Image(systemName: "line.3.horizontal")
+            .foregroundStyle(.secondary).frame(width: 20, height: horizontal ? 24 : 40)
+            .contentShape(Rectangle()).help("拖动以调整同组顺序")
+            .accessibilityLabel("拖动排序 " + item.name)
+            .accessibilityAction(named: Text(horizontal ? "左移" : "上移")) {
+                if let index = items.firstIndex(where: { $0.id == item.id }), index > 0 {
+                    withAnimation(spring) { move(item.id, to: items[index - 1]) }
+                }
+            }
+            .accessibilityAction(named: Text(horizontal ? "右移" : "下移")) {
+                if let index = items.firstIndex(where: { $0.id == item.id }), index + 1 < items.count {
+                    withAnimation(spring) { move(item.id, to: items[index + 1]) }
+                }
+            }
+            .highPriorityGesture(reorderGesture(item, items: items))
+    }
+    @ViewBuilder private func itemActions(_ item: ConsoleItem) -> some View {
+        Button("编辑") { if !sorting && drag == nil { editing = item } }
+        Button("删除", role: .destructive) { if !sorting && drag == nil { deleting = item } }.foregroundStyle(.red)
+    }
     private func card(_ item: ConsoleItem, items: [ConsoleItem]) -> some View {
         GroupBox {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundStyle(.secondary).frame(width: 20, height: 40)
-                    .contentShape(Rectangle()).help("拖动以调整同组顺序")
-                    .accessibilityLabel("拖动排序 " + item.name)
-                    .accessibilityAction(named: Text("上移")) {
-                        if let index = items.firstIndex(where: { $0.id == item.id }), index > 0 {
-                            withAnimation(spring) { move(item.id, to: items[index - 1]) }
-                        }
+            if item.kind == "subscription" {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        dragHandle(item, items: items)
+                        Spacer(minLength: 0)
+                        Image(systemName: "terminal").foregroundStyle(Color.accentColor)
                     }
-                    .accessibilityAction(named: Text("下移")) {
-                        if let index = items.firstIndex(where: { $0.id == item.id }), index + 1 < items.count {
-                            withAnimation(spring) { move(item.id, to: items[index + 1]) }
-                        }
+                    Text(item.name).font(.headline).lineLimit(1).help(item.name)
+                    HStack(spacing: 6) {
+                        typeBadge(item)
+                        Spacer(minLength: 0)
+                        Text(item.target).font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary).lineLimit(1).help(item.target)
                     }
-                    .highPriorityGesture(reorderGesture(item, items: items))
-                if item.kind == "app", let image = icons[item.target] {
-                    Image(nsImage: image).resizable().frame(width: 40, height: 40)
-                } else {
-                    Image(systemName: item.kind == "app" ? "app" : item.kind == "script" ? "doc.text" : "terminal")
-                        .font(.title2).foregroundStyle(Color.accentColor).frame(width: 40, height: 40)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(item.name).font(.headline).lineLimit(1)
-                    Text(item.typeName).font(.caption)
-                        .foregroundStyle(item.kind == "app" ? Color.blue : Color.primary)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(item.typeColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
-                }.layoutPriority(1)
-                // 长路径保持单行，悬停可看完整值，避免重新撑高卡片。
-                Text(item.target).font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    .textSelection(.enabled).help(item.target)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                Button("编辑") { if !sorting && drag == nil { editing = item } }
-                Button("删除", role: .destructive) { if !sorting && drag == nil { deleting = item } }.foregroundStyle(.red)
-            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) { itemActions(item) }.controlSize(.small)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    dragHandle(item, items: items)
+                    if item.kind == "app", let image = icons[item.target] {
+                        Image(nsImage: image).resizable().frame(width: 40, height: 40)
+                    } else {
+                        Image(systemName: item.kind == "app" ? "app" : item.kind == "script" ? "doc.text" : "terminal")
+                            .font(.title2).foregroundStyle(Color.accentColor).frame(width: 40, height: 40)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(item.name).font(.headline).lineLimit(1)
+                        typeBadge(item)
+                    }.layoutPriority(1)
+                    // 长路径保持单行，悬停可看完整值，避免重新撑高卡片。
+                    Text(item.target).font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        .textSelection(.enabled).help(item.target)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    itemActions(item)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
     private func row(_ item: ConsoleItem, items: [ConsoleItem]) -> some View {
@@ -198,14 +238,14 @@ private struct ConsoleFrames: PreferenceKey {
             card(item, items: items)
                 .scaleEffect(lifted ? 1.01 : 1)
                 .shadow(color: .black.opacity(lifted ? 0.16 : 0), radius: lifted ? 10 : 0, y: lifted ? 4 : 0)
-                .offset(y: offset)
+                .offset(x: item.kind == "subscription" ? offset : 0, y: item.kind == "subscription" ? 0 : offset)
                 .animation(source ? (settling ? .easeOut(duration: 0.18) : nil) : spring, value: offset)
                 .animation(.easeOut(duration: 0.14), value: lifted)
         }
         .background(GeometryReader { proxy in
             Color.clear.preference(key: ConsoleFrames.self, value: [item.id: proxy.frame(in: .named("consoleRows"))])
         })
-        .zIndex(source ? 1 : 0).id(item.id)
+        .frame(maxWidth: .infinity).zIndex(source ? 1 : 0).id(item.id)
     }
     var body: some View {
         ScrollViewReader { proxy in
@@ -225,7 +265,15 @@ private struct ConsoleFrames: PreferenceKey {
                         let items = model.consoleItems.filter { $0.kind == kind }
                         if !items.isEmpty {
                             Text(kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "脚本" : "命令").font(.headline)
-                            ForEach(items) { item in row(item, items: items) }
+                            if kind == "subscription" {
+                                ScrollView(.horizontal) {
+                                    HStack(alignment: .top, spacing: 18) {
+                                        ForEach(items) { item in row(item, items: items).frame(width: 144) }
+                                    }.padding(.vertical, 6)
+                                }.fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                ForEach(items) { item in row(item, items: items) }
+                            }
                         }
                     }
                     Button("刷新列表") { if !sorting && drag == nil { Task { await model.loadConsole() } } }

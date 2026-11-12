@@ -222,6 +222,22 @@ import AppKit
             try check(ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: ["a": invalid]) == nil, "拒绝无效行几何信息")
         }
         try check(ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: dragFrames, spacing: -1) == nil && ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: dragFrames, spacing: .infinity) == nil, "拒绝非法行间距")
+        let horizontalFrames = [
+            "a": CGRect(x: 10, y: 400, width: 40, height: 60),
+            "b": CGRect(x: 68, y: 400, width: 80, height: 60),
+            "c": CGRect(x: 166, y: 400, width: 60, height: 60)
+        ]
+        var dragRight = ConsoleReorderPlan(sourceID: "a", ids: ["a", "b", "c"], frames: horizontalFrames, horizontal: true)!
+        dragRight.update(centerY: 196)
+        try check(dragRight.horizontal && dragRight.targetID == "c" && dragRight.landingOffset == 176, "横排同高卡片按横坐标向右落位")
+        try check(dragRight.displacement(for: "b") == -58 && dragRight.displacement(for: "c") == -58, "向右拖动时中间卡片按源宽度向左让位")
+        var dragLeft = ConsoleReorderPlan(sourceID: "c", ids: ["a", "b", "c"], frames: horizontalFrames, horizontal: true)!
+        dragLeft.update(centerY: 30)
+        try check(dragLeft.targetID == "a" && dragLeft.landingOffset == -156 && dragLeft.displacement(for: "b") == 78, "横排不同宽度卡片向左落位并让位")
+        dragLeft.update(centerY: 196)
+        try check(dragLeft.targetID == nil && dragLeft.landingOffset == 0 && dragLeft.displacement(for: "a") == 0, "横排回原位不保存且恢复偏移")
+        try check(ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: ["a": CGRect(x: 0, y: 0, width: 0, height: 40)], horizontal: true) == nil, "横排拒绝零宽卡片")
+        try check(ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: ["a": CGRect(x: 0, y: 0, width: 40, height: 0)], horizontal: true) == nil, "横排仍拒绝原始零高卡片")
         let sortStore = ConsoleActions(path: root.appendingPathComponent("sort.json"))
         let firstSort = try sortStore.save(["name": "一", "kind": "command", "target": "true"])["id"] as! String
         let middleSort = try sortStore.save(["name": "脚本", "kind": "script", "target": script.path])["id"] as! String
