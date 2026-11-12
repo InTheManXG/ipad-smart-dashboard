@@ -190,7 +190,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 /* 每个订阅的名称与按钮上下成组，组内紧凑、组间留距，避免横排时误认操作目标。 */
 .console-group--subscriptions .console-group-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 24px}
-.console-subscription-row{display:flex;flex-direction:column;align-items:stretch;gap:10px;flex:0 1 144px;max-width:100%;padding:4px 0}
+.console-subscription-row{display:flex;flex-direction:column;align-items:stretch;gap:10px;flex:0 1 144px;max-width:100%;padding:14px 12px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
 .console-subscription-info{display:flex;min-width:0;flex-direction:column;gap:5px;text-align:center}
 .console-subscription-info strong{font-size:15px;font-weight:500;line-height:1.5;overflow-wrap:anywhere}
 .console-subscription-info .console-action-state{color:var(--muted)}
