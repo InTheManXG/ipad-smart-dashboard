@@ -155,10 +155,29 @@ import AppKit
             _ = try subscriptions.save(["name": "订阅更新", "kind": "subscription", "target": target])
         }
         try check(try subscriptions.snapshot().count == 4, "订阅配置持久化并纳入快捷快照")
+        try check(try subscriptions.snapshot().allSatisfy { $0["lastUpdatedAt"] == nil }, "旧订阅不虚构历史更新时间")
+        try subscriptions.recordSubscriptionSuccess("paoluz", at: 1000)
+        let firstUpdates = try ConsoleActions(path: subscriptions.path).snapshot()
+        try check(firstUpdates[1]["lastUpdatedAt"] as? Double == 1000 && firstUpdates[0]["lastUpdatedAt"] == nil && firstUpdates[2]["lastUpdatedAt"] == nil, "单项成功时间持久化且不改变其他订阅")
+        let provider = try subscriptions.list()[1]
+        _ = try subscriptions.save(["id": provider["id"]!, "name": "改名订阅", "kind": "subscription", "target": "paoluz", "lastUpdatedAt": 9999])
+        try check(try subscriptions.snapshot()[1]["lastUpdatedAt"] as? Double == 1000, "改名保留真实时间且拒绝界面覆盖")
+        let commandID = try subscriptions.save(["name": "命令", "kind": "command", "target": "true"])["id"] as! String
+        try subscriptions.recordSubscriptionSuccess(nil, at: 2000)
+        try check(try subscriptions.snapshot().prefix(4).allSatisfy { $0["lastUpdatedAt"] as? Double == 2000 }, "全部成功同步刷新各个订阅的时间")
+        try check(try subscriptions.snapshot().last?["lastUpdatedAt"] == nil, "更新时间不写入非订阅项目")
+        try subscriptions.recordSubscriptionSuccess("sc", at: 3000)
+        let latestUpdates = try subscriptions.snapshot()
+        try check(latestUpdates[2]["lastUpdatedAt"] as? Double == 3000 && latestUpdates[0]["lastUpdatedAt"] as? Double == 2000 && latestUpdates[1]["lastUpdatedAt"] as? Double == 2000, "单项更新不覆盖全部更新及其他订阅的时间")
+        for invalid in [0.0, -.infinity, .nan, 253402300800.0] {
+            try rejects("无效成功时间不写入配置") { try subscriptions.recordSubscriptionSuccess("sc", at: invalid) }
+        }
+        try subscriptions.delete(commandID)
         try rejects("订阅范围拒绝任意命令") { _ = try subscriptions.save(["name": "非法", "kind": "subscription", "target": "all; echo bad"]) }
         try ConsoleActions.subscriptionLock.withLock {
             try rejects("新旧订阅入口共用互斥锁") { _ = try ConsoleActions.updateSubscription(nil) }
         }
+        try check(try subscriptions.snapshot()[2]["lastUpdatedAt"] as? Double == 3000, "被拒绝的更新不改变上次成功时间")
         let console = ConsoleActions(path: root.appendingPathComponent("console.json"))
         let script = root.appendingPathComponent("test script.sh")
         try "sleep 0.2\nprintf done > result.txt\n".write(to: script, atomically: true, encoding: .utf8)

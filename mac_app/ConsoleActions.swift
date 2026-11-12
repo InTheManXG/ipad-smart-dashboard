@@ -76,6 +76,10 @@ final class ConsoleActions {
         try validateTarget(item)
         if kind == "app" { item["icon"] = Self.icon(target); item["iconPixels"] = 96 }
         return try access { records in
+            // 时间属于订阅范围，改名保留、换范围采用新范围记录；不接受界面传入的时间。
+            if kind == "subscription", let previous = records.first(where: { $0["kind"] as? String == kind && $0["target"] as? String == target && $0["lastUpdatedAt"] != nil }) {
+                item["lastUpdatedAt"] = previous["lastUpdatedAt"]
+            }
             if value["id"] != nil {
                 guard let index = records.firstIndex(where: { $0["id"] as? String == id }) else { throw ControlError("项目已删除，请刷新") }
                 records[index] = item
@@ -112,7 +116,20 @@ final class ConsoleActions {
         lock.lock(); defer { lock.unlock() }
         return records.map { item in
             let id = item["id"] as? String ?? ""
-            return ["id": id, "name": item["name"] ?? "", "kind": item["kind"] ?? "", "icon": item["icon"] ?? "", "state": running == id ? "running" : results[id] ?? "idle"]
+            var snapshot: JSONObject = ["id": id, "name": item["name"] ?? "", "kind": item["kind"] ?? "", "icon": item["icon"] ?? "", "state": running == id ? "running" : results[id] ?? "idle"]
+            if item["kind"] as? String == "subscription", let updatedAt = number(item["lastUpdatedAt"]), updatedAt.isFinite, updatedAt > 0, updatedAt <= 253402300799 {
+                snapshot["lastUpdatedAt"] = updatedAt
+            }
+            return snapshot
+        }
+    }
+    func recordSubscriptionSuccess(_ identity: String?, at timestamp: TimeInterval = Date().timeIntervalSince1970) throws {
+        guard identity == nil || ["paoluz", "sc", "just"].contains(identity!), timestamp.isFinite, timestamp > 0, timestamp <= 253402300799 else { throw ControlError("订阅更新时间无效") }
+        try access { records in
+            // 仅在脚本成功后调用；全部更新覆盖各订阅，单项更新不改变“更新全部”的时间。
+            for index in records.indices where records[index]["kind"] as? String == "subscription" && (identity == nil || records[index]["target"] as? String == identity) {
+                records[index]["lastUpdatedAt"] = timestamp
+            }
         }
     }
     func start(_ value: JSONObject) throws -> JSONObject {
@@ -144,6 +161,7 @@ final class ConsoleActions {
         if let identity { args += ["--id", identity] }
         let result = try execute("/usr/bin/python3", args, timeout: 300)
         guard result.0 == 0 else { throw ControlError("订阅更新失败，请检查 Surge 和订阅配置") }
+        try ConsoleActions().recordSubscriptionSuccess(identity)
         return ["ok": true]
     }
     private func run(_ item: JSONObject) throws -> Int32 {

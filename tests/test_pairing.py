@@ -72,6 +72,15 @@ class PairingStoreTests(unittest.TestCase):
         self.assertEqual(result[0]['kind'], 'subscription')
         self.assertNotIn('target', result[0])
 
+    def test_subscription_update_time(self):
+        item = {'id': str(uuid.uuid4()), 'name': '更新订阅', 'kind': 'subscription', 'state': 'idle'}
+        self.assertNotIn('lastUpdatedAt', pairing.clean_console([item])[0])
+        self.assertEqual(pairing.clean_console([item | {'lastUpdatedAt': 1800000000.25, 'target': 'private'}])[0]['lastUpdatedAt'], 1800000000.25)
+        for invalid in (None, True, '1800000000', 0, -1, float('nan'), float('inf'), 253402300800):
+            with self.assertRaises(pairing.Failure):
+                pairing.clean_console([item | {'lastUpdatedAt': invalid}])
+        self.assertNotIn('lastUpdatedAt', pairing.clean_console([item | {'kind': 'app', 'lastUpdatedAt': 1800000000}])[0])
+
     def test_console_private_fields_routing_and_freshness(self):
         with tempfile.TemporaryDirectory() as folder:
             store = pairing.Store(Path(folder) / 'pairing.sqlite')

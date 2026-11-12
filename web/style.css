@@ -198,6 +198,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .console-subscription-update{flex:none;min-width:88px;min-height:44px;padding:10px 18px;border:1px solid transparent;border-radius:10px;background:#eeedfc;color:var(--accent);font-size:13px;font-weight:600}
 .console-subscription-update:hover{background:#e4e2fa}
 .console-subscription-update:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.console-subscription-updated{color:var(--muted);font-size:11px;line-height:1.5;text-align:center}
+.console-subscription-updated time{display:block;font:inherit;color:inherit;white-space:nowrap;font-variant-numeric:tabular-nums}
 
 /* 正常连接不显示说明，空状态区不保留边框和留白；错误与操作反馈仍可显示。 */
 #console-status:empty{display:none}

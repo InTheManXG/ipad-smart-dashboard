@@ -55,7 +55,14 @@ function renderConsole(items) {
         update.disabled = busy; update.textContent = item.state === 'running' ? '更新中…' : '更新';
         update.setAttribute('aria-label', `更新：${item.name}`);
         update.onclick = () => requestConsoleAction(item);
-        row.append(info, update); grid.append(row);
+        const updated = document.createElement('span'); updated.className = 'console-subscription-updated';
+        if (Number.isFinite(item.lastUpdatedAt) && item.lastUpdatedAt > 0 && item.lastUpdatedAt <= 253402300799) {
+          const date = new Date(item.lastUpdatedAt * 1000);
+          const time = document.createElement('time'); time.dateTime = date.toISOString();
+          time.textContent = date.toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+          updated.textContent = '上次更新'; updated.append(time);
+        } else { updated.textContent = '暂无更新记录'; }
+        row.append(info, update, updated); grid.append(row);
         continue;
       }
       const card = document.createElement('button'); card.type = 'button'; card.className = kind === 'app' ? 'console-action console-action--app' : 'console-action'; card.disabled = busy;

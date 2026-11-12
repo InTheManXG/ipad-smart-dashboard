@@ -95,7 +95,14 @@ def clean_console(value):
             try: raw = base64.b64decode(icon[22:], validate=True)
             except (ValueError, binascii.Error): raise Failure(400, 'invalid_icon')
             if len(raw) > 40000 or not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise Failure(400, 'invalid_icon')
-        result.append({key: item[key] for key in ('id', 'name', 'kind', 'state')} | {'icon': icon})
+        clean = {key: item[key] for key in ('id', 'name', 'kind', 'state')} | {'icon': icon}
+        if item['kind'] == 'subscription' and 'lastUpdatedAt' in item:
+            updated_at = item['lastUpdatedAt']
+            # 只转发可表示的成功时间，拒绝布尔值及非有限数，不上传本机路径等其他元数据。
+            if type(updated_at) not in (int, float) or not 0 < updated_at <= 253402300799:
+                raise Failure(400, 'invalid_console')
+            clean['lastUpdatedAt'] = updated_at
+        result.append(clean)
     return result
 
 

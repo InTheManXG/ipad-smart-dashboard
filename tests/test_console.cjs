@@ -58,6 +58,7 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   items = [{...item,kind:'subscription',name:'更新全部订阅'}]; await run('loadConsole()');
   assert.equal(list.children[0].children[0].textContent,'订阅更新');
   assert.match(list.children[0].className, /console-group--subscriptions/);
+  assert.equal(list.children[0].children[1].children[0].children[2].textContent,'暂无更新记录','旧版或无历史快照不虚构时间');
   for (const [state,label] of [['idle','更新'],['running','更新中…'],['succeeded','已更新'],['failed','更新失败']]) {
     items = [{...item,kind:'subscription',name:'更新全部订阅',state}]; await run('loadConsole()');
     const row = list.children[0].children[1].children[0];
@@ -98,6 +99,15 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   requestCount = calls.length; intervals[0](); await new Promise(setImmediate);
   assert.equal(calls.length,requestCount,'网页隐藏时不轮询');
   ctx.document.hidden = false;
+  const updatedAt = Date.parse('2026-11-12T10:30:00Z') / 1000;
+  for (const state of ['idle','running','succeeded','failed']) {
+    items = [{...item,kind:'subscription',state,lastUpdatedAt:updatedAt}]; await run('loadConsole()');
+    const updated = subscriptionRow().children[2];
+    assert.equal(updated.textContent,'上次更新');
+    assert.equal(updated.children[0].tag,'time');
+    assert.equal(updated.children[0].dateTime,'2026-11-12T10:30:00.000Z','时间来自真实快照，刷新和失败不覆盖');
+    assert.ok(updated.children[0].textContent.includes('2026'));
+  }
   assert.ok(!fs.readFileSync('web/index.html','utf8').includes('id="update-all-subscriptions"'),'网页不再包含固定订阅入口');
   assert.ok(!fs.readFileSync('web/index.html','utf8').includes('src="./subscriptions.js"'));
   status=401;await run('loadConsole()');
