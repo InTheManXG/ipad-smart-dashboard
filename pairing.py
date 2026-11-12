@@ -89,12 +89,12 @@ def clean_console(value):
         ids.add(ident)
         # 路径、命令、脚本输出均留在 Mac，只接收展示及执行状态字段。
         icon = item.get('icon', '')
-        if not isinstance(icon, str) or len(icon) > 8022: raise Failure(400, 'invalid_icon')
+        if not isinstance(icon, str) or len(icon) > 53358: raise Failure(400, 'invalid_icon')
         if icon:
             if not icon.startswith('data:image/png;base64,'): raise Failure(400, 'invalid_icon')
             try: raw = base64.b64decode(icon[22:], validate=True)
             except (ValueError, binascii.Error): raise Failure(400, 'invalid_icon')
-            if not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise Failure(400, 'invalid_icon')
+            if len(raw) > 40000 or not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise Failure(400, 'invalid_icon')
         result.append({key: item[key] for key in ('id', 'name', 'kind', 'state')} | {'icon': icon})
     return result
 
@@ -374,7 +374,8 @@ def route(handler):
             if handler.headers.get('Transfer-Encoding') or len(handler.headers.get_all('Content-Length', [])) != 1:
                 raise Failure(400, 'invalid_body')
             length = int(handler.headers.get('Content-Length', '0'))
-            limit = 512000 if path == '/api/device/exchange' else 1024
+            # 50 个图标各最多 40000 PNG 字节（Base64 后约 2.67 MB），另留状态快照空间。
+            limit = 3200000 if path == '/api/device/exchange' else 1024
             if not 0 < length <= limit: raise Failure(413, 'body_too_large')
             value = json.loads(handler.rfile.read(length), parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
             if not isinstance(value, dict): raise Failure(400, 'invalid_body')

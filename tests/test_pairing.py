@@ -1,3 +1,4 @@
+import base64
 import sqlite3
 import tempfile
 import threading
@@ -10,6 +11,16 @@ import pairing
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_retina_icon_size_boundary(self):
+        item = {'id': str(uuid.uuid4()), 'name': '高清应用', 'kind': 'app', 'state': 'idle'}
+        # 使用边界大小验证传输限制，PNG 像素及真实解码由原生测试覆盖。
+        raw = b'\x89PNG\r\n\x1a\n' + bytes(40000 - 8)
+        icon = 'data:image/png;base64,' + base64.b64encode(raw).decode()
+        self.assertEqual(pairing.clean_console([item | {'icon': icon}])[0]['icon'], icon)
+        for oversized in (icon + 'AAAA', 'data:image/png;base64,' + base64.b64encode(raw + b'x').decode()):
+            with self.assertRaises(pairing.Failure):
+                pairing.clean_console([item | {'icon': oversized}])
+
     def test_waiting_exchange_wakes_on_open_and_preserves_parallel_music(self):
         with tempfile.TemporaryDirectory() as folder:
             store = pairing.Store(Path(folder) / 'pairing.sqlite')

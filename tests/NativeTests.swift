@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import AppKit
 
 @main struct NativeTests {
     static var checks = 0
@@ -192,7 +193,23 @@ import SQLite3
         try check(try sortStore.list().first?["id"] as? String == lastSort, "组首上移保持不变")
         try rejects("拒绝非法排序方向") { try sortStore.move(firstSort, direction: "side") }
         let icon = ConsoleActions.icon("/System/Applications/Calculator.app")
-        try check(icon.hasPrefix("data:image/png;base64,") && icon.count <= 8022, "系统应用图标缩略图可同步")
+        try check(icon.hasPrefix("data:image/png;base64,") && icon.count <= 53358, "系统应用图标缩略图可同步")
+        let iconBitmap = NSBitmapImageRep(data: Data(base64Encoded: String(icon.dropFirst(22)))!)!
+        try check(iconBitmap.pixelsWide == 96 && iconBitmap.pixelsHigh == 96, "图标具备 iPad 双倍像素")
+        let iconStore = ConsoleActions(path: root.appendingPathComponent("icons.json"))
+        let appID = try iconStore.save(["name": "计算器", "kind": "app", "target": "/System/Applications/Calculator.app"])["id"] as! String
+        var oldRecords = try iconStore.list()
+        oldRecords[0].removeValue(forKey: "iconPixels")
+        oldRecords[0]["icon"] = "旧版缓存"
+        oldRecords.append(["id": actionID, "name": "命令", "kind": "command", "target": "true"])
+        try writeJSON(oldRecords, iconStore.path)
+        let upgraded = try iconStore.list()
+        try check(upgraded[0]["icon"] as? String == icon && upgraded[0]["iconPixels"] as? Int == 96, "旧图标自动升级")
+        try check(upgraded[0]["id"] as? String == appID && upgraded[0]["target"] as? String == "/System/Applications/Calculator.app" && NSDictionary(dictionary: upgraded[1]).isEqual(to: oldRecords[1]), "升级保留 ID、路径和其他项目顺序")
+        let cached = try Data(contentsOf: iconStore.path)
+        _ = try iconStore.list()
+        try check(try Data(contentsOf: iconStore.path) == cached, "高清缓存不重复改写")
+        try check(try iconStore.snapshot()[0]["iconPixels"] == nil, "缓存元数据不上传")
         let backend = try NativeBackend(token: "test-only", console: console, screens: LocalScreens())
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)

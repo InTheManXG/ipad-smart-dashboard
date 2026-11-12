@@ -29,22 +29,24 @@ final class ConsoleActions {
     }
     func list() throws -> [JSONObject] {
         try access { records in
-            // 旧项目按原顺序保留，只补充图标；原始路径不随图标上传。
-            for index in records.indices where records[index]["kind"] as? String == "app" && records[index]["icon"] == nil {
+            // 旧版 32 像素缓存只升级一次，保留配置和顺序；版本标记不随快照上传。
+            for index in records.indices where records[index]["kind"] as? String == "app" && (records[index]["icon"] == nil || records[index]["iconPixels"] as? Int != 96) {
                 records[index]["icon"] = Self.icon(records[index]["target"] as? String ?? "")
+                records[index]["iconPixels"] = 96
             }
             return records
         }
     }
     static func icon(_ path: String) -> String {
         guard FileManager.default.fileExists(atPath: path) else { return "" }
+        // 网页显示 48 CSS 像素，按 iPad 的 2 倍像素从系统原图绘制，避免放大缩略图。
         let source = NSWorkspace.shared.icon(forFile: path)
-        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 96, pixelsHigh: 96, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
               let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return "" }
         NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = context
-        source.draw(in: NSRect(x: 0, y: 0, width: 32, height: 32))
+        source.draw(in: NSRect(x: 0, y: 0, width: 96, height: 96))
         NSGraphicsContext.restoreGraphicsState()
-        guard let data = bitmap.representation(using: .png, properties: [:]), data.count <= 6000 else { return "" }
+        guard let data = bitmap.representation(using: .png, properties: [:]), data.count <= 40000 else { return "" }
         return "data:image/png;base64," + data.base64EncodedString()
     }
     func move(_ id: String, direction: String) throws {
@@ -71,7 +73,7 @@ final class ConsoleActions {
         guard UUID(uuidString: id) != nil else { throw ControlError("项目标识不正确") }
         var item: JSONObject = ["id": id, "name": trimmed(name), "kind": kind, "target": target, "shell": shell]
         try validateTarget(item)
-        if kind == "app" { item["icon"] = Self.icon(target) }
+        if kind == "app" { item["icon"] = Self.icon(target); item["iconPixels"] = 96 }
         return try access { records in
             if value["id"] != nil {
                 guard let index = records.firstIndex(where: { $0["id"] as? String == id }) else { throw ControlError("项目已删除，请刷新") }
