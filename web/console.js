@@ -57,7 +57,7 @@ function renderConsole(items) {
         row.append(info, update); grid.append(row);
         continue;
       }
-      const card = document.createElement('button'); card.type = 'button'; card.className = 'console-action'; card.disabled = busy;
+      const card = document.createElement('button'); card.type = 'button'; card.className = kind === 'app' ? 'console-action console-action--app' : 'console-action'; card.disabled = busy;
       const icon = document.createElement('span'); icon.className = 'console-icon';
       icon.textContent = kind === 'app' ? '▦' : kind === 'script' ? '≡' : '>_';
       if (kind === 'app' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon || '')) {
