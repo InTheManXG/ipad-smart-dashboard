@@ -85,7 +85,7 @@ async function loadConsole() {
   consoleLoading = true;
   try {
     const items = await consoleRequest('./api/console');
-    renderConsole(items); consoleMessage('由配对的 Mac 执行');
+    renderConsole(items); consoleMessage('');
   } catch (error) {
     // 离线时禁止使用旧卡片触发操作，恢复连接后再读取最新配置。
     consoleRenderKey = ''; consoleList.replaceChildren(); consoleMessage(error.message, true);
