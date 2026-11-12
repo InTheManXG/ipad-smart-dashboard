@@ -9,6 +9,15 @@ struct ConsoleItem: Identifiable, Equatable {
     let target: String
     let shell: String
     var typeName: String { kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "Shell 脚本" : "Shell 命令" }
+    var typeColor: Color {
+        switch kind {
+        case "app": return .blue
+        case "script": return .purple
+        case "command": return .orange
+        case "subscription": return .green
+        default: return .gray
+        }
+    }
 }
 
 private struct ConsoleDragSession {
@@ -166,13 +175,10 @@ private struct ConsoleFrames: PreferenceKey {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(item.name).font(.headline).lineLimit(1)
-                    if item.kind == "app" {
-                        Text(item.typeName).font(.caption).foregroundStyle(.blue)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
-                    } else {
-                        Text(item.typeName).font(.caption).foregroundStyle(.secondary)
-                    }
+                    Text(item.typeName).font(.caption)
+                        .foregroundStyle(item.kind == "app" ? Color.blue : Color.primary)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(item.typeColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
                 }.layoutPriority(1)
                 // 长路径保持单行，悬停可看完整值，避免重新撑高卡片。
                 Text(item.target).font(.system(.caption, design: .monospaced))
