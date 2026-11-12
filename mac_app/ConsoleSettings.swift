@@ -142,7 +142,7 @@ private struct ConsoleFrames: PreferenceKey {
     }
     private func card(_ item: ConsoleItem, items: [ConsoleItem]) -> some View {
         GroupBox {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "line.3.horizontal")
                     .foregroundStyle(.secondary).frame(width: 20, height: 40)
                     .contentShape(Rectangle()).help("拖动以调整同组顺序")
@@ -165,12 +165,20 @@ private struct ConsoleFrames: PreferenceKey {
                         .font(.title2).foregroundStyle(Color.accentColor).frame(width: 40, height: 40)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(item.name).font(.headline)
-                    Text(item.typeName).font(.caption).foregroundStyle(.secondary)
-                    Text(item.target).font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
-                }
-                Spacer()
+                    Text(item.name).font(.headline).lineLimit(1)
+                    if item.kind == "app" {
+                        Text(item.typeName).font(.caption).foregroundStyle(.blue)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                    } else {
+                        Text(item.typeName).font(.caption).foregroundStyle(.secondary)
+                    }
+                }.layoutPriority(1)
+                // 长路径保持单行，悬停可看完整值，避免重新撑高卡片。
+                Text(item.target).font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    .textSelection(.enabled).help(item.target)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 Button("编辑") { if !sorting && drag == nil { editing = item } }
                 Button("删除", role: .destructive) { if !sorting && drag == nil { deleting = item } }.foregroundStyle(.red)
             }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
