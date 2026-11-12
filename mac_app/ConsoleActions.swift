@@ -49,17 +49,18 @@ final class ConsoleActions {
         guard let data = bitmap.representation(using: .png, properties: [:]), data.count <= 40000 else { return "" }
         return "data:image/png;base64," + data.base64EncodedString()
     }
-    func move(_ id: String, direction: String) throws {
-        guard ["up", "down"].contains(direction) else { throw ControlError("排序方向不正确") }
+    func move(_ id: String, to targetID: String) throws {
         try access { records in
-            guard let index = records.firstIndex(where: { $0["id"] as? String == id }) else { throw ControlError("项目已删除，请刷新") }
+            guard let index = records.firstIndex(where: { $0["id"] as? String == id }),
+                  let target = records.firstIndex(where: { $0["id"] as? String == targetID }) else { throw ControlError("项目已删除，请刷新") }
             let kind = records[index]["kind"] as? String
+            guard kind == records[target]["kind"] as? String else { throw ControlError("只能在同类型内排序") }
             let group = records.indices.filter { records[$0]["kind"] as? String == kind }
-            let position = group.firstIndex(of: index)!
-            let next = position + (direction == "up" ? -1 : 1)
-            guard group.indices.contains(next) else { return }
-            // 只在同类型内交换，不覆盖其他进程新添加的项目。
-            records.swapAt(index, group[next])
+            var items = group.map { records[$0] }
+            let item = items.remove(at: group.firstIndex(of: index)!)
+            // 向上落在目标前，向下落在目标后；其他类型保留原槽位和内容。
+            items.insert(item, at: group.firstIndex(of: target)!)
+            for (slot, value) in zip(group, items) { records[slot] = value }
         }
     }
 

@@ -101,8 +101,8 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     }
     if action == "console-list" { return ["items": try ConsoleActions().list()] }
     if action == "console-move" {
-        guard let id = value["id"] as? String, let direction = value["direction"] as? String else { throw ControlError("排序参数不正确") }
-        try ConsoleActions().move(id, direction: direction); return ["ok": true]
+        guard let id = value["id"] as? String, let target = value["targetID"] as? String else { throw ControlError("排序参数不正确") }
+        try ConsoleActions().move(id, to: target); return ["ok": true]
     }
     if action == "console-save" { return try ConsoleActions().save(value) }
     if action == "console-delete" {

@@ -16,16 +16,17 @@ struct ConsoleSettings: View {
     @ViewState private var editor = false
     @ViewState private var editing: ConsoleItem?
     @ViewState private var deleting: ConsoleItem?
-    private func move(_ item: ConsoleItem, _ direction: String) {
+    @ViewState private var dropTarget: String?
+    private func move(_ id: String, to target: ConsoleItem) {
         Task {
-            await model.perform(["action": "console-move", "id": item.id, "direction": direction], success: "顺序已保存")
+            await model.perform(["action": "console-move", "id": id, "targetID": target.id], success: "顺序已保存")
             if !model.failed { await model.loadConsole() }
         }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("配置后，已配对网页可在左侧快捷控制台运行这些项目。")
+                Text("配置后，已配对网页可运行这些项目。拖动左侧手柄可在同组内排序。")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Button("添加项目") { editing = nil; editor = true }.buttonStyle(.borderedProminent)
@@ -41,6 +42,16 @@ struct ConsoleSettings: View {
                     ForEach(items) { item in
                         GroupBox {
                             HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "line.3.horizontal")
+                                    .foregroundStyle(.secondary).frame(width: 20, height: 40)
+                                    .contentShape(Rectangle())
+                                    .help("拖动以调整同组顺序").accessibilityLabel("拖动排序 " + item.name)
+                                    .accessibilityAction(named: Text("上移")) {
+                                        if let index = items.firstIndex(where: { $0.id == item.id }), index > 0 { move(item.id, to: items[index - 1]) }
+                                    }
+                                    .accessibilityAction(named: Text("下移")) {
+                                        if let index = items.firstIndex(where: { $0.id == item.id }), index + 1 < items.count { move(item.id, to: items[index + 1]) }
+                                    }
                                 if item.kind == "app" {
                                     Image(nsImage: NSWorkspace.shared.icon(forFile: item.target)).resizable().frame(width: 40, height: 40)
                                 } else {
@@ -53,13 +64,29 @@ struct ConsoleSettings: View {
                                         .foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
                                 }
                                 Spacer()
-                                Button { move(item, "up") } label: { Image(systemName: "arrow.up") }
-                                    .disabled(items.first?.id == item.id).help("上移").accessibilityLabel("上移 " + item.name)
-                                Button { move(item, "down") } label: { Image(systemName: "arrow.down") }
-                                    .disabled(items.last?.id == item.id).help("下移").accessibilityLabel("下移 " + item.name)
                                 Button("编辑") { editing = item; editor = true }
                                 Button("删除", role: .destructive) { deleting = item }.foregroundStyle(.red)
                             }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .contentShape(Rectangle())
+                        .onDrag { NSItemProvider(object: item.id as NSString) }
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor.opacity(dropTarget == item.id ? 0.7 : 0), lineWidth: 2).allowsHitTesting(false))
+                        .onDrop(of: [UTType.utf8PlainText], isTargeted: Binding(get: { dropTarget == item.id }, set: { targeted in
+                            if targeted { dropTarget = item.id }
+                            else if dropTarget == item.id { dropTarget = nil }
+                        })) { providers in
+                            guard !model.busy, providers.count == 1 else { return false }
+                            providers[0].loadObject(ofClass: NSString.self) { value, _ in
+                                guard let id = value as? String else { return }
+                                Task { @MainActor in
+                                    guard !model.busy, id != item.id,
+                                          model.consoleItems.contains(where: { $0.id == id && $0.kind == item.kind }) else { return }
+                                    // 释放时只提交源与目标，避免悬停过程反复写入或覆盖新配置。
+                                    dropTarget = nil
+                                    move(id, to: item)
+                                }
+                            }
+                            return true
                         }
                     }
                 }

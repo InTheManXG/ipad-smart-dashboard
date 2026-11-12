@@ -186,12 +186,21 @@ import AppKit
         let sortStore = ConsoleActions(path: root.appendingPathComponent("sort.json"))
         let firstSort = try sortStore.save(["name": "一", "kind": "command", "target": "true"])["id"] as! String
         let middleSort = try sortStore.save(["name": "脚本", "kind": "script", "target": script.path])["id"] as! String
-        let lastSort = try sortStore.save(["name": "二", "kind": "command", "target": "true"])["id"] as! String
-        try sortStore.move(lastSort, direction: "up")
-        try check(try ConsoleActions(path: sortStore.path).list().compactMap { $0["id"] as? String } == [lastSort, middleSort, firstSort], "排序持久化且只交换同类型")
-        try sortStore.move(lastSort, direction: "up")
-        try check(try sortStore.list().first?["id"] as? String == lastSort, "组首上移保持不变")
-        try rejects("拒绝非法排序方向") { try sortStore.move(firstSort, direction: "side") }
+        let secondSort = try sortStore.save(["name": "二", "kind": "command", "target": "true"])["id"] as! String
+        let lastSort = try sortStore.save(["name": "三", "kind": "command", "target": "true"])["id"] as! String
+        let originalSort = try sortStore.list()
+        try sortStore.move(lastSort, to: firstSort)
+        let movedSort = try ConsoleActions(path: sortStore.path).list()
+        try check(movedSort.compactMap { $0["id"] as? String } == [lastSort, middleSort, firstSort, secondSort], "向上跨多项拖动持久化且保留其他类型槽位")
+        try check(NSDictionary(dictionary: movedSort[1]).isEqual(to: originalSort[1]), "排序保留其他类型配置内容")
+        try sortStore.move(lastSort, to: secondSort)
+        try check(NSArray(array: sortStore.list()).isEqual(to: originalSort), "向下跨多项拖动保留中间项目顺序")
+        try sortStore.move(firstSort, to: firstSort)
+        try check(NSArray(array: sortStore.list()).isEqual(to: originalSort), "拖到自身保持不变")
+        try rejects("拒绝跨类型拖动") { try sortStore.move(firstSort, to: middleSort) }
+        try rejects("拒绝已删除的目标") { try sortStore.move(firstSort, to: UUID().uuidString) }
+        try rejects("拒绝未知拖动源") { try sortStore.move(UUID().uuidString, to: firstSort) }
+        try check(NSArray(array: sortStore.list()).isEqual(to: originalSort), "无效拖动不改变配置")
         let icon = ConsoleActions.icon("/System/Applications/Calculator.app")
         try check(icon.hasPrefix("data:image/png;base64,") && icon.count <= 53358, "系统应用图标缩略图可同步")
         let iconBitmap = NSBitmapImageRep(data: Data(base64Encoded: String(icon.dropFirst(22)))!)!
