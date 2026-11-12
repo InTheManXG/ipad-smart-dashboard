@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-struct ConsoleItem: Identifiable {
+struct ConsoleItem: Identifiable, Equatable {
     let id: String
     let name: String
     let kind: String
@@ -11,92 +11,242 @@ struct ConsoleItem: Identifiable {
     var typeName: String { kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "Shell 脚本" : "Shell 命令" }
 }
 
-struct ConsoleSettings: View {
+private struct ConsoleDragSession {
+    var plan: ConsoleReorderPlan
+    let grabOffset: CGFloat
+    var pointer: CGPoint
+    var offset: CGFloat
+}
+
+private struct ConsoleFrames: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+@MainActor struct ConsoleSettings: View {
     @ObservedObject var model: ControlModel
     @ViewState private var editor = false
     @ViewState private var editing: ConsoleItem?
     @ViewState private var deleting: ConsoleItem?
-    @ViewState private var dropTarget: String?
+    @ViewState private var sorting = false
+    @ViewState private var geometry: [String: CGRect] = [:]
+    @ViewState private var drag: ConsoleDragSession?
+    @ViewState private var settling = false
+    @ViewState private var cancelledUntilRelease = false
+    @ViewState private var icons: [String: NSImage] = [:]
+    @GestureState private var gestureActive = false
+    private let spring = Animation.interactiveSpring(response: 0.26, dampingFraction: 0.88)
+
+    private func cacheIcons() {
+        let paths = Set(model.consoleItems.filter { $0.kind == "app" }.map(\.target))
+        guard paths != Set(icons.keys) else { return }
+        // 拖动逐帧重算布局时复用图标，避免同步读取应用资源。
+        icons = Dictionary(uniqueKeysWithValues: paths.map { ($0, icons[$0] ?? NSWorkspace.shared.icon(forFile: $0)) })
+    }
     private func move(_ id: String, to target: ConsoleItem) {
+        guard !sorting, id != target.id else { return }
+        let original = model.consoleItems
+        let slots = original.indices.filter { original[$0].kind == target.kind }
+        var items = slots.map { original[$0] }
+        guard let source = items.firstIndex(where: { $0.id == id }),
+              let destination = items.firstIndex(where: { $0.id == target.id }) else { return }
+        items.insert(items.remove(at: source), at: destination)
+        var preview = original
+        for (slot, item) in zip(slots, items) { preview[slot] = item }
+        sorting = true
+        model.consoleItems = preview
         Task {
-            await model.perform(["action": "console-move", "id": id, "targetID": target.id], success: "顺序已保存")
-            if !model.failed { await model.loadConsole() }
+            do {
+                _ = try await Task.detached { try ControlModel.request(["action": "console-move", "id": id, "targetID": target.id]) }.value
+                model.failed = false; model.message = "顺序已保存"
+            } catch {
+                if model.consoleItems == preview { withAnimation(spring) { model.consoleItems = original } }
+                model.failed = true; model.message = (error as NSError).domain
+            }
+            sorting = false
         }
     }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("配置后，已配对网页可运行这些项目。拖动左侧手柄可在同组内排序。")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                Button("添加项目") { editing = nil; editor = true }.buttonStyle(.borderedProminent)
+    private func updateDrag(_ pointer: CGPoint) {
+        guard var session = drag, !settling else { return }
+        session.pointer = pointer
+        let center = pointer.y - (geometry["content"]?.minY ?? 0) + session.grabOffset
+        session.offset = center - session.plan.frames[session.plan.source].midY
+        session.plan.update(centerY: center)
+        drag = session
+    }
+    private func finishDrag(save: Bool) {
+        guard var session = drag, !settling else { return }
+        if !save { session.plan.destination = session.plan.source }
+        session.offset = session.plan.landingOffset
+        settling = true
+        drag = session
+        Task {
+            // shortcut: macOS 13 缺少动画完成回调，按落位时长延迟交接；提高最低系统版本后改用完成回调。
+            try? await Task.sleep(nanoseconds: 260_000_000)
+            // 卡片落稳后再交换真实布局与位移，两个位置完全重合，避免松手时重建拖放快照。
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if save, let targetID = session.plan.targetID,
+                   let target = model.consoleItems.first(where: { $0.id == targetID }) {
+                    move(session.plan.sourceID, to: target)
+                }
+                drag = nil; settling = false
             }
-            if model.consoleItems.isEmpty {
-                Text("暂无快捷项目，添加一个应用或脚本开始使用。")
-                    .foregroundStyle(.secondary).padding(.vertical, 24)
+        }
+    }
+    private func reorderGesture(_ item: ConsoleItem, items: [ConsoleItem]) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named("consoleViewport"))
+            .updating($gestureActive) { _, active, _ in active = true }
+            .onChanged { value in
+                guard !model.busy, !sorting, !settling, !cancelledUntilRelease else { return }
+                if drag == nil {
+                    guard let plan = ConsoleReorderPlan(sourceID: item.id, ids: items.map(\.id), frames: geometry) else { return }
+                    let grab = plan.frames[plan.source].midY - (value.startLocation.y - (geometry["content"]?.minY ?? 0))
+                    drag = ConsoleDragSession(plan: plan, grabOffset: grab, pointer: value.location, offset: 0)
+                }
+                guard drag?.plan.sourceID == item.id else { return }
+                updateDrag(value.location)
             }
-            ForEach(["app", "script", "command", "subscription"], id: \.self) { kind in
-                let items = model.consoleItems.filter { $0.kind == kind }
-                if !items.isEmpty {
-                    Text(kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "脚本" : "命令").font(.headline)
-                    ForEach(items) { item in
-                        GroupBox {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "line.3.horizontal")
-                                    .foregroundStyle(.secondary).frame(width: 20, height: 40)
-                                    .contentShape(Rectangle())
-                                    .help("拖动以调整同组顺序").accessibilityLabel("拖动排序 " + item.name)
-                                    .accessibilityAction(named: Text("上移")) {
-                                        if let index = items.firstIndex(where: { $0.id == item.id }), index > 0 { move(item.id, to: items[index - 1]) }
-                                    }
-                                    .accessibilityAction(named: Text("下移")) {
-                                        if let index = items.firstIndex(where: { $0.id == item.id }), index + 1 < items.count { move(item.id, to: items[index + 1]) }
-                                    }
-                                if item.kind == "app" {
-                                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.target)).resizable().frame(width: 40, height: 40)
-                                } else {
-                                    Image(systemName: item.kind == "script" ? "doc.text" : "terminal").font(.title2).foregroundStyle(Color.accentColor).frame(width: 40, height: 40)
-                                }
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(item.name).font(.headline)
-                                    Text(item.typeName).font(.caption).foregroundStyle(.secondary)
-                                    Text(item.target).font(.system(.caption, design: .monospaced))
-                                        .foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
-                                }
-                                Spacer()
-                                Button("编辑") { editing = item; editor = true }
-                                Button("删除", role: .destructive) { deleting = item }.foregroundStyle(.red)
-                            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .contentShape(Rectangle())
-                        .onDrag { NSItemProvider(object: item.id as NSString) }
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor.opacity(dropTarget == item.id ? 0.7 : 0), lineWidth: 2).allowsHitTesting(false))
-                        .onDrop(of: [UTType.utf8PlainText], isTargeted: Binding(get: { dropTarget == item.id }, set: { targeted in
-                            if targeted { dropTarget = item.id }
-                            else if dropTarget == item.id { dropTarget = nil }
-                        })) { providers in
-                            guard !model.busy, providers.count == 1 else { return false }
-                            providers[0].loadObject(ofClass: NSString.self) { value, _ in
-                                guard let id = value as? String else { return }
-                                Task { @MainActor in
-                                    guard !model.busy, id != item.id,
-                                          model.consoleItems.contains(where: { $0.id == id && $0.kind == item.kind }) else { return }
-                                    // 释放时只提交源与目标，避免悬停过程反复写入或覆盖新配置。
-                                    dropTarget = nil
-                                    move(id, to: item)
-                                }
-                            }
-                            return true
+            .onEnded { value in
+                guard let session = drag, session.plan.sourceID == item.id, !settling else { return }
+                updateDrag(value.location)
+                let center = value.location.y - (geometry["content"]?.minY ?? 0) + session.grabOffset
+                let inside = (geometry["viewport"]?.contains(value.location) ?? false) &&
+                    center >= session.plan.frames.first!.minY && center <= session.plan.frames.last!.maxY
+                finishDrag(save: inside && !cancelledUntilRelease)
+            }
+    }
+    private var scrollDirection: Int {
+        guard let session = drag, !settling, let viewport = geometry["viewport"] else { return 0 }
+        let top = geometry["content"]?.minY ?? 0
+        if session.pointer.y < 36, session.plan.frames.first!.minY + top < 0 { return -1 }
+        if session.pointer.y > viewport.height - 36, session.plan.frames.last!.maxY + top > viewport.height { return 1 }
+        return 0
+    }
+    private func autoscroll(_ proxy: ScrollViewProxy, direction: Int) async {
+        while !Task.isCancelled, direction != 0, scrollDirection == direction, let session = drag {
+            let top = geometry["content"]?.minY ?? 0, height = geometry["viewport"]?.height ?? 0
+            let indices = Array(session.plan.frames.indices)
+            let next = direction > 0
+                ? indices.first { session.plan.frames[$0].maxY + top > height + 1 }
+                : indices.reversed().first { session.plan.frames[$0].minY + top < -1 }
+            guard let next else { return }
+            withAnimation(.linear(duration: 0.15)) {
+                proxy.scrollTo(session.plan.ids[next], anchor: direction > 0 ? .bottom : .top)
+            }
+            do { try await Task.sleep(nanoseconds: 160_000_000) } catch { return }
+        }
+    }
+    private func card(_ item: ConsoleItem, items: [ConsoleItem]) -> some View {
+        GroupBox {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundStyle(.secondary).frame(width: 20, height: 40)
+                    .contentShape(Rectangle()).help("拖动以调整同组顺序")
+                    .accessibilityLabel("拖动排序 " + item.name)
+                    .accessibilityAction(named: Text("上移")) {
+                        if let index = items.firstIndex(where: { $0.id == item.id }), index > 0 {
+                            withAnimation(spring) { move(item.id, to: items[index - 1]) }
                         }
                     }
+                    .accessibilityAction(named: Text("下移")) {
+                        if let index = items.firstIndex(where: { $0.id == item.id }), index + 1 < items.count {
+                            withAnimation(spring) { move(item.id, to: items[index + 1]) }
+                        }
+                    }
+                    .highPriorityGesture(reorderGesture(item, items: items))
+                if item.kind == "app", let image = icons[item.target] {
+                    Image(nsImage: image).resizable().frame(width: 40, height: 40)
+                } else {
+                    Image(systemName: item.kind == "app" ? "app" : item.kind == "script" ? "doc.text" : "terminal")
+                        .font(.title2).foregroundStyle(Color.accentColor).frame(width: 40, height: 40)
                 }
-            }
-            Button("刷新列表") { Task { await model.loadConsole() } }
-            Text("应用在这台 Mac 上打开；脚本后台执行，以脚本所在目录为工作目录，Shell 命令以用户主目录为工作目录。一次运行一个项目，最多等待 5 分钟；不支持终端交互输入。")
-                .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.name).font(.headline)
+                    Text(item.typeName).font(.caption).foregroundStyle(.secondary)
+                    Text(item.target).font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
+                }
+                Spacer()
+                Button("编辑") { if !sorting && drag == nil { editing = item } }
+                Button("删除", role: .destructive) { if !sorting && drag == nil { deleting = item } }.foregroundStyle(.red)
+            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task { await model.loadConsole() }
-        .sheet(isPresented: $editor) { ConsoleItemEditor(model: model, item: editing) }
+    }
+    private func row(_ item: ConsoleItem, items: [ConsoleItem]) -> some View {
+        let source = drag?.plan.sourceID == item.id
+        let lifted = source && !settling
+        let offset = source ? (drag?.offset ?? 0) : (drag?.plan.displacement(for: item.id) ?? 0)
+        return ZStack {
+            card(item, items: items)
+                .scaleEffect(lifted ? 1.01 : 1)
+                .shadow(color: .black.opacity(lifted ? 0.16 : 0), radius: lifted ? 10 : 0, y: lifted ? 4 : 0)
+                .offset(y: offset)
+                .animation(source ? (settling ? .easeOut(duration: 0.18) : nil) : spring, value: offset)
+                .animation(.easeOut(duration: 0.14), value: lifted)
+        }
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: ConsoleFrames.self, value: [item.id: proxy.frame(in: .named("consoleRows"))])
+        })
+        .zIndex(source ? 1 : 0).id(item.id)
+    }
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        Text("配置后，已配对网页可运行这些项目。拖动左侧手柄可在同组内排序。")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("添加项目") { if !sorting && drag == nil { editor = true } }.buttonStyle(.borderedProminent)
+                    }
+                    if model.consoleItems.isEmpty {
+                        Text("暂无快捷项目，添加一个应用或脚本开始使用。")
+                            .foregroundStyle(.secondary).padding(.vertical, 24)
+                    }
+                    ForEach(["app", "script", "command", "subscription"], id: \.self) { kind in
+                        let items = model.consoleItems.filter { $0.kind == kind }
+                        if !items.isEmpty {
+                            Text(kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "脚本" : "命令").font(.headline)
+                            ForEach(items) { item in row(item, items: items) }
+                        }
+                    }
+                    Button("刷新列表") { if !sorting && drag == nil { Task { await model.loadConsole() } } }
+                    Text("应用在这台 Mac 上打开；脚本后台执行，以脚本所在目录为工作目录，Shell 命令以用户主目录为工作目录。一次运行一个项目，最多等待 5 分钟；不支持终端交互输入。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(6).coordinateSpace(name: "consoleRows")
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: ConsoleFrames.self, value: ["content": geometry.frame(in: .named("consoleViewport"))])
+                })
+            }
+            .coordinateSpace(name: "consoleViewport")
+            .background(GeometryReader { geometry in
+                Color.clear.preference(key: ConsoleFrames.self, value: ["viewport": CGRect(origin: .zero, size: geometry.size)])
+            })
+            .onPreferenceChange(ConsoleFrames.self) { frames in
+                geometry = frames
+                if let session = drag, !settling { updateDrag(session.pointer) }
+            }
+            .task(id: scrollDirection) { await autoscroll(proxy, direction: scrollDirection) }
+        }
+        .task { await model.loadConsole(); cacheIcons() }
+        .onChange(of: model.consoleItems) { _ in cacheIcons() }
+        .onChange(of: gestureActive) { active in
+            if !active {
+                cancelledUntilRelease = false
+                if drag != nil && !settling { finishDrag(save: false) }
+            }
+        }
+        .onExitCommand {
+            if drag != nil && !settling { cancelledUntilRelease = true; finishDrag(save: false) }
+        }
+        .onDisappear { if !settling { drag = nil } }
+        .sheet(isPresented: $editor) { ConsoleItemEditor(model: model, item: nil) }
+        .sheet(item: $editing) { item in ConsoleItemEditor(model: model, item: item) }
         .alert("删除快捷项目？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("取消", role: .cancel) { deleting = nil }
             Button("删除", role: .destructive) {

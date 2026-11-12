@@ -183,6 +183,45 @@ import AppKit
         while try console.snapshot().first?["state"] as? String == "running", Date() < actionDeadline { Thread.sleep(forTimeInterval: 0.01) }
         try check(try console.snapshot().first?["state"] as? String == "failed", "非零退出显示失败")
         try check(try console.list().count == 1, "编辑保留原项目 ID")
+        var dragFrames = [
+            "a": CGRect(x: 0, y: 0, width: 100, height: 40),
+            "b": CGRect(x: 0, y: 58, width: 100, height: 80),
+            "c": CGRect(x: 0, y: 156, width: 100, height: 60),
+            "other-group": CGRect(x: 0, y: 300, width: 100, height: 40)
+        ]
+        var dragDown = ConsoleReorderPlan(sourceID: "a", ids: ["a", "b", "c"], frames: dragFrames)!
+        try check(dragDown.sourceID == "a" && dragDown.targetID == nil && dragDown.landingOffset == 0, "拖动初始位置不产生保存目标")
+        dragDown.update(centerY: 186)
+        try check(dragDown.destination == 2 && dragDown.targetID == "c" && dragDown.landingOffset == 176, "向下跨不同高度行时按目标底边落位")
+        try check(dragDown.displacement(for: "b") == -58 && dragDown.displacement(for: "c") == -58, "下移时中间行按源高度与间距向上让位")
+        try check(dragDown.displacement(for: "a") == 0 && dragDown.displacement(for: "other-group") == 0, "源行和其他分组不使用让位偏移")
+        dragFrames["b"] = CGRect(x: 0, y: 2000, width: 100, height: 80)
+        dragDown.update(centerY: 98)
+        try check(dragDown.targetID == "b" && dragDown.frames[1].midY == 98, "后续布局变化不改变冻结槽位")
+        let frozenFrames = ["a": dragDown.frames[0], "b": dragDown.frames[1], "c": dragDown.frames[2]]
+        var dragUp = ConsoleReorderPlan(sourceID: "c", ids: ["a", "b", "c"], frames: frozenFrames)!
+        dragUp.update(centerY: 20)
+        try check(dragUp.targetID == "a" && dragUp.landingOffset == -156, "向上拖动按目标顶边落位")
+        try check(dragUp.displacement(for: "a") == 78 && dragUp.displacement(for: "b") == 78, "上移时中间行向下让位")
+        dragUp.update(centerY: 186)
+        try check(dragUp.targetID == nil && dragUp.landingOffset == 0 && dragUp.displacement(for: "a") == 0, "回到原位恢复原顺序且无需保存")
+        var dragMiddle = ConsoleReorderPlan(sourceID: "b", ids: ["a", "b", "c"], frames: frozenFrames)!
+        dragMiddle.update(centerY: 186)
+        try check(dragMiddle.landingOffset == 78 && dragMiddle.displacement(for: "c") == -98 && dragMiddle.displacement(for: "a") == 0, "中间行下移保留区间外项目位置")
+        dragMiddle.update(centerY: 142)
+        try check(dragMiddle.targetID == "c", "等距边界保留当前目标避免反复挤位")
+        dragMiddle.update(centerY: .nan)
+        try check(dragMiddle.targetID == "c", "忽略非有限拖动坐标")
+        var singleDrag = ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: dragFrames)!
+        singleDrag.update(centerY: 1000)
+        try check(singleDrag.targetID == nil && singleDrag.displacement(for: "a") == 0, "单项目拖动保持原位")
+        try check(ConsoleReorderPlan(sourceID: "missing", ids: ["a"], frames: dragFrames) == nil, "拒绝不存在的拖动源")
+        try check(ConsoleReorderPlan(sourceID: "a", ids: ["a", "a"], frames: dragFrames) == nil, "拒绝重复拖动标识")
+        try check(ConsoleReorderPlan(sourceID: "a", ids: ["a", "missing"], frames: dragFrames) == nil, "拒绝缺少槽位的分组")
+        for invalid in [CGRect(x: 0, y: 0, width: 100, height: 0), CGRect(x: 0, y: 0, width: 100, height: -1), CGRect(x: 0, y: CGFloat.infinity, width: 100, height: 40), CGRect(x: 0, y: 0, width: 100, height: CGFloat.nan)] {
+            try check(ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: ["a": invalid]) == nil, "拒绝无效行几何信息")
+        }
+        try check(ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: dragFrames, spacing: -1) == nil && ConsoleReorderPlan(sourceID: "a", ids: ["a"], frames: dragFrames, spacing: .infinity) == nil, "拒绝非法行间距")
         let sortStore = ConsoleActions(path: root.appendingPathComponent("sort.json"))
         let firstSort = try sortStore.save(["name": "一", "kind": "command", "target": "true"])["id"] as! String
         let middleSort = try sortStore.save(["name": "脚本", "kind": "script", "target": script.path])["id"] as! String

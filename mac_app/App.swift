@@ -198,18 +198,21 @@ struct ControlView: View {
                     Spacer()
                     if model.busy { ProgressView().controlSize(.small) }
                 }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        if section == "服务" { services }
-                        else if section == "连接" { connection }
-                        else if section == "控制台" { ConsoleSettings(model: model) }
-                        else if section == "音乐" { musicSettings }
-                        else { keySettings }
-                    }.padding(2)
+                if section == "控制台" {
+                    ConsoleSettings(model: model)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            if section == "服务" { services }
+                            else if section == "连接" { connection }
+                            else if section == "音乐" { musicSettings }
+                            else { keySettings }
+                        }.padding(2)
+                    }
                 }
                 Text(model.message).font(.callout)
                     .foregroundStyle(model.failed ? Color.red : Color.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
                     .accessibilityLabel(model.message)
             }.padding(28).disabled(model.busy)
         }
