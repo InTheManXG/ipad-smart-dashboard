@@ -48,6 +48,12 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   assert.deepEqual(list.children.map(group=>group.children[0].textContent),['应用','脚本','命令']);
   assert.deepEqual(list.children[0].querySelectorAll('button').map(button=>button.children[1].textContent),['第二应用','第一应用']);
   assert.equal(list.children[0].querySelectorAll('img')[0].src,'data:image/png;base64,iVBORw0KGgo=');
+  for (const state of ['idle', 'succeeded', 'running', 'failed']) {
+    items = [{...item, kind:'app', state}]; await run('loadConsole()');
+    const button = list.querySelectorAll('button')[0];
+    assert.equal(button.children.length, ['idle','succeeded'].includes(state) ? 2 : 3, '应用不展示打开文案，保留运行与失败反馈');
+    assert.equal(button.disabled, state === 'running', '应用防重复执行保持有效');
+  }
   items = [{...item,kind:'subscription',name:'更新全部订阅'}]; await run('loadConsole()');
   assert.equal(list.children[0].children[0].textContent,'订阅更新');
   await run('requestConsoleAction('+JSON.stringify(items[0])+')');

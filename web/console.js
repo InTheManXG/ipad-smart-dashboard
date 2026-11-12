@@ -46,10 +46,15 @@ function renderConsole(items) {
         icon.replaceChildren(image);
       }
       const name = document.createElement('strong'); name.textContent = item.name;
-      const state = document.createElement('span'); state.className = 'console-action-state';
-      state.textContent = item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? (kind === 'app' ? '已打开' : '执行完成') : item.state === 'failed' ? '执行失败或超时' : (kind === 'app' ? '打开应用' : '执行');
       card.onclick = () => requestConsoleAction(item);
-      card.append(icon, name, state); grid.append(card);
+      card.append(icon, name);
+      // 应用常态只显示图标和名称；处理中及失败仍提示，避免重复点击或误判结果。
+      if (kind !== 'app' || item.state === 'running' || item.state === 'failed') {
+        const state = document.createElement('span'); state.className = 'console-action-state';
+        state.textContent = item.state === 'running' ? '正在执行…' : item.state === 'succeeded' ? '执行完成' : item.state === 'failed' ? '执行失败或超时' : '执行';
+        card.append(state);
+      }
+      grid.append(card);
     }
     group.append(heading, grid); groups.push(group);
   }
