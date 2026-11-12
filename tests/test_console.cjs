@@ -2,10 +2,10 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 function node() {
-  return {children: [], textContent: '',open:false,showModal(){this.open=true;},close(){this.open=false;},addEventListener(){}, setAttribute(name,value){this[name]=value;}, append(...items){this.children.push(...items);}, replaceChildren(...items){this.children = items;},
+  return {children: [], textContent: '',open:false,showModal(){this.open=true;},close(){this.open=false;},addEventListener(){},focus(){this.focused=true;}, setAttribute(name,value){this[name]=value;}, append(...items){this.children.push(...items);}, replaceChildren(...items){this.children = items;},
     querySelectorAll(tag){return this.children.flatMap(child => [...(child.tag === tag ? [child] : []), ...child.querySelectorAll(tag)]);}};
 }
-const nodes = new Map(['console-actions', 'console-status', 'console-refresh','console-confirm','console-confirm-name','console-confirm-run','console-confirm-cancel'].map(id => [id, node()]));
+const nodes = new Map(['console-actions', 'console-status', 'console-refresh','console-confirm','console-confirm-name','console-confirm-target','console-confirm-description','console-confirm-run','console-confirm-cancel'].map(id => [id, node()]));
 const pages = {clientWidth:1024,scrollLeft:1024};
 const calls = [], timers = [], intervals = [], item = {id:'d46acd26-c9c3-4afc-9ac6-64b9088c7005',name:'<script>test</script>',kind:'script',state:'idle'};
 let items = [item], status = 200;
@@ -30,6 +30,9 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   assert.equal(list.querySelectorAll('button')[0].disabled,false);
   await run('requestConsoleAction('+JSON.stringify(item)+')');
   assert.equal(nodes.get('console-confirm').open,true);
+  assert.equal(nodes.get('console-confirm-name').textContent,`在 Mac 上执行「${item.name}」？`);
+  assert.equal(nodes.get('console-confirm-target').hidden,true,'脚本确认不展示订阅目标区域');
+  assert.equal(nodes.get('console-confirm-run').textContent,'执行');
   nodes.get('console-confirm-cancel').onclick();
   assert.equal(nodes.get('console-confirm').open,false);
   assert.equal(calls.filter(call=>call.options.method==='POST').length,0,'取消确认不会执行');
@@ -78,7 +81,20 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   }
   list.querySelectorAll('button')[0].onclick();
   assert.equal(nodes.get('console-confirm').open,true,'独立更新按钮必须先确认');
+  assert.equal(nodes.get('console-confirm').className,'console-confirm-subscription');
+  assert.equal(nodes.get('console-confirm-name').textContent,'更新订阅？');
+  assert.equal(nodes.get('console-confirm-target').textContent,'更新全部订阅');
+  assert.equal(nodes.get('console-confirm-target').hidden,false);
+  assert.equal(nodes.get('console-confirm-run').textContent,'确认更新');
+  assert.equal(nodes.get('console-confirm-cancel').focused,true,'默认聚焦取消以避免误确认');
   nodes.get('console-confirm-cancel').onclick();
+  const postsBeforeCancel = calls.filter(call=>call.options.method==='POST').length;
+  await run('requestConsoleAction('+JSON.stringify(item)+')');
+  assert.equal(nodes.get('console-confirm').className,'','切回脚本时恢复原确认样式');
+  assert.equal(nodes.get('console-confirm-target').hidden,true);
+  assert.equal(nodes.get('console-confirm-run').textContent,'执行');
+  nodes.get('console-confirm-cancel').onclick();
+  assert.equal(calls.filter(call=>call.options.method==='POST').length,postsBeforeCancel,'触摸取消不提交更新');
   while (timers.some(timer=>timer.delay===3000)) takeTimer(3000)();
   // 手势只改变滚动位置，网址仍是首页；轮询必须跟随实际可见页。
   ctx.location.hash = '#home'; pages.scrollLeft = 0;

@@ -113,8 +113,16 @@ function requestConsoleAction(item) {
   if (consoleSubmitting) return;
   if (item.kind === 'app') { runConsoleAction(item); return; }
   consoleSelection = item;
-  document.getElementById('console-confirm-name').textContent = `在 Mac 上执行「${item.name}」？`;
+  const subscription = item.kind === 'subscription';
+  consoleConfirm.className = subscription ? 'console-confirm-subscription' : '';
+  document.getElementById('console-confirm-name').textContent = subscription ? '更新订阅？' : `在 Mac 上执行「${item.name}」？`;
+  const target = document.getElementById('console-confirm-target');
+  target.hidden = !subscription; target.textContent = subscription ? item.name : '';
+  document.getElementById('console-confirm-description').textContent = subscription ? '完成后会自动刷新状态与更新时间。' : '由配对的 Mac 在后台执行。';
+  document.getElementById('console-confirm-run').textContent = subscription ? '确认更新' : '执行';
   consoleConfirm.showModal();
+  // 触摸确认先聚焦取消，键盘回车不会在弹窗刚出现时误触发更新。
+  document.getElementById('console-confirm-cancel').focus();
 }
 async function runConsoleAction(item) {
   if (consoleSubmitting) return;

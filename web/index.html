@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#f7f7f8"><link rel="manifest" href="./manifest.json"><link rel="icon" href="./codex-icon.png"><link rel="apple-touch-icon" href="./codex-icon.png"><link rel="stylesheet" href="./style.css"><title>Codex · 工作现场</title></head>
 <body>
-<dialog id="console-confirm" aria-labelledby="console-confirm-name">
+<dialog id="console-confirm" aria-labelledby="console-confirm-name" aria-describedby="console-confirm-target console-confirm-description">
   <h2 id="console-confirm-name">执行快捷项目？</h2>
-  <p>由配对的 Mac 在后台执行。</p>
+  <p id="console-confirm-target" hidden></p>
+  <p id="console-confirm-description">由配对的 Mac 在后台执行。</p>
   <div class="dialog-actions"><button id="console-confirm-cancel" type="button">取消</button><button id="console-confirm-run" type="button">执行</button></div>
 </dialog>
 <div class="pages" tabindex="0" aria-label="看板页面">
