@@ -6,6 +6,7 @@ let consoleSubmitting = false;
 let consoleLoading = false;
 let consoleRenderKey = '';
 let consoleSelection = null;
+const subscriptionFeedback = new Map();
 const consoleConfirm = document.getElementById('console-confirm');
 
 function consoleHeaders() {
@@ -40,20 +41,29 @@ function renderConsole(items) {
     const grid = document.createElement('div'); grid.className = 'console-group-grid';
     for (const item of entries) {
       if (kind === 'subscription') {
+        const previous = subscriptionFeedback.get(item.id);
+        if (!previous || previous.state !== item.state || previous.lastUpdatedAt !== item.lastUpdatedAt) {
+          // 后台成功状态会常驻；只对新完成短暂反馈，轮询不续期，旧计时器不覆盖新任务。
+          const feedback = {state:item.state, lastUpdatedAt:item.lastUpdatedAt, active:Boolean(previous) && item.state === 'succeeded'};
+          subscriptionFeedback.set(item.id, feedback);
+          if (feedback.active) setTimeout(() => {
+            if (subscriptionFeedback.get(item.id) !== feedback) return;
+            feedback.active = false; consoleRenderKey = ''; loadConsole();
+          }, 3000);
+        }
         // 只允许独立按钮触发更新，名称与行内空白不绑定操作，避免误触。
         const row = document.createElement('div'); row.className = 'console-subscription-row';
         const info = document.createElement('div'); info.className = 'console-subscription-info';
         const name = document.createElement('strong'); name.textContent = item.name;
         info.append(name);
-        if (item.state === 'succeeded' || item.state === 'failed') {
+        if (item.state === 'failed') {
           const state = document.createElement('span'); state.className = 'console-action-state';
-          state.textContent = item.state === 'succeeded' ? '已更新' : '更新失败';
-          if (item.state === 'failed') state.className += ' console-action-state--failed';
+          state.textContent = '更新失败'; state.className += ' console-action-state--failed';
           info.append(state);
         }
         const update = document.createElement('button'); update.type = 'button'; update.className = 'console-subscription-update';
-        update.disabled = busy; update.textContent = item.state === 'running' ? '更新中…' : '更新';
-        update.setAttribute('aria-label', `更新：${item.name}`);
+        update.disabled = busy; update.textContent = item.state === 'running' ? '更新中…' : subscriptionFeedback.get(item.id).active ? '已更新' : '更新';
+        update.setAttribute('aria-label', `${update.textContent}：${item.name}`);
         update.onclick = () => requestConsoleAction(item);
         const updated = document.createElement('span'); updated.className = 'console-subscription-updated';
         if (Number.isFinite(item.lastUpdatedAt) && item.lastUpdatedAt > 0 && item.lastUpdatedAt <= 253402300799) {

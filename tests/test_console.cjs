@@ -13,10 +13,15 @@ const ctx = vm.createContext({
   document:{hidden:false,querySelector(){return pages;},getElementById:id => nodes.get(id),createElement:tag => Object.assign(node(),{tag}),addEventListener(){}},
   window:{addEventListener(){}}, location:{hash:'#console'},
   localStorage:{getItem(){return 'test-only';}},sessionStorage:{getItem(){return null;}}, AbortSignal,
-  setInterval(fn){intervals.push(fn);},setTimeout(fn){timers.push(fn);},
+  setInterval(fn){intervals.push(fn);},setTimeout(fn,delay){timers.push({fn,delay});},
   fetch:async (path, options) => {calls.push({path,options}); return {ok:status===200,status,json:async()=>options.method==='POST'?{ok:true}:items};}
 });
 const run = code => vm.runInContext(code,ctx);
+const takeTimer = delay => {
+  const index = timers.findIndex(timer=>timer.delay===delay);
+  assert.notEqual(index,-1,`应安排 ${delay}ms 计时器`);
+  return timers.splice(index,1)[0].fn;
+};
 vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
 (async () => {
   await new Promise(setImmediate);
@@ -39,7 +44,7 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   assert.equal(posts.length,1,'提交期间重复点击只发送一次');
   assert.deepEqual(JSON.parse(posts[0].options.body),{id:item.id},'仅发送 ID');
   assert.equal(list.querySelectorAll('button')[0].disabled,true);
-  items = [Object.assign({},item,{state:'running'})]; timers.shift()(); await new Promise(setImmediate);
+  items = [Object.assign({},item,{state:'running'})]; takeTimer(1200)(); await new Promise(setImmediate);
   assert.equal(list.querySelectorAll('button')[0].disabled,true,'运行中不重复执行');
   items = [Object.assign({},item,{state:'succeeded'})]; await run('loadConsole()');
   assert.equal(list.querySelectorAll('button')[0].children[2].textContent,'执行完成');
@@ -66,14 +71,15 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
     assert.equal(row.tag,'div','订阅行不作为可点击卡片');
     assert.equal(row.onclick,undefined,'名称和空白不触发更新');
     assert.equal(row.children[0].children[0].textContent,'更新全部订阅');
-    assert.equal(button.textContent,state === 'running' ? '更新中…' : '更新');
-    assert.equal(button['aria-label'],'更新：更新全部订阅','独立按钮包含订阅名称以供读屏区分');
-    assert.equal(row.children[0].children[1]?.textContent,['idle','running'].includes(state) ? undefined : label);
+    assert.equal(button.textContent,state === 'running' ? '更新中…' : state === 'succeeded' ? '已更新' : '更新');
+    assert.equal(button['aria-label'],`${button.textContent}：更新全部订阅`,'读屏能区分订阅与当前按钮状态');
+    assert.equal(row.children[0].children[1]?.textContent,state === 'failed' ? label : undefined);
     assert.equal(button.disabled,state === 'running');
   }
   list.querySelectorAll('button')[0].onclick();
   assert.equal(nodes.get('console-confirm').open,true,'独立更新按钮必须先确认');
   nodes.get('console-confirm-cancel').onclick();
+  while (timers.some(timer=>timer.delay===3000)) takeTimer(3000)();
   // 手势只改变滚动位置，网址仍是首页；轮询必须跟随实际可见页。
   ctx.location.hash = '#home'; pages.scrollLeft = 0;
   items = [{...item,kind:'subscription',name:'更新全部订阅',state:'idle'}];
@@ -81,17 +87,41 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   list.querySelectorAll('button')[0].onclick();
   nodes.get('console-confirm-run').onclick(); await new Promise(setImmediate);
   assert.equal(calls.filter(call=>call.options.method==='POST').length,2,'订阅确认后只提交一次');
-  items = [{...items[0],state:'running'}]; timers.shift()(); await new Promise(setImmediate);
+  items = [{...items[0],state:'running'}]; takeTimer(1200)(); await new Promise(setImmediate);
   const subscriptionRow = () => list.children[0].children[1].children[0];
   assert.equal(subscriptionRow().children[0].children.length,1,'更新中只在按钮显示一次');
   assert.equal(list.querySelectorAll('button')[0].textContent,'更新中…');
   assert.equal(list.querySelectorAll('button')[0].disabled,true);
   items = [{...items[0],state:'succeeded'}];
   intervals[0](); await new Promise(setImmediate);
-  assert.equal(subscriptionRow().children[0].children[1]?.textContent,'已更新','完成后定时拉取新结果');
-  assert.equal(list.querySelectorAll('button')[0].textContent,'更新');
+  assert.equal(subscriptionRow().children[0].children.length,1,'名称下不显示成功状态');
+  assert.equal(list.querySelectorAll('button')[0].textContent,'已更新','完成后在按钮内反馈成功');
   assert.equal(list.querySelectorAll('button')[0].disabled,false,'自动恢复更新按钮');
   assert.equal(calls.filter(call=>call.options.method==='POST').length,2,'自动刷新不会再次提交更新');
+  const firstReset = takeTimer(3000);
+  intervals[0](); await new Promise(setImmediate);
+  assert.equal(list.querySelectorAll('button')[0].textContent,'已更新');
+  assert.equal(timers.filter(timer=>timer.delay===3000).length,0,'相同成功快照不续期');
+  firstReset(); await new Promise(setImmediate);
+  assert.equal(list.querySelectorAll('button')[0].textContent,'更新','三秒后自动恢复更新按钮');
+  intervals[0](); await new Promise(setImmediate);
+  assert.equal(list.querySelectorAll('button')[0].textContent,'更新','常驻成功状态不会反复闪提示');
+  // 即使漏掉 running，只要成功时间改变，仍应显示本轮反馈。
+  items = [{...items[0],lastUpdatedAt:1800000000}]; intervals[0](); await new Promise(setImmediate);
+  assert.equal(list.querySelectorAll('button')[0].textContent,'已更新');
+  const oldReset = takeTimer(3000);
+  items = [{...items[0],state:'running'}]; intervals[0](); await new Promise(setImmediate);
+  assert.equal(list.querySelectorAll('button')[0].textContent,'更新中…');
+  items = [{...items[0],state:'succeeded',lastUpdatedAt:1800000010}]; intervals[0](); await new Promise(setImmediate);
+  const latestReset = takeTimer(3000);
+  oldReset(); await new Promise(setImmediate);
+  assert.equal(list.querySelectorAll('button')[0].textContent,'已更新','上一轮计时器不能清除新成功反馈');
+  latestReset(); await new Promise(setImmediate);
+  assert.equal(list.querySelectorAll('button')[0].textContent,'更新');
+  assert.equal(subscriptionRow().children[2].children[0].dateTime,new Date(1800000010000).toISOString(),'恢复按钮不清除上次更新时间');
+  items = [{...items[0],id:'historical'}]; await run('loadConsole()');
+  assert.equal(list.querySelectorAll('button')[0].textContent,'更新','首次读到历史成功不会当成新完成');
+
   ctx.location.hash = '#console'; pages.scrollLeft = pages.clientWidth;
   let requestCount = calls.length; intervals[0](); await new Promise(setImmediate);
   assert.equal(calls.length,requestCount,'网址未变但滑离控制台时停止轮询');
