@@ -6,6 +6,8 @@ let consoleSubmitting = false;
 let consoleLoading = false;
 let consoleRenderKey = '';
 let consoleSelection = null;
+let consoleControlAllowed = false;
+let consoleInvalidated = false;
 const subscriptionFeedback = new Map();
 const consoleConfirm = document.getElementById('console-confirm');
 
@@ -23,11 +25,13 @@ async function consoleRequest(path, body) {
     headers: {...consoleHeaders(), ...(body ? {'Content-Type': 'application/json'} : {})},
     ...(body ? {body: JSON.stringify(body)} : {}), signal: AbortSignal.timeout(12000)
   });
-  if (!response.ok) throw new Error(response.status === 401 ? '配对已失效，请在首页重新配对' : response.status === 409 ? '项目不可执行或已有任务运行，请刷新后重试' : response.status === 404 ? '项目已删除，请刷新列表' : 'Mac 未连接或控制台暂不可用');
+  if (response.status === 401) globalThis.invalidatePairing?.();
+  if (response.status === 403) consoleControlAllowed = false;
+  if (!response.ok) throw new Error(response.status === 401 ? '配对已失效，请在首页重新配对' : response.status === 403 ? '当前网页仅可查看，请在 Mac App 中授权控制' : response.status === 409 ? '项目不可执行或已有任务运行，请刷新后重试' : response.status === 404 ? '项目已删除，请刷新列表' : 'Mac 未连接或控制台暂不可用');
   return response.json();
 }
 function renderConsole(items) {
-  const busy = consoleSubmitting || items.some(item => item.state === 'running');
+  const busy = !consoleControlAllowed || consoleSubmitting || items.some(item => item.state === 'running');
   // 轮询内容不变时保留按钮，避免触摸/键盘操作中节点被替换。
   const renderKey = JSON.stringify([items, busy]);
   if (renderKey === consoleRenderKey) return;
@@ -102,14 +106,19 @@ async function loadConsole() {
   if (consoleLoading || consoleSubmitting) return;
   consoleLoading = true;
   try {
+    try { consoleControlAllowed = (await consoleRequest('./api/permissions')).controlAllowed === true; }
+    catch { consoleControlAllowed = false; }
     const items = await consoleRequest('./api/console');
-    renderConsole(items); consoleMessage('');
+    if (consoleInvalidated) return;
+    renderConsole(items); consoleMessage(consoleControlAllowed ? '' : '当前网页仅可查看，请在 Mac App 中授权控制');
   } catch (error) {
     // 离线时禁止使用旧卡片触发操作，恢复连接后再读取最新配置。
     consoleRenderKey = ''; consoleList.replaceChildren(); consoleMessage(error.message, true);
   } finally { consoleLoading = false; }
 }
 function requestConsoleAction(item) {
+  if (consoleInvalidated) return;
+  if (!consoleControlAllowed) { consoleMessage('当前网页仅可查看，请在 Mac App 中授权控制'); return; }
   if (consoleSubmitting) return;
   if (item.kind === 'app') { runConsoleAction(item); return; }
   consoleSelection = item;
@@ -125,6 +134,8 @@ function requestConsoleAction(item) {
   document.getElementById('console-confirm-cancel').focus();
 }
 async function runConsoleAction(item) {
+  if (consoleInvalidated) return;
+  if (!consoleControlAllowed) { consoleMessage('当前网页仅可查看，请在 Mac App 中授权控制'); return; }
   if (consoleSubmitting) return;
   consoleSubmitting = true; consoleRenderKey = '';
   consoleList.querySelectorAll('button').forEach(button => { button.disabled = true; });
@@ -132,6 +143,7 @@ async function runConsoleAction(item) {
   try {
     // 网页只发送 ID，不接受网页覆盖本机配置的命令、路径或解释器。
     await consoleRequest('./api/console/run', {id: item.id});
+    if (consoleInvalidated) return;
     consoleMessage('Mac 已接收，正在更新执行状态…');
     setTimeout(() => { consoleSubmitting = false; loadConsole(); }, 1200);
   } catch (error) {
@@ -148,6 +160,12 @@ document.getElementById('console-confirm-cancel').onclick = () => { consoleSelec
 consoleConfirm.addEventListener('cancel', () => { consoleSelection = null; });
 consoleRefresh.onclick = loadConsole;
 window.addEventListener('hashchange', loadConsole);
+window.addEventListener('pairing-invalid', () => {
+  consoleInvalidated = true; consoleControlAllowed = false; consoleSelection = null;
+  subscriptionFeedback.clear(); consoleRenderKey = '';
+  consoleConfirm.close(); consoleList.replaceChildren();
+  for (const id of ['console-confirm-name', 'console-confirm-target', 'console-confirm-description']) document.getElementById(id).textContent = '';
+});
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadConsole(); });
 // 手势切页不会更新 hash，轮询按实际滚动位置判断控制台是否可见。
 setInterval(() => { if (!document.hidden && Math.round(consolePages.scrollLeft / consolePages.clientWidth) === 0) loadConsole(); }, 3000);

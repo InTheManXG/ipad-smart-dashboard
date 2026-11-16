@@ -29,18 +29,60 @@ import AppKit
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/native-test-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        // 安装隔离使用注入的硬件摘要和临时目录，不读取真实硬件或配对密钥。
+        let machineA = String(repeating: "a", count: 64), machineB = String(repeating: "b", count: 64)
+        let freshInstall = root.appendingPathComponent("fresh-install", isDirectory: true)
+        try FileManager.default.createDirectory(at: freshInstall, withIntermediateDirectories: true)
+        let freshSuffix = try InstallationBinding.prepare(directory: freshInstall, hardwareHash: machineA)
+        try check(UUID(uuidString: freshSuffix) != nil, "新安装使用独立身份")
+        try check(try InstallationBinding.prepare(directory: freshInstall, hardwareHash: machineA) == freshSuffix, "同机重启保持身份")
+        let binding = try readJSON(freshInstall.appendingPathComponent("installation.json"))
+        try check(Set(binding.keys) == Set(["schema", "hardwareHash", "keychainSuffix"]), "绑定文件仅保存摘要和账户后缀")
+        let preservedNames = ["settings.json", "keys.json", "console.json", "station.json"]
+        let isolatedNames = ["local-screens.json", "cloud-permissions.json", "runtime.json"]
+        for name in preservedNames + isolatedNames { try writeJSON(["test": name], freshInstall.appendingPathComponent(name)) }
+        let clonedSuffix = try InstallationBinding.prepare(directory: freshInstall, hardwareHash: machineB)
+        try check(UUID(uuidString: clonedSuffix) != nil && clonedSuffix != freshSuffix, "异机复制重新生成身份")
+        try check(try InstallationBinding.prepare(directory: freshInstall, hardwareHash: machineB) == clonedSuffix, "克隆迁移仅执行一次")
+        for name in preservedNames {
+            try check(try readJSON(freshInstall.appendingPathComponent(name))["test"] as? String == name, "异机迁移保留用户配置：" + name)
+        }
+        let backups = try FileManager.default.contentsOfDirectory(at: freshInstall.appendingPathComponent("device-migrations"), includingPropertiesForKeys: nil)
+        try check(backups.count == 1, "异机会话统一归档")
+        for name in isolatedNames {
+            try check(!FileManager.default.fileExists(atPath: freshInstall.appendingPathComponent(name).path), "异机不继承配对授权：" + name)
+            try check(try readJSON(backups[0].appendingPathComponent(name))["test"] as? String == name, "原会话保留在备份：" + name)
+        }
+        try check(InstallationBinding.account("display-token", suffix: freshSuffix) != InstallationBinding.account("display-token", suffix: clonedSuffix), "不同安装使用不同本地签名账户")
+        try check(InstallationBinding.account("device-token-site", suffix: freshSuffix) != InstallationBinding.account("device-token-site", suffix: clonedSuffix), "不同安装使用不同公网账户")
+        let legacyInstall = root.appendingPathComponent("legacy-install", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacyInstall, withIntermediateDirectories: true)
+        try writeJSON(["publicURL": "https://display.example.com"], legacyInstall.appendingPathComponent("settings.json"))
+        try writeJSON(["test": true], legacyInstall.appendingPathComponent("local-screens.json"))
+        try check(try InstallationBinding.prepare(directory: legacyInstall, hardwareHash: machineA) == "", "旧安装首次升级保留账户")
+        try check(InstallationBinding.account("display-token", suffix: "") == "display-token", "旧账户名兼容")
+        try check(FileManager.default.fileExists(atPath: legacyInstall.appendingPathComponent("local-screens.json").path), "旧安装同机升级保留会话")
+        try check(try InstallationBinding.prepare(directory: legacyInstall, hardwareHash: machineB) != "", "升级后的旧安装跨机也重置身份")
+        let corruptInstall = root.appendingPathComponent("corrupt-install", isDirectory: true)
+        try FileManager.default.createDirectory(at: corruptInstall, withIntermediateDirectories: true)
+        try writeJSON(["schema": 1, "hardwareHash": machineA, "keychainSuffix": "invalid"], corruptInstall.appendingPathComponent("installation.json"))
+        try writeJSON(["test": true], corruptInstall.appendingPathComponent("local-screens.json"))
+        try rejects("绑定损坏时拒绝复用旧身份") { _ = try InstallationBinding.prepare(directory: corruptInstall, hardwareHash: machineA) }
+        try check(FileManager.default.fileExists(atPath: corruptInstall.appendingPathComponent("local-screens.json").path), "损坏绑定不删除会话数据")
+        try rejects("拒绝无效硬件摘要") { _ = try InstallationBinding.prepare(directory: corruptInstall, hardwareHash: "invalid") }
         try check(secureEqual("abc", "abc") && !secureEqual("abc", "abcd"), "认证比较")
         for address in ["http://example.com", "https://user:pass@example.com", "https://example.com/x", "https://example.com?key=x", "file:///tmp", "https://example.com:65536"] {
             try rejects("拒绝不安全地址") { _ = try endpoint(address) }
         }
         try check(try endpoint("http://127.0.0.1:18088").port == 18088, "本机地址可用")
-        let legacyTarget = try PairingConnection(config: [:])
+        let legacyTarget = try PairingConnection(config: ["publicURL": "https://ipad.iamxg.com"])
         let customTarget = try PairingConnection(config: ["publicURL": "https://display.example.com"])
         try check(legacyTarget.account("device-token") == "device-token", "升级保留旧站点凭据")
         try check(customTarget.url("api/pairing/register").absoluteString == "https://display.example.com/api/pairing/register", "公网注册使用配置地址")
         try check(customTarget.account("device-token") != legacyTarget.account("device-token"), "新服务器不能复用旧凭据")
         try check(try PairingConnection(config: ["publicURL": "https://display.example.com/"]).account("device-token") == customTarget.account("device-token"), "末尾斜杠不改变凭据归属")
         try rejects("未配置时不连接公网") { _ = try PairingConnection(config: ["publicURL": ""]) }
+        try rejects("缺少配置也不默认连接公共服务") { _ = try PairingConnection(config: [:]) }
 
         try check(number(true) == nil && number(Double.infinity) == nil && number(1) == 1, "数字边界")
         try check(lanAddress("192.168.1.2", interface: "en0", type: "IEEE80211", active: true)?["label"] as? String == "Wi-Fi · en0", "Wi-Fi 地址标签")
@@ -126,6 +168,11 @@ import AppKit
         try check(multi.authorized(firstWeb, now: 2004) && multi.authorized(secondWeb, now: 2004), "本地多个网页会话同时有效")
         let firstScreen = try screens.list(now: 2004).first { $0["ua"] as? String == "iPad Safari" }!
         let screenID = firstScreen["id"] as! String
+        try check(!multi.allowsControl(firstWeb, now: 2004), "新配对默认只读")
+        try screens.setControl(id: screenID, allowed: true, now: 2004)
+        try check(multi.allowsControl(firstWeb, now: 2004) && !multi.allowsControl(secondWeb, now: 2004), "仅授权网页可以控制")
+        try screens.setControl(id: screenID, allowed: false, now: 2004)
+        try check(!multi.allowsControl(firstWeb, now: 2004), "撤销控制权限立即生效")
         try screens.remark(id: screenID, note: "办公室", now: 2005)
         let reopened = LocalScreens(path: screensPath)
         let restarted = LocalPairing(secret: "multi", screens: reopened)
@@ -133,6 +180,14 @@ import AppKit
         let screen = try reopened.list(now: 2071).first { $0["id"] as? String == screenID }!
         try check(screen["remark"] as? String == "办公室" && screen["ua"] as? String == "Updated Safari", "跨进程备注与 UA 持久化互不覆盖")
         try check(!(try String(contentsOf: screensPath)).contains(firstWeb), "本地登记不保存会话令牌")
+        let permissions = CloudPermissions(path: root.appendingPathComponent("cloud-permissions.json"))
+        let testOrigin = "https://display.example.com"
+        try check(!permissions.allows(origin: testOrigin, id: screenID), "公网默认只读")
+        try permissions.set(origin: testOrigin, id: screenID, allowed: true)
+        try check(CloudPermissions(path: permissions.path).allows(origin: testOrigin, id: screenID), "公网授权由本机持久保存")
+        try check(!permissions.allows(origin: "https://other.example.com", id: screenID), "公网授权隔离服务地址")
+        try permissions.set(origin: testOrigin, id: screenID, allowed: false)
+        try check(!permissions.allows(origin: testOrigin, id: screenID), "公网撤权立即生效")
         try rejects("拒绝过长网页备注") { try reopened.remark(id: screenID, note: String(repeating: "字", count: 81), now: 2071) }
         try reopened.revoke(id: screenID, now: 2072)
         try check(!multi.authorized(firstWeb, userAgent: "尝试重新登记", now: 2073), "其他进程踢下线后旧令牌不能重新登记")
@@ -151,33 +206,79 @@ import AppKit
         disabledMusic.setEnabled(true)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == true, "启用但离线仍保留音乐区域")
         let subscriptions = ConsoleActions(path: root.appendingPathComponent("subscriptions.json"))
-        for target in ["all", "paoluz", "sc", "just"] {
-            _ = try subscriptions.save(["name": "订阅更新", "kind": "subscription", "target": target])
+        let subscriptionScript = root.appendingPathComponent("subscription test.sh")
+        try "printf '%s\\n' \"$@\" > invocation.txt\nsleep 0.05\n".write(to: subscriptionScript, atomically: true, encoding: .utf8)
+        let otherSubscriptionScript = root.appendingPathComponent("other-subscription.sh")
+        try "exit 0\n".write(to: otherSubscriptionScript, atomically: true, encoding: .utf8)
+        func subscriptionPayload(_ target: String, script: String? = nil) -> JSONObject {
+            ["name": "订阅更新", "kind": "subscription", "target": target, "shell": "/bin/bash", "subscriptionScript": script ?? subscriptionScript.path]
         }
-        try check(try subscriptions.snapshot().count == 4, "订阅配置持久化并纳入快捷快照")
-        try check(try subscriptions.snapshot().allSatisfy { $0["lastUpdatedAt"] == nil }, "旧订阅不虚构历史更新时间")
-        try subscriptions.recordSubscriptionSuccess("paoluz", at: 1000)
+        for target in ["all", "alpha", "beta", "gamma"] { _ = try subscriptions.save(subscriptionPayload(target)) }
+        try check(try subscriptions.snapshot().count == 4, "通用订阅配置持久化并纳入快捷快照")
+        try check(try subscriptions.snapshot().allSatisfy { $0["lastUpdatedAt"] == nil && $0["subscriptionScript"] == nil && $0["shell"] == nil && $0["target"] == nil }, "网页快照不包含脚本、解释器、订阅参数或虚构时间")
+        try subscriptions.recordSubscriptionSuccess(subscriptions.list()[1], at: 1000)
         let firstUpdates = try ConsoleActions(path: subscriptions.path).snapshot()
         try check(firstUpdates[1]["lastUpdatedAt"] as? Double == 1000 && firstUpdates[0]["lastUpdatedAt"] == nil && firstUpdates[2]["lastUpdatedAt"] == nil, "单项成功时间持久化且不改变其他订阅")
         let provider = try subscriptions.list()[1]
-        _ = try subscriptions.save(["id": provider["id"]!, "name": "改名订阅", "kind": "subscription", "target": "paoluz", "lastUpdatedAt": 9999])
-        try check(try subscriptions.snapshot()[1]["lastUpdatedAt"] as? Double == 1000, "改名保留真实时间且拒绝界面覆盖")
+        var renamed = subscriptionPayload("alpha"); renamed["id"] = provider["id"]; renamed["name"] = "改名订阅"; renamed["lastUpdatedAt"] = 9999
+        _ = try subscriptions.save(renamed)
+        try check(try subscriptions.snapshot()[1]["lastUpdatedAt"] as? Double == 1000, "同范围改名保留真实时间且拒绝界面覆盖")
+        let otherID = try subscriptions.save(subscriptionPayload("alpha", script: otherSubscriptionScript.path))["id"] as! String
         let commandID = try subscriptions.save(["name": "命令", "kind": "command", "target": "true"])["id"] as! String
-        try subscriptions.recordSubscriptionSuccess(nil, at: 2000)
-        try check(try subscriptions.snapshot().prefix(4).allSatisfy { $0["lastUpdatedAt"] as? Double == 2000 }, "全部成功同步刷新各个订阅的时间")
-        try check(try subscriptions.snapshot().last?["lastUpdatedAt"] == nil, "更新时间不写入非订阅项目")
-        try subscriptions.recordSubscriptionSuccess("sc", at: 3000)
+        try subscriptions.recordSubscriptionSuccess(subscriptions.list()[0], at: 2000)
+        try check(try subscriptions.snapshot().prefix(4).allSatisfy { $0["lastUpdatedAt"] as? Double == 2000 }, "全部成功同步刷新相同脚本各订阅的时间")
+        try check(try subscriptions.snapshot().last?["lastUpdatedAt"] == nil && subscriptions.snapshot()[4]["lastUpdatedAt"] == nil, "更新时间不影响其他脚本或非订阅项目")
+        try subscriptions.recordSubscriptionSuccess(subscriptions.list()[2], at: 3000)
         let latestUpdates = try subscriptions.snapshot()
         try check(latestUpdates[2]["lastUpdatedAt"] as? Double == 3000 && latestUpdates[0]["lastUpdatedAt"] as? Double == 2000 && latestUpdates[1]["lastUpdatedAt"] as? Double == 2000, "单项更新不覆盖全部更新及其他订阅的时间")
         for invalid in [0.0, -.infinity, .nan, 253402300800.0] {
-            try rejects("无效成功时间不写入配置") { try subscriptions.recordSubscriptionSuccess("sc", at: invalid) }
+            try rejects("无效成功时间不写入配置") { try subscriptions.recordSubscriptionSuccess(subscriptions.list()[2], at: invalid) }
         }
-        try subscriptions.delete(commandID)
-        try rejects("订阅范围拒绝任意命令") { _ = try subscriptions.save(["name": "非法", "kind": "subscription", "target": "all; echo bad"]) }
+        for invalid in ["--all", "alpha beta", "alpha;echo", "alpha\n", "订阅", String(repeating: "a", count: 81)] {
+            try rejects("订阅 ID 拒绝选项、空白、命令与过长值") { _ = try subscriptions.save(subscriptionPayload(invalid)) }
+        }
+        try rejects("订阅脚本必须可读取") { _ = try subscriptions.save(subscriptionPayload("alpha", script: "/missing.py")) }
+        var invalidInterpreter = subscriptionPayload("alpha"); invalidInterpreter["shell"] = "/bin/bash -c"
+        try rejects("订阅解释器不接受附加参数") { _ = try subscriptions.save(invalidInterpreter) }
+        let oldID = UUID().uuidString.lowercased(), oldPath = root.appendingPathComponent("old-subscription.json")
+        try writeJSON([["id": oldID, "name": "旧订阅", "kind": "subscription", "target": "custom-id", "shell": "/bin/zsh", "lastUpdatedAt": 700]], oldPath)
+        let legacySubscriptions = ConsoleActions(path: oldPath)
+        try check(try legacySubscriptions.list().count == 1, "缺少脚本的旧订阅记录仍可列出")
+        try rejects("旧订阅未配置脚本时拒绝执行") { _ = try legacySubscriptions.start(["id": oldID]) }
+        var migrated = subscriptionPayload("custom-id"); migrated["id"] = oldID
+        _ = try legacySubscriptions.save(migrated)
+        try check(try legacySubscriptions.snapshot()[0]["lastUpdatedAt"] as? Double == 700, "旧订阅补齐脚本保留成功时间")
+        let subscriptionID = try subscriptions.list()[1]["id"] as! String
         try ConsoleActions.subscriptionLock.withLock {
-            try rejects("新旧订阅入口共用互斥锁") { _ = try ConsoleActions.updateSubscription(nil) }
+            _ = try subscriptions.start(["id": subscriptionID])
+            let blockedDeadline = Date().addingTimeInterval(3)
+            while try subscriptions.snapshot()[1]["state"] as? String == "running", Date() < blockedDeadline { Thread.sleep(forTimeInterval: 0.01) }
+            try check(try subscriptions.snapshot()[1]["state"] as? String == "failed" && subscriptions.snapshot()[1]["lastUpdatedAt"] as? Double == 2000, "跨实例订阅更新互斥且拒绝时不改成功时间")
         }
-        try check(try subscriptions.snapshot()[2]["lastUpdatedAt"] as? Double == 3000, "被拒绝的更新不改变上次成功时间")
+        _ = try subscriptions.start(["id": subscriptionID])
+        var subscriptionDeadline = Date().addingTimeInterval(3)
+        while try subscriptions.snapshot()[1]["state"] as? String == "running", Date() < subscriptionDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        try check(try subscriptions.snapshot()[1]["state"] as? String == "succeeded", "通用订阅脚本异步完成")
+        try check(try String(contentsOf: root.appendingPathComponent("invocation.txt")) == "sync\n--id\nalpha\n", "订阅参数分离传递并使用脚本目录")
+        _ = try subscriptions.start(["id": subscriptions.list()[0]["id"]!])
+        subscriptionDeadline = Date().addingTimeInterval(3)
+        while try subscriptions.snapshot()[0]["state"] as? String == "running", Date() < subscriptionDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        try check(try String(contentsOf: root.appendingPathComponent("invocation.txt")) == "sync\n", "全部订阅不传单项参数")
+        let customInterpreter = root.appendingPathComponent("custom interpreter")
+        try FileManager.default.createSymbolicLink(atPath: customInterpreter.path, withDestinationPath: "/bin/bash")
+        var customRuntime = subscriptionPayload("alpha"); customRuntime["id"] = subscriptionID; customRuntime["shell"] = customInterpreter.path
+        _ = try subscriptions.save(customRuntime)
+        _ = try subscriptions.start(["id": subscriptionID])
+        subscriptionDeadline = Date().addingTimeInterval(3)
+        while try subscriptions.snapshot()[1]["state"] as? String == "running", Date() < subscriptionDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        try check(try subscriptions.snapshot()[1]["state"] as? String == "succeeded" && String(contentsOf: root.appendingPathComponent("invocation.txt")) == "sync\n--id\nalpha\n", "用户选择的解释器绝对路径支持空格")
+        try "exit 9\n".write(to: subscriptionScript, atomically: true, encoding: .utf8)
+        let successfulTime = try subscriptions.snapshot()[1]["lastUpdatedAt"] as? Double
+        _ = try subscriptions.start(["id": subscriptionID])
+        subscriptionDeadline = Date().addingTimeInterval(3)
+        while try subscriptions.snapshot()[1]["state"] as? String == "running", Date() < subscriptionDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        try check(try subscriptions.snapshot()[1]["state"] as? String == "failed" && subscriptions.snapshot()[1]["lastUpdatedAt"] as? Double == successfulTime, "失败订阅保持上次成功时间")
+        try subscriptions.delete(commandID); try subscriptions.delete(otherID)
         let console = ConsoleActions(path: root.appendingPathComponent("console.json"))
         let script = root.appendingPathComponent("test script.sh")
         try "sleep 0.2\nprintf done > result.txt\n".write(to: script, atomically: true, encoding: .utf8)
@@ -293,7 +394,8 @@ import AppKit
         _ = try iconStore.list()
         try check(try Data(contentsOf: iconStore.path) == cached, "高清缓存不重复改写")
         try check(try iconStore.snapshot()[0]["iconPixels"] == nil, "缓存元数据不上传")
-        let backend = try NativeBackend(token: "test-only", console: console, screens: LocalScreens())
+        let httpScreens = LocalScreens()
+        let backend = try NativeBackend(token: "test-only", console: console, screens: httpScreens)
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)
         while !server.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
@@ -304,6 +406,15 @@ import AppKit
         let pairURL = url.deletingLastPathComponent().appendingPathComponent("pairing/complete")
         let pairResult = try HTTPFetch.request(pairURL, body: ["code": localCode]) as! JSONObject
         let webToken = pairResult["token"] as! String
+        let permissionsURL = url.deletingLastPathComponent().appendingPathComponent("permissions")
+        try check((try HTTPFetch.request(permissionsURL, token: webToken, header: "X-Pairing-Token") as? JSONObject)?["controlAllowed"] as? Bool == false, "真实HTTP默认只读")
+        try check(backend.handle(HTTPMessage(method: "POST", path: "/api/console/run", headers: ["x-pairing-token": webToken], body: try jsonData(["id": actionID]))).0 == 403, "只读网页不能执行已配置命令")
+        let httpScreenID = try httpScreens.list()[0]["id"] as! String
+        try httpScreens.setControl(id: httpScreenID, allowed: true)
+        try check((try HTTPFetch.request(permissionsURL, token: webToken, header: "X-Pairing-Token") as? JSONObject)?["controlAllowed"] as? Bool == true, "本机授权后HTTP回读可控制")
+        for path in ["/api/subscriptions", "/api/subscriptions/update"] {
+            try check(backend.handle(HTTPMessage(method: path.hasSuffix("update") ? "POST" : "GET", path: path, headers: ["x-pairing-token": webToken], body: Data("{}".utf8))).0 == 404, "旧订阅入口已移除")
+        }
         try check((try HTTPFetch.request(url, token: webToken, header: "X-Pairing-Token") as? JSONObject)?["schema"] as? Int == 1, "HTTP 网页配对读取本地看板")
         try rejects("网页会话不能管理 Key") {
             _ = try HTTPFetch.request(url.deletingLastPathComponent().appendingPathComponent("relay/keys"), token: webToken, body: ["action": "delete"], header: "X-Pairing-Token")
@@ -377,7 +488,7 @@ import AppKit
         _ = try otherStore.saveStation(["type": "sub2api", "name": "另一地址", "url": "http://127.0.0.1:\(port.rawValue)", "confirmAddressChange": true])
         try check(try keyStore.usage(keyID, force: false)["error"] != nil, "其他进程改地址后不能复用旧额度缓存")
         try FileManager.default.removeItem(at: keyStore.stationPath)
-        try check(try keyStore.usageURL().host == "sub2api.818tu.com", "旧 Key 升级保持原站点归属")
+        try rejects("缺少站点配置不能猜测Key归属") { _ = try keyStore.usageURL() }
         _ = try managedKeys(["action": "delete", "id": keyID], localStore: keyStore)
         try check(try keyStore.list().isEmpty && Secrets.get("company-" + keyID) == nil, "删除配置和钥匙串条目")
         print("原生 \(checks) 项断言通过：任务生命周期、未读、歌词、HTTP 边界与鉴权")

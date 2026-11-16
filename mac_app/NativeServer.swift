@@ -21,8 +21,7 @@ final class LocalKeys {
             _ = try Self.stationURL(address)
             return value
         }
-        // 旧版 Key 固定属于此站点，升级时保留归属，不能随新地址悄悄转发。
-        return try records().isEmpty ? nil : ["type": "sub2api", "name": "Sub2API", "url": "https://sub2api.818tu.com"]
+        return nil
     }
     func saveStation(_ value: JSONObject) throws -> JSONObject {
         lock.lock(); defer { lock.unlock() }
@@ -212,7 +211,6 @@ final class LocalHTTPServer {
 final class NativeBackend {
     let lock = NSLock(), collector = CodexCollector(), music = NativeMusic(), keys = LocalKeys()
     let console: ConsoleActions
-    let subscriptionRoot = URL(fileURLWithPath: "/path/to/subscription-bridge", isDirectory: true)
     var quota: JSONObject = ["plan": "未知", "primary": NSNull(), "secondary": NSNull(), "quotaAvailable": false]
     var conversations: JSONObject = ["conversationsAvailable": false, "conversations": [JSONObject]()]
     var server: LocalHTTPServer?
@@ -236,27 +234,13 @@ final class NativeBackend {
             return ["id": id, "name": name, "usage": JSONObject()]
         } ?? []
     }
-    func subscriptions() throws -> [JSONObject] {
-        let script = subscriptionRoot.appendingPathComponent("manage.py")
-        guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
-        let result = try execute("/usr/bin/python3", [script.path, "list"], timeout: 20)
-        guard result.0 == 0, let text = String(data: result.1, encoding: .utf8) else { throw ControlError("无法读取订阅列表") }
-        return text.split(whereSeparator: { $0.isNewline }).compactMap { line in
-            let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
-            guard parts.count == 2, ["paoluz", "sc", "just"].contains(parts[0]) else { return nil }
-            return ["id": parts[0], "remark": parts[1]]
-        }
-    }
-    func updateSubscription(_ identity: String?) throws -> JSONObject {
-        try ConsoleActions.updateSubscription(identity)
-    }
     func executeOpen(_ thread: String) throws -> Bool {
         let result = try execute("/usr/bin/open", ["-b", "com.openai.codex", "codex://threads/\(thread)?hostId=local"], timeout: 5)
         return result.0 == 0
     }
     func handle(_ request: HTTPMessage) -> (Int, String, Data) {
         func json(_ value: Any, _ code: Int = 200) -> (Int, String, Data) { (code, "application/json", (try? jsonData(value)) ?? Data("{}".utf8)) }
-        let files = ["/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/relay.js": ("relay.js", "text/javascript"), "/music.js": ("music.js", "text/javascript"), "/subscriptions.js": ("subscriptions.js", "text/javascript"), "/console.js": ("console.js", "text/javascript"), "/style.css": ("style.css", "text/css"), "/manifest.json": ("manifest.json", "application/manifest+json"), "/icon.svg": ("icon.svg", "image/svg+xml"), "/codex-icon.png": ("codex-icon.png", "image/png"), "/netease-music.png": ("netease-music.png", "image/png")]
+        let files = ["/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/relay.js": ("relay.js", "text/javascript"), "/music.js": ("music.js", "text/javascript"), "/console.js": ("console.js", "text/javascript"), "/style.css": ("style.css", "text/css"), "/manifest.json": ("manifest.json", "application/manifest+json"), "/icon.svg": ("icon.svg", "image/svg+xml"), "/app-icon.png": ("app-icon.png", "image/png"), "/music-note.svg": ("music-note.svg", "image/png")]
         if request.method == "GET", let file = files[request.path], let data = try? Data(contentsOf: NativePaths.resources.appendingPathComponent("web/" + file.0)) { return (200, file.1, data) }
         guard request.path.hasPrefix("/api/") else { return json([:], 404) }
         if request.method == "GET", request.path == "/api/mode" { return json(["mode": "pairing"]) }
@@ -268,29 +252,35 @@ final class NativeBackend {
         }
         let manager = secureEqual(request.headers["x-display-token"] ?? "", token)
         guard manager || localPairing.authorized(request.headers["x-pairing-token"] ?? "", userAgent: request.headers["user-agent"] ?? "") else { return json([:], 401) }
+        func readReply(_ value: Any) -> (Int, String, Data) {
+            // 额度查询可能等待外部响应，回包前复核，避免被踢会话收到迟到数据。
+            guard manager || localPairing.authorized(request.headers["x-pairing-token"] ?? "") else { return json([:], 401) }
+            return json(value)
+        }
+        let canControl = manager || localPairing.allowsControl(request.headers["x-pairing-token"] ?? "")
         do {
             let parts = URLComponents(string: "http://localhost" + request.path)
             let path = parts?.path ?? ""
             if request.method == "GET" {
                 switch path {
-                case "/api/status": return json(status())
-                case "/api/console": return json(try console.snapshot())
-                case "/api/subscriptions": return json(try subscriptions())
-                case "/api/music": return json(music.snapshot())
-                case "/api/relay/keys": return json(try keys.list())
+                case "/api/status": var data = status(); data["controlAllowed"] = canControl; return readReply(data)
+                case "/api/permissions": return readReply(["controlAllowed": canControl])
+                case "/api/console": return readReply(try console.snapshot())
+                case "/api/music": var data = music.snapshot(); data["controlAllowed"] = canControl; return readReply(data)
+                case "/api/relay/keys": return readReply(try keys.list())
                 case "/api/relay/usage":
                     let id = parts?.queryItems?.first { $0.name == "id" }?.value ?? ""
-                    return json(try keys.usage(id, force: parts?.queryItems?.contains { $0.name == "refresh" && $0.value == "1" } == true))
+                    return readReply(try keys.usage(id, force: parts?.queryItems?.contains { $0.name == "refresh" && $0.value == "1" } == true))
                 default: return json([:], 404)
                 }
             }
             let value = try jsonObject(request.body)
+            if ["/api/console/run", "/api/music/control", "/api/open"].contains(path), !canControl { return json(["error": "read_only"], 403) }
             switch path {
             case "/api/console/run":
                 guard request.method == "POST" else { return json([:], 405) }
                 do { return json(try console.start(value)) }
                 catch { return json(["error": "项目不可执行、已删除或已有任务运行"], 409) }
-            case "/api/subscriptions/update": return json(try updateSubscription(value["id"] as? String))
             case "/api/relay/keys":
                 // 在规范化路径后鉴权，查询参数不能绕过管理写入限制。
                 guard manager else { return json([:], 403) }
@@ -336,12 +326,12 @@ final class NativeBackend {
                     if let command = (response["commands"] as? [JSONObject])?.first,
                        let id = command["requestId"] as? String {
                         let ok: Bool
-                        if command["kind"] as? String == "open", let thread = command["threadId"] as? String {
+                        let allowed = cloudCommandAllowed(command)
+                        if allowed, command["kind"] as? String == "open", let thread = command["threadId"] as? String,
+                           (self.status()["conversations"] as? [JSONObject] ?? []).contains(where: { $0["threadId"] as? String == thread }) {
                             ok = (try? self.executeOpen(thread)) == true
-                        } else if command["kind"] as? String == "console", let target = command["id"] as? String {
+                        } else if allowed, command["kind"] as? String == "console", let target = command["id"] as? String {
                             ok = (try? self.console.start(["id": target])) != nil
-                        } else if command["kind"] as? String == "subscriptions" {
-                            ok = (try? self.updateSubscription(command["id"] as? String)) != nil
                         } else if command["kind"] as? String == "usage", let key = command["id"] as? String {
                             let usage = try? self.keys.usage(key, force: true)
                             ok = usage != nil

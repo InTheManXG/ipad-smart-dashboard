@@ -8,6 +8,25 @@ function formatPlan(plan) {
 }
 let token = localStorage.getItem('pairing-token') || '';
 let busy = false, lastSuccess = 0, wakeLock = null, wantWake = true;
+let controlAllowed = false;
+let pairingInvalidated = false;
+function invalidatePairing() {
+  if (pairingInvalidated) return;
+  pairingInvalidated = true; token = ''; controlAllowed = false;
+  localStorage.removeItem('pairing-token');
+  // 先清除弹窗与敏感展示，再重载；慢网或重载失败也不能残留上一台 Mac 的内容。
+  const pages = document.querySelector('.pages');
+  if (pages) pages.style.display = 'none';
+  for (const id of ['attention-dialog', 'console-confirm']) $(id)?.close();
+  for (const id of ['task-list', 'windows', 'console-actions', 'relay-cards', 'lyric-track']) $(id)?.replaceChildren?.();
+  for (const id of ['attention-title', 'open-result', 'footer-note', 'summary', 'task-count', 'plan', 'quota-note', 'list-note', 'console-confirm-name', 'console-confirm-target', 'console-confirm-description', 'console-status', 'relay-message', 'music-title', 'music-artist', 'music-source', 'music-control-result']) {
+    if ($(id)) $(id).textContent = '';
+  }
+  updateAttention(null);
+  if (typeof window !== 'undefined' && window.dispatchEvent) window.dispatchEvent(new Event('pairing-invalid'));
+  location.reload();
+}
+globalThis.invalidatePairing = invalidatePairing;
 function element(tag, className, text) {
   const node = document.createElement(tag); node.className = className;
   if (text !== undefined) node.textContent = text; // 对话标题始终当作文本，不能注入 HTML。
@@ -27,6 +46,7 @@ function taskDuration(seconds) {
   return (h ? `${h}:` : '') + `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 function render(data) {
+  controlAllowed = data.controlAllowed === true;
   updateAttention(data.attention);
   const {tasks, counts} = taskOverview(data);
   const total = data.conversationsTotal ?? tasks.length;
@@ -35,7 +55,7 @@ function render(data) {
     const row = element('button', `task ${task.state in labels ? task.state : 'unknown'}`);
     // 【业务逻辑】上游列表仅保留完成后未读的对话；总体 done 不代表未读。
     row.type = 'button';
-    row.disabled = !task.threadId;
+    row.disabled = !task.threadId || !controlAllowed;
     row.setAttribute('aria-label', `打开 Codex 对话：${task.title}`);
     // 【业务逻辑】仅使用上游真实 ID 打开对话，不能按同名标题猜测目标。
     row.onclick = () => openConversation(task.threadId);
@@ -58,6 +78,7 @@ function render(data) {
   $('summary').textContent = data.conversationsAvailable ? `${counts.running} 个进行中 · ${counts.waiting} 个待处理 · ${counts.error} 个错误 · ${counts.done} 个完成未读` : '计数暂不可用';
   $('list-note').textContent = data.conversationsTotal > tasks.length ? `展示最近 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '';
   $('plan').textContent = formatPlan(data.plan);
+  $('open-codex').disabled = !controlAllowed;
   $('quota-note').textContent = !data.quotaAvailable ? '额度暂不可用' : data.cached ? '额度为上次缓存' : '';
   $('windows').replaceChildren();
   for (const w of data.quotaAvailable ? [data.primary, data.secondary] : []) {
@@ -83,15 +104,12 @@ async function refresh() {
   try {
     const response = await fetch('./api/status',{headers:{'X-Pairing-Token':token},cache:'no-store',signal:controller.signal});
     if (response.status === 401) {
-      localStorage.removeItem('pairing-token'); token = '';
-      // 撤销配对后销毁整页模块状态，避免旧额度、歌词或迟到响应继续留在界面。
-      document.querySelector('.pages').style.display = 'none';
-      updateAttention(null);
-      location.reload();
+      invalidatePairing();
       return;
     }
     if (!response.ok) throw new Error('Mac 状态服务未连接');
     const data = await response.json();
+    if (pairingInvalidated) return;
     if (!Number.isFinite(data.servedAt) || Date.now()/1000 - data.servedAt > 20) throw new Error('状态数据已过期');
     render(data); lastSuccess = Date.now(); $('connection').className = 'connected'; $('connection').textContent = '● 已连接';
   } catch (error) {
@@ -112,8 +130,10 @@ function updateAttention(next, reset = true) {
   }
   // 【业务逻辑】同一待处理阶段只弹一次；解除后再次等待可重新提醒，连接失败不清除已忽略状态。
   $('attention-title').textContent = attention.title;
+  $('open-codex').disabled = !controlAllowed;
+  if (!controlAllowed) $('open-result').textContent = '当前网页仅可查看，请在 Mac App 中授权控制';
   if (attention.threadId !== dismissedThread && !$('settings').open && !$('attention-dialog').open) {
-    $('open-result').textContent = '';
+    $('open-result').textContent = controlAllowed ? '' : '当前网页仅可查看，请在 Mac App 中授权控制';
     $('attention-dialog').showModal();
   }
 }
@@ -126,6 +146,7 @@ $('attention-dialog').onclick = event => {
   if (attention) return openConversation(attention.threadId);
 };
 async function openConversation(threadId) {
+  if (!controlAllowed) { $('footer-note').textContent = '当前网页仅可查看，请在 Mac App 中授权控制'; return; }
   if (!threadId || opening) return;
   opening = true; $('open-codex').disabled = true;
   $('open-result').textContent = '正在请求 Mac 打开对话…';
@@ -133,6 +154,8 @@ async function openConversation(threadId) {
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 18000);
   try {
     const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Pairing-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
+    if (response.status === 401) { invalidatePairing(); return; }
+    if (response.status === 403) { controlAllowed = false; throw new Error('read-only'); }
     if (!response.ok || (await response.json()).ok !== true) throw new Error('open failed');
     // 状态可能已切换到另一对话，旧请求的回执不能关闭新提醒。
     $('footer-note').textContent = '';
@@ -140,9 +163,9 @@ async function openConversation(threadId) {
       dismissedThread = threadId; $('attention-dialog').close();
     }
   } catch {
-    $('footer-note').textContent = '未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试';
+    $('footer-note').textContent = controlAllowed ? '未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试' : '当前网页仅可查看，请在 Mac App 中授权控制';
     if (attention?.threadId === threadId) $('open-result').textContent = '未能确认打开，请检查 Mac 是否在线或任务是否仍待处理，然后重试。';
-  } finally { clearTimeout(timeout); opening = false; $('open-codex').disabled = false; }
+  } finally { clearTimeout(timeout); opening = false; $('open-codex').disabled = !controlAllowed; }
 }
 $('settings-form').addEventListener('submit', async event => {
   event.preventDefault(); $('pairing-error').textContent = '';

@@ -4,7 +4,7 @@ import Darwin
 func migrate(_ root: URL) throws -> JSONObject {
     guard !FileManager.default.fileExists(atPath: NativePaths.config.path) else { throw ControlError("已存在原生配置，拒绝覆盖；原文件均保留") }
     let token = trimmed(try String(contentsOf: root.appendingPathComponent(".display-token"), encoding: .utf8))
-    try Secrets.set("display-token", token)
+    try Secrets.set(NativePaths.identityAccount("display-token"), token)
     var config = try configuration()
     let previous = root.appendingPathComponent(".mac-app.json")
     if FileManager.default.fileExists(atPath: previous.path) {
@@ -45,7 +45,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]
             status["localPairingCode"] = runtime["localPairingCode"] ?? ""
-            if (runtime["publicURL"] as? String ?? "https://ipad.iamxg.com") == publicAddress(config) {
+            if (runtime["publicURL"] as? String ?? "") == publicAddress(config) {
                 status["paired"] = runtime["paired"] as? Bool ?? false
                 status["pairingCode"] = runtime["pairingCode"] ?? NSNull()
                 status["pairingExpiresAt"] = runtime["pairingExpiresAt"] ?? NSNull()
@@ -58,15 +58,39 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     if action == "screens" {
         var result: JSONObject = ["localScreens": try LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json")).list(), "publicScreens": [JSONObject]()]
         if !publicAddress(config).isEmpty {
-            do { result["publicScreens"] = try pairingManage("api/pairing/screens")["screens"] ?? [JSONObject]() }
+            do {
+                let origin = publicAddress(config)
+                result["publicScreens"] = (try pairingManage("api/pairing/screens")["screens"] as? [JSONObject] ?? []).map { item in
+                    var screen = item
+                    screen["controlAllowed"] = CloudPermissions().allows(origin: origin, id: screen["id"] as? String ?? "")
+                    return screen
+                }
+            }
             catch { result["publicError"] = "公网网页列表读取失败，请确认服务已更新且连接正常。" }
         }
         return result
     }
+    if action == "screen-permission" {
+        guard let id = value["id"] as? String, UUID(uuidString: id) != nil,
+              let scope = value["scope"] as? String, let allowed = value["controlAllowed"] as? Bool else { throw ControlError("网页权限参数不正确") }
+        if scope == "local" {
+            try LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json")).setControl(id: id, allowed: allowed)
+        } else if scope == "public" {
+            // 先收回本机授权再撤销服务端，网络失败也不能继续执行。
+            let store = CloudPermissions(), origin = publicAddress(config)
+            try store.set(origin: origin, id: id, allowed: false)
+            _ = try pairingManage("api/pairing/permission", body: ["id": id, "controlAllowed": allowed])
+            if allowed { try store.set(origin: origin, id: id, allowed: true) }
+        } else { throw ControlError("未知配对类型") }
+        return ["ok": true]
+    }
     if action == "screen-kick" {
         guard let id = value["id"] as? String, UUID(uuidString: id) != nil, let scope = value["scope"] as? String else { throw ControlError("网页标识不正确") }
         if scope == "local" { try LocalScreens(path: NativePaths.data.appendingPathComponent("local-screens.json")).revoke(id: id) }
-        else if scope == "public" { _ = try pairingManage("api/pairing/kick", body: ["id": id]) }
+        else if scope == "public" {
+            try CloudPermissions().set(origin: publicAddress(config), id: id, allowed: false)
+            _ = try pairingManage("api/pairing/kick", body: ["id": id])
+        }
         else { throw ControlError("未知配对类型") }
         return ["ok": true]
     }

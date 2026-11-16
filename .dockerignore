@@ -1,0 +1,13 @@
+# 构建上下文仅发送服务端运行文件，避免上传本机凭据、Git 历史和 App 产物。
+**
+!deploy/
+!deploy/Dockerfile
+!server.py
+!pairing.py
+!relay.py
+!music.py
+!web/
+!web/**
+web/**/.DS_Store
+web/**/.env
+**/.DS_Store

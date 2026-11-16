@@ -4,3 +4,13 @@ __pycache__/
 .relay-data/
 .mac-app.json
 .build/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+*.mobileprovision
+release/
+dist/

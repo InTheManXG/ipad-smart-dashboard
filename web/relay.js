@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
 let keys = [], loading = false, refreshPending = false;
+let relayInvalidated = false;
 function node(tag, className, text) {
   const value = document.createElement(tag);
   value.className = className;
@@ -14,6 +15,7 @@ async function api(path) {
     const response = await fetch(`./api/relay/${path}`, {
       headers:{'X-Pairing-Token':token}, signal:controller.signal, cache:'no-store'
     });
+    if (response.status === 401) globalThis.invalidatePairing?.();
     if (!response.ok) throw new Error(response.status === 401 ? '访问口令无效，请重新连接' : '操作失败，请检查输入或稍后重试');
     return await response.json();
   } finally { clearTimeout(timer); }
@@ -57,7 +59,9 @@ async function refreshRelay(force = false) {
   loading = true;
   $('relay-refresh').disabled = true; $('relay-refresh').textContent = '更新中…';
   try {
-    keys = await api('keys');
+    const receivedKeys = await api('keys');
+    if (relayInvalidated) return;
+    keys = receivedKeys;
     $('relay-message').textContent = keys.length ? '' : '尚未配置 Key';
     const cards = keys.map(item => {
       const card = node('article','relay-card');
@@ -70,10 +74,12 @@ async function refreshRelay(force = false) {
       try {
         const path = `usage?id=${encodeURIComponent(item.id)}`;
         let data = await api(`${path}${force ? '&refresh=1' : ''}`);
+        if (relayInvalidated) return;
         // 公网仅收到 Key 名单时可能尚无额度快照，不能把空对象画成查询成功。
         if (!force && !data.error && !Number.isFinite(data.updatedAt)) data = await api(`${path}&refresh=1`);
+        if (relayInvalidated) return;
         renderUsage(cards[index], item, data.error || Number.isFinite(data.updatedAt) ? data : {error:'尚未收到额度，请稍后更新'});
-      } catch { renderUsage(cards[index], item, {error:'查询失败，请稍后重试'}); }
+      } catch { if (relayInvalidated) return; renderUsage(cards[index], item, {error:'查询失败，请稍后重试'}); }
     }
   } catch (error) {
     // 认证或网络失败时移除旧额度，避免误认为仍是当前值。
@@ -88,6 +94,10 @@ async function refreshRelay(force = false) {
 // 手动更新绕过短期缓存，自动轮询仍沿用一分钟缓存。
 $('relay-refresh').onclick = () => refreshRelay(true);
 window.addEventListener('paired', () => refreshRelay());
+window.addEventListener('pairing-invalid', () => {
+  relayInvalidated = true; keys = []; refreshPending = false;
+  $('relay-cards').replaceChildren();
+});
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelay(); });
 setInterval(refreshRelay, 60000);
 refreshRelay();

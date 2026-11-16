@@ -4,8 +4,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import subprocess
-import threading
 import uuid
 import pairing
 from urllib.parse import urlsplit, parse_qs
@@ -17,47 +15,9 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = Path.home() / 'Library/Application Support/ESP32CodexBridge/config.json'
-FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/relay.js': ('relay.js', 'text/javascript'), '/music.js': ('music.js', 'text/javascript'), '/subscriptions.js': ('subscriptions.js', 'text/javascript'), '/console.js': ('console.js', 'text/javascript'),
+FILES = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/relay.js': ('relay.js', 'text/javascript'), '/music.js': ('music.js', 'text/javascript'), '/console.js': ('console.js', 'text/javascript'),
          '/style.css': ('style.css', 'text/css'), '/manifest.json': ('manifest.json', 'application/manifest+json'),
-         '/icon.svg': ('icon.svg', 'image/svg+xml'), '/codex-icon.png': ('codex-icon.png', 'image/png'), '/netease-music.png': ('netease-music.png', 'image/png')}
-
-SUBSCRIPTION_ROOT = Path('/path/to/subscription-bridge')
-SUBSCRIPTION_SCRIPT = SUBSCRIPTION_ROOT / 'manage.py'
-SUBSCRIPTION_IDS = {'paoluz', 'sc', 'just'}
-SUBSCRIPTION_LOCK = threading.Lock()
-
-def subscription_command(identity=None):
-    """只调用固定订阅入口，不把订阅 URL、凭据或脚本输出回传网页。"""
-    if not SUBSCRIPTION_SCRIPT.is_file():
-        raise FileNotFoundError('subscription script unavailable')
-    if identity is not None and identity not in SUBSCRIPTION_IDS:
-        raise ValueError('unknown subscription')
-    if not SUBSCRIPTION_LOCK.acquire(blocking=False):
-        raise RuntimeError('subscription update is already running')
-    try:
-        command = ['python3', str(SUBSCRIPTION_SCRIPT), 'sync']
-        if identity is not None:
-            command += ['--id', identity]
-        result = subprocess.run(command, cwd=SUBSCRIPTION_ROOT, capture_output=True,
-                                text=True, timeout=300, check=False)
-    finally:
-        SUBSCRIPTION_LOCK.release()
-    if result.returncode != 0:
-        raise RuntimeError('subscription update failed')
-    return {'ok': True}
-
-def subscription_list():
-    """只返回订阅 ID 和备注，避免把私密订阅地址带到界面。"""
-    if not SUBSCRIPTION_SCRIPT.is_file():
-        raise FileNotFoundError('subscription script unavailable')
-    result = subprocess.run(['python3', str(SUBSCRIPTION_SCRIPT), 'list'], cwd=SUBSCRIPTION_ROOT,
-                            capture_output=True, text=True, timeout=20, check=False)
-    if result.returncode != 0:
-        raise RuntimeError('subscription list failed')
-    return [{'id': identity, 'remark': remark} for line in result.stdout.splitlines()
-            for identity, separator, remark in [line.partition('\t')]
-            if separator and identity in SUBSCRIPTION_IDS and remark]
-
+         '/icon.svg': ('icon.svg', 'image/svg+xml'), '/app-icon.png': ('app-icon.png', 'image/png'), '/music-note.svg': ('music-note.svg', 'image/png')}
 
 def authorized(header, token):
     return hmac.compare_digest(header.encode(), token.encode())
@@ -139,28 +99,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if pairing.route(self): return
-        if self.path == '/api/subscriptions/update':
-            if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
-                self.reply(401, b'{}', 'application/json')
-                return
-            try:
-                length = int(self.headers.get('Content-Length', '0'))
-                if not 0 < length <= 256:
-                    raise ValueError('invalid body size')
-                value = json.loads(self.rfile.read(length))
-                if not isinstance(value, dict):
-                    raise ValueError('invalid body')
-                identity = value.get('id')
-                if identity is not None and not isinstance(identity, str):
-                    raise ValueError('invalid identity')
-                self.reply(200, json.dumps(subscription_command(identity)).encode(), 'application/json')
-            except ValueError:
-                self.reply(400, b'{"error":"invalid_request"}', 'application/json')
-            except RuntimeError as error:
-                self.reply(409 if 'already running' in str(error) else 503, b'{"error":"subscription_update_failed"}', 'application/json')
-            except (OSError, subprocess.SubprocessError):
-                self.reply(503, b'{"error":"subscription_unavailable"}', 'application/json')
-            return
         if self.path in ('/api/music/control', '/api/music/ack'):
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
                 self.reply(401, b'{}', 'application/json')
@@ -229,19 +167,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if pairing.route(self): return
-        if self.path == '/api/subscriptions':
+        if self.path == '/api/permissions':
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
-                self.reply(401, b'{}', 'application/json')
-                return
-            try:
-                self.reply(200, json.dumps(subscription_list(), ensure_ascii=False).encode(), 'application/json')
-            except (OSError, RuntimeError, subprocess.SubprocessError):
-                self.reply(503, b'{"error":"subscription_unavailable"}', 'application/json')
-            return
+                self.reply(401, b'{}', 'application/json'); return
+            self.reply(200, b'{"controlAllowed":true}', 'application/json'); return
         if self.path == '/api/music':
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
                 self.reply(401, b'{}', 'application/json'); return
-            value = music.get()
+            value = music.get() | {'controlAllowed': True}
             self.reply(200, json.dumps(value, ensure_ascii=False).encode(), 'application/json')
             return
         if urlsplit(self.path).path in ('/api/relay/keys', '/api/relay/usage'):
@@ -251,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
             if not authorized(self.headers.get('X-Display-Token', ''), self.server.token):
                 self.reply(401, b'{}', 'application/json'); return
             try:
-                value = read_status()
+                value = read_status() | {'controlAllowed': True}
                 self.reply(200, json.dumps(value, ensure_ascii=False).encode(), 'application/json')
             except (OSError, ValueError, KeyError):
                 self.reply(503, b'{"error":"bridge_unavailable"}', 'application/json')
@@ -263,16 +196,20 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    # 独立的看板口令可撤销，不复用具备其他能力的桥接器令牌。
-    path = ROOT / '.display-token'
-    if not path.exists():
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'w') as output:
-            output.write(secrets.token_urlsafe(24))
-    server = ThreadingHTTPServer((os.environ.get('DISPLAY_BIND', '0.0.0.0'), 18086), Handler)
-    server.token = path.read_text().strip()
-    if os.environ.get('DISPLAY_MODE', 'legacy') == 'pairing':
+    mode = os.environ.get('DISPLAY_MODE', 'pairing')
+    server = ThreadingHTTPServer((os.environ.get('DISPLAY_BIND', '127.0.0.1'), 18086), Handler)
+    server.token = ''
+    if mode == 'pairing':
+        # 公网配对模式不需要旧管理口令，也不能向只读源码目录写入私密文件。
         server.pairing = pairing.Store(Path(os.environ.get('RELAY_DATA_DIR', ROOT / '.relay-data')) / 'pairing.sqlite')
+    elif mode == 'legacy':
+        path = ROOT / '.display-token'
+        if not path.exists():
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as output: output.write(secrets.token_urlsafe(24))
+        server.token = path.read_text().strip()
+    else:
+        raise ValueError('unsupported DISPLAY_MODE')
     print('iPad 看板已启动，端口 18086', flush=True)
     server.serve_forever()
 

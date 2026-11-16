@@ -16,6 +16,10 @@ class RelayTests(unittest.TestCase):
         self.patch = patch.object(relay, 'DATA', Path(self.directory.name))
         self.patch.start()
         relay.CACHE.clear()
+        self.station('https://relay.example.test')
+
+    def station(self, url):
+        (relay.DATA / 'station.json').write_text(json.dumps({'type': 'sub2api', 'url': url}))
 
     def tearDown(self):
         self.patch.stop()
@@ -53,6 +57,9 @@ class RelayTests(unittest.TestCase):
         opener.open.return_value = io.BytesIO(json.dumps(payload).encode())
         with patch('relay.build_opener', return_value=opener):
             result = relay.read_usage(identity)
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.full_url, 'https://relay.example.test/v1/usage')
+            self.assertEqual(request.get_header('Authorization'), 'Bearer test-secret')
             self.assertEqual(result['dailyUsed'], 123.76)
             self.assertEqual(result['remaining'], 176.24)
             self.assertNotIn('secret', json.dumps(result))
@@ -72,6 +79,51 @@ class RelayTests(unittest.TestCase):
         self.assertIsNone(relay.number(True))
         self.assertIsNone(relay.number(10 ** 400))
         self.assertIsNone(relay.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://example.com'))
+
+    def test_usage_requires_configured_https_station(self):
+        relay.change_key({'action': 'save', 'name': '测试', 'key': 'test-secret'})
+        identity = relay.public_keys()[0]['id']
+        (relay.DATA / 'station.json').unlink()
+        with patch('relay.build_opener') as opener:
+            with self.assertRaises(ValueError):
+                relay.read_usage(identity)
+            for url in ('http://localhost', 'http://relay.example.test', 'https://user:pass@relay.example.test',
+                        'https://relay.example.test/other', 'https://relay.example.test?token=secret',
+                        'https://relay.example.test#fragment', 'https://relay.example.test:70000',
+                        'https://relay.example.test/a/../v1', 'https://relay.example.test\\@other.test', ''):
+                self.station(url)
+                with self.assertRaises(ValueError, msg=url):
+                    relay.read_usage(identity)
+            for invalid in ({'type': 'other', 'url': 'https://relay.example.test'}, [], {'type': 'sub2api'}):
+                (relay.DATA / 'station.json').write_text(json.dumps(invalid))
+                with self.assertRaises(ValueError):
+                    relay.read_usage(identity)
+            opener.assert_not_called()
+        for url in ('https://relay.example.test', 'https://relay.example.test/', 'https://relay.example.test/v1', 'https://relay.example.test/v1/'):
+            self.station(url)
+            self.assertEqual(relay.usage_url(), 'https://relay.example.test/v1/usage')
+
+    def test_usage_cache_and_inflight_reply_follow_station(self):
+        relay.change_key({'action': 'save', 'name': '测试', 'key': 'test-secret'})
+        identity = relay.public_keys()[0]['id']
+        payload = {'isValid': True, 'remaining': 10, 'unit': 'USD'}
+        opener = Mock()
+        opener.open.side_effect = lambda *args, **kwargs: io.BytesIO(json.dumps(payload).encode())
+        with patch('relay.build_opener', return_value=opener):
+            relay.read_usage(identity)
+            self.station('https://another.example.test/v1')
+            relay.read_usage(identity)
+            self.assertEqual(opener.open.call_count, 2, '站点切换不能复用旧缓存')
+            self.assertEqual(opener.open.call_args.args[0].full_url, 'https://another.example.test/v1/usage')
+
+            def change_station(*args, **kwargs):
+                self.station('https://third.example.test')
+                return io.BytesIO(json.dumps(payload).encode())
+
+            opener.open.side_effect = change_station
+            with self.assertRaises(ValueError):
+                relay.read_usage(identity, force=True)
+            self.assertEqual(relay.CACHE[identity][0][0], 'https://another.example.test/v1/usage')
 
 
 class RelayHTTPTests(unittest.TestCase):
@@ -103,3 +155,13 @@ class RelayHTTPTests(unittest.TestCase):
             with urlopen(request) as response:
                 self.assertEqual(json.load(response)['remaining'], 12)
             read.assert_called_once_with('test', force=True)
+
+    def test_usage_without_station_is_rejected_before_request(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(relay, 'DATA', Path(directory)), patch('relay.build_opener') as opener:
+            relay.change_key({'action': 'save', 'name': '测试', 'key': 'test-secret'})
+            identity = relay.public_keys()[0]['id']
+            request = Request(self.url + '/api/relay/usage?id=' + identity, headers={'X-Display-Token': 'test-only'})
+            with self.assertRaises(HTTPError) as error:
+                urlopen(request)
+            self.assertEqual(error.exception.code, 400)
+            opener.assert_not_called()

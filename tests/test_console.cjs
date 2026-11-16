@@ -8,13 +8,14 @@ function node() {
 const nodes = new Map(['console-actions', 'console-status', 'console-refresh','console-confirm','console-confirm-name','console-confirm-target','console-confirm-description','console-confirm-run','console-confirm-cancel'].map(id => [id, node()]));
 const pages = {clientWidth:1024,scrollLeft:1024};
 const calls = [], timers = [], intervals = [], item = {id:'d46acd26-c9c3-4afc-9ac6-64b9088c7005',name:'<script>test</script>',kind:'script',state:'idle'};
-let items = [item], status = 200;
+const events = {};
+let items = [item], status = 200, controlAllowed = true;
 const ctx = vm.createContext({
   document:{hidden:false,querySelector(){return pages;},getElementById:id => nodes.get(id),createElement:tag => Object.assign(node(),{tag}),addEventListener(){}},
-  window:{addEventListener(){}}, location:{hash:'#console'},
+  window:{addEventListener(name, callback){events[name] = callback;}}, location:{hash:'#console'},
   localStorage:{getItem(){return 'test-only';}},sessionStorage:{getItem(){return null;}}, AbortSignal,
   setInterval(fn){intervals.push(fn);},setTimeout(fn,delay){timers.push({fn,delay});},
-  fetch:async (path, options) => {calls.push({path,options}); return {ok:status===200,status,json:async()=>options.method==='POST'?{ok:true}:items};}
+  fetch:async (path, options) => {calls.push({path,options}); return {ok:status===200,status,json:async()=>options.method==='POST'?{ok:true}:path.endsWith('/permissions')?{controlAllowed}:items};}
 });
 const run = code => vm.runInContext(code,ctx);
 const takeTimer = delay => {
@@ -156,10 +157,29 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   }
   assert.ok(!fs.readFileSync('web/index.html','utf8').includes('id="update-all-subscriptions"'),'网页不再包含固定订阅入口');
   assert.ok(!fs.readFileSync('web/index.html','utf8').includes('src="./subscriptions.js"'));
+  controlAllowed=false;status=200;items=[item];await run('loadConsole()');
+  assert.equal(list.querySelectorAll('button')[0].disabled,true,'只读会话仍显示卡片但禁用执行');
+  const postsBefore=calls.filter(call=>call.options.method==='POST').length;
+  await run('requestConsoleAction('+JSON.stringify(item)+')');
+  assert.equal(calls.filter(call=>call.options.method==='POST').length,postsBefore,'只读会话不能提交执行');
+  assert.match(nodes.get('console-status').textContent,/仅可查看/);
+  controlAllowed=true;
   status=401;await run('loadConsole()');
   assert.equal(list.children.length,0,'撤销后清除可执行卡片');
   assert.match(nodes.get('console-status').textContent,/重新配对/);
   status=200;items=[];await run('loadConsole()');
   assert.match(list.children[0].textContent,/Mac App/);
+  items=[item];await run('loadConsole()');
+  await run('requestConsoleAction('+JSON.stringify(item)+')');
+  assert.equal(nodes.get('console-confirm').open,true);
+  let resolveLate;
+  ctx.fetch = async path => path.endsWith('/permissions') ? {ok:true,json:async()=>({controlAllowed:true})} : new Promise(resolve => {resolveLate=resolve;});
+  const lateLoad = run('loadConsole()'); await new Promise(setImmediate);
+  events['pairing-invalid']();
+  assert.equal(nodes.get('console-confirm').open,false,'统一失效关闭已开的确认框');
+  assert.equal(nodes.get('console-confirm-name').textContent,'','统一失效清理私密名称');
+  resolveLate({ok:true,json:async()=>[item]}); await lateLoad;
+  assert.equal(list.children.length,0,'失效前开始的迟到响应不能重绘历史卡片');
+  assert.equal(run('consoleSelection'),null,'失效后清除待执行项目');
   console.log('快捷控制台渲染、确认、仅 ID 执行、重复点击、结果和失效状态通过');
 })().catch(error => {console.error(error);process.exitCode=1;});

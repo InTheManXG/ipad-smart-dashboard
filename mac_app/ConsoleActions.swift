@@ -68,16 +68,21 @@ final class ConsoleActions {
         guard let name = value["name"] as? String, !trimmed(name).isEmpty, trimmed(name).count <= 60,
               let kind = value["kind"] as? String, ["app", "script", "command", "subscription"].contains(kind),
               let target = value["target"] as? String, !trimmed(target).isEmpty, target.utf8.count <= 4096, !target.contains("\0") else { throw ControlError("请填写名称及有效的应用、脚本或命令") }
-        let shell = value["shell"] as? String ?? "/bin/zsh"
-        guard ["/bin/zsh", "/bin/bash"].contains(shell) else { throw ControlError("请选择 zsh 或 bash") }
+        let shell = value["shell"] as? String ?? (kind == "subscription" ? "/usr/bin/python3" : "/bin/zsh")
+        if kind != "subscription", !["/bin/zsh", "/bin/bash"].contains(shell) { throw ControlError("请选择 zsh 或 bash") }
         let id = value["id"] as? String ?? UUID().uuidString.lowercased()
         guard UUID(uuidString: id) != nil else { throw ControlError("项目标识不正确") }
         var item: JSONObject = ["id": id, "name": trimmed(name), "kind": kind, "target": target, "shell": shell]
+        if kind == "subscription" { item["subscriptionScript"] = value["subscriptionScript"] as? String ?? "" }
         try validateTarget(item)
         if kind == "app" { item["icon"] = Self.icon(target); item["iconPixels"] = 96 }
         return try access { records in
-            // 时间属于订阅范围，改名保留、换范围采用新范围记录；不接受界面传入的时间。
-            if kind == "subscription", let previous = records.first(where: { $0["kind"] as? String == kind && $0["target"] as? String == target && $0["lastUpdatedAt"] != nil }) {
+            // 成功时间属于脚本和订阅范围；旧记录补齐脚本时保留原项目时间，不接受界面覆盖。
+            if kind == "subscription", let previous = records.first(where: {
+                $0["kind"] as? String == kind && $0["target"] as? String == target && $0["lastUpdatedAt"] != nil &&
+                    (($0["subscriptionScript"] as? String == item["subscriptionScript"] as? String && $0["shell"] as? String == shell) ||
+                     ($0["id"] as? String == id && $0["subscriptionScript"] == nil))
+            }) {
                 item["lastUpdatedAt"] = previous["lastUpdatedAt"]
             }
             if value["id"] != nil {
@@ -99,7 +104,14 @@ final class ConsoleActions {
     private func validateTarget(_ item: JSONObject) throws {
         guard let kind = item["kind"] as? String, let target = item["target"] as? String else { throw ControlError("项目配置不完整") }
         if kind == "subscription" {
-            guard ["all", "paoluz", "sc", "just"].contains(target) else { throw ControlError("请选择有效的订阅范围") }
+            guard Self.validSubscriptionID(target) else { throw ControlError("订阅 ID 仅支持 1–80 位字母、数字、点、下划线或连字符，且以字母或数字开头") }
+            guard let script = item["subscriptionScript"] as? String, script.hasPrefix("/"), script.utf8.count <= 4096, !script.contains("\0"),
+                  let interpreter = item["shell"] as? String, interpreter.hasPrefix("/"), interpreter.utf8.count <= 4096, !interpreter.contains("\0") else { throw ControlError("请配置订阅脚本及解释器的绝对路径") }
+            var scriptDirectory: ObjCBool = false, interpreterDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: script, isDirectory: &scriptDirectory), !scriptDirectory.boolValue,
+                  FileManager.default.isReadableFile(atPath: script) else { throw ControlError("订阅脚本不存在或不可读取") }
+            guard FileManager.default.fileExists(atPath: interpreter, isDirectory: &interpreterDirectory), !interpreterDirectory.boolValue,
+                  FileManager.default.isExecutableFile(atPath: interpreter) else { throw ControlError("订阅解释器不存在或不可执行") }
             return
         }
         if kind == "command" { return }
@@ -123,11 +135,18 @@ final class ConsoleActions {
             return snapshot
         }
     }
-    func recordSubscriptionSuccess(_ identity: String?, at timestamp: TimeInterval = Date().timeIntervalSince1970) throws {
-        guard identity == nil || ["paoluz", "sc", "just"].contains(identity!), timestamp.isFinite, timestamp > 0, timestamp <= 253402300799 else { throw ControlError("订阅更新时间无效") }
+    static func validSubscriptionID(_ value: String) -> Bool {
+        value.range(of: #"\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z"#, options: .regularExpression) != nil
+    }
+    func recordSubscriptionSuccess(_ item: JSONObject, at timestamp: TimeInterval = Date().timeIntervalSince1970) throws {
+        guard let target = item["target"] as? String, Self.validSubscriptionID(target),
+              let script = item["subscriptionScript"] as? String, !script.isEmpty, let interpreter = item["shell"] as? String,
+              timestamp.isFinite, timestamp > 0, timestamp <= 253402300799 else { throw ControlError("订阅更新时间无效") }
         try access { records in
-            // 仅在脚本成功后调用；全部更新覆盖各订阅，单项更新不改变“更新全部”的时间。
-            for index in records.indices where records[index]["kind"] as? String == "subscription" && (identity == nil || records[index]["target"] as? String == identity) {
+            // 仅同步同一脚本/解释器的范围，避免多个订阅来源互相覆盖更新时间。
+            for index in records.indices where records[index]["kind"] as? String == "subscription" &&
+                records[index]["subscriptionScript"] as? String == script && records[index]["shell"] as? String == interpreter &&
+                (target == "all" || records[index]["target"] as? String == target) {
                 records[index]["lastUpdatedAt"] = timestamp
             }
         }
@@ -150,34 +169,26 @@ final class ConsoleActions {
             return ["ok": true]
         } catch { lock.unlock(); throw error }
     }
-    // 新旧入口共用互斥锁及原脚本，保留校验和失败回滚。
-    static func updateSubscription(_ identity: String?) throws -> JSONObject {
-        guard identity == nil || ["paoluz", "sc", "just"].contains(identity!) else { throw ControlError("订阅 ID 不正确") }
-        guard subscriptionLock.try() else { throw ControlError("已有订阅更新正在进行") }
-        defer { subscriptionLock.unlock() }
-        let script = URL(fileURLWithPath: "/path/to/subscription-bridge/manage.py")
-        guard FileManager.default.fileExists(atPath: script.path) else { throw ControlError("Mac 上未找到订阅脚本") }
-        var args = [script.path, "sync"]
-        if let identity { args += ["--id", identity] }
-        let result = try execute("/usr/bin/python3", args, timeout: 300)
-        guard result.0 == 0 else { throw ControlError("订阅更新失败，请检查 Surge 和订阅配置") }
-        try ConsoleActions().recordSubscriptionSuccess(identity)
-        return ["ok": true]
-    }
     private func run(_ item: JSONObject) throws -> Int32 {
         let process = Process(), kind = item["kind"] as! String, target = item["target"] as! String
+        if kind == "subscription", !Self.subscriptionLock.try() { throw ControlError("已有订阅更新正在进行") }
+        defer { if kind == "subscription" { Self.subscriptionLock.unlock() } }
         if kind == "subscription" {
-            _ = try Self.updateSubscription(target == "all" ? nil : target)
-            return 0
-        }
-        if kind == "app" {
+            let script = item["subscriptionScript"] as! String
+            process.executableURL = URL(fileURLWithPath: item["shell"] as! String)
+            // 参数单独传递，订阅 ID 不能成为解释器选项或 Shell 命令。
+            process.arguments = [script, "sync"] + (target == "all" ? [] : ["--id", target])
+            process.currentDirectoryURL = URL(fileURLWithPath: script).deletingLastPathComponent()
+        } else if kind == "app" {
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open"); process.arguments = ["-a", target]
         } else {
             guard let shell = item["shell"] as? String, ["/bin/zsh", "/bin/bash"].contains(shell) else { throw ControlError("脚本解释器不正确") }
             process.executableURL = URL(fileURLWithPath: shell)
             process.arguments = kind == "command" ? ["-c", target] : [target]
         }
-        process.currentDirectoryURL = kind == "script" ? URL(fileURLWithPath: target).deletingLastPathComponent() : FileManager.default.homeDirectoryForCurrentUser
+        if kind != "subscription" {
+            process.currentDirectoryURL = kind == "script" ? URL(fileURLWithPath: target).deletingLastPathComponent() : FileManager.default.homeDirectoryForCurrentUser
+        }
         // 后台任务不等待终端输入、不回传可能含密钥的输出；常用工具路径显式提供给 launchd 环境。
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -189,6 +200,7 @@ final class ConsoleActions {
         DispatchQueue.global().asyncAfter(deadline: .now() + 300, execute: timer)
         defer { timer.cancel() }
         process.waitUntilExit()
+        if kind == "subscription", process.terminationStatus == 0 { try recordSubscriptionSuccess(item) }
         return process.terminationStatus
     }
 }

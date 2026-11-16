@@ -1,4 +1,4 @@
-"""公司中转站：密钥只在服务端保存，请求限定为固定用量接口。"""
+"""旧模式中转站：密钥留在本机配置，只向明确配置的 HTTPS 站点查询额度。"""
 import json
 import math
 import os
@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from urllib.error import HTTPError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 DATA = Path(os.environ.get('RELAY_DATA_DIR', str(Path(__file__).resolve().parent / '.relay-data')))
@@ -85,17 +86,35 @@ def number(value):
     return value if type(value) in (int, float) and abs(value) < 1e15 and math.isfinite(value) else None
 
 
+def usage_url():
+    path = DATA / 'station.json'
+    if not path.exists():
+        raise ValueError('station required')
+    station = json.loads(path.read_text())
+    if not isinstance(station, dict) or station.get('type') != 'sub2api' or not isinstance(station.get('url'), str):
+        raise ValueError('invalid station')
+    address = station['url'].strip().rstrip('/')
+    parts = urlsplit(address)
+    # 沿用原生站点格式，但旧服务端接口不允许回环 HTTP 或额外路径携带认证请求。
+    if (parts.scheme != 'https' or not parts.hostname or parts.username is not None or parts.password is not None
+            or parts.query or parts.fragment or parts.path not in ('', '/v1')
+            or '\\' in address or any(character.isspace() or ord(character) < 32 for character in address)
+            or (parts.port is not None and not 1 <= parts.port <= 65535)):
+        raise ValueError('invalid station URL')
+    return urlunsplit((parts.scheme, parts.netloc, '/v1/usage', '', ''))
+
+
 def read_usage(identity, force=False):
     with LOCK:
         item = next((item for item in read_keys() if item['id'] == identity), None)
         if item is None:
             raise ValueError('unknown key')
+        url, key = usage_url(), item['key']
         cached = CACHE.get(identity)
-        if not force and cached and time.time() - cached['updatedAt'] < 60:
-            return cached
-        key = item['key']
+        if not force and cached and cached[0] == (url, key) and time.time() - cached[1]['updatedAt'] < 60:
+            return cached[1]
     try:
-        request = Request('https://sub2api.818tu.com/v1/usage', headers={'Authorization': 'Bearer ' + key})
+        request = Request(url, headers={'Authorization': 'Bearer ' + key})
         with build_opener(NoRedirect).open(request, timeout=12) as response:
             raw = response.read(1_000_001)
         if len(raw) > 1_000_000:
@@ -115,10 +134,10 @@ def read_usage(identity, force=False):
     except (OSError, ValueError):
         result = {'error': '查询失败，请检查 Key 或稍后重试', 'updatedAt': time.time()}
     with LOCK:
-        # 查询过程中可能发生换钥或删除，旧回执不能覆盖新配置的缓存。
+        # 换钥、删除或切换站点后，旧回执不能冒充新配置的额度。
         current = next((item for item in read_keys() if item['id'] == identity), None)
-        if current and current['key'] == key:
-            CACHE[identity] = result
+        if current and current['key'] == key and usage_url() == url:
+            CACHE[identity] = ((url, key), result)
         else:
-            raise ValueError('key changed')
+            raise ValueError('key or station changed')
     return result

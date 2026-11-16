@@ -1,19 +1,27 @@
 services:
   ipad-dashboard:
-    image: local/codex-status-relay:0.5.12
-    container_name: codex-ipad-dashboard
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ipad-smart-dashboard:local
     restart: unless-stopped
-    entrypoint: ["python3", "/dashboard/server.py"]
-    network_mode: host
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-18086}:18086"
     environment:
-      RELAY_DATA_DIR: /relay-data
-      STATUS_URL: http://127.0.0.1:8787/status
-      DISPLAY_BIND: 127.0.0.1
       DISPLAY_MODE: pairing
-    env_file: .env
+      DISPLAY_BIND: 0.0.0.0
+      RELAY_DATA_DIR: /relay-data
+      # 仅在入口是可信反代且直接覆盖 X-Real-IP 时设为 1。
+      PAIRING_TRUST_PROXY: ${PAIRING_TRUST_PROXY:-0}
     volumes:
-      - ./app:/dashboard:ro
-      - ./relay-data:/relay-data
+      - relay-data:/relay-data
     read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    pids_limit: 128
+
+# Docker 首次创建命名卷会继承镜像目录的非 root 所有者。
+volumes:
+  relay-data:

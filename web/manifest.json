@@ -1,1 +1,1 @@
-{"name":"Codex 工作现场","short_name":"Codex 看板","start_url":"./","display":"standalone","background_color":"#f7f7f8","theme_color":"#f7f7f8","icons":[{"src":"./codex-icon.png","sizes":"1024x1024","type":"image/png","purpose":"any"}]}
+{"name":"iPad 控制台","short_name":"工作看板","start_url":"./","display":"standalone","background_color":"#f7f7f8","theme_color":"#f7f7f8","icons":[{"src":"./app-icon.png","sizes":"1024x1024","type":"image/png","purpose":"any"}]}

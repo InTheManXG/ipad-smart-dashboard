@@ -117,8 +117,13 @@ class Store:
               code TEXT UNIQUE, expires REAL NOT NULL DEFAULT 0, seen REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS sessions (secret TEXT PRIMARY KEY, device TEXT NOT NULL, expires REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS screens (secret TEXT PRIMARY KEY REFERENCES sessions(secret) ON DELETE CASCADE,
-              id TEXT UNIQUE NOT NULL, remark TEXT NOT NULL DEFAULT '', ua TEXT NOT NULL DEFAULT '', seen REAL NOT NULL DEFAULT 0);
+              id TEXT UNIQUE NOT NULL, remark TEXT NOT NULL DEFAULT '', ua TEXT NOT NULL DEFAULT '', seen REAL NOT NULL DEFAULT 0,
+              control_allowed INTEGER NOT NULL DEFAULT 0);
         ''')
+        if 'control_allowed' not in {row[1] for row in self.db.execute('PRAGMA table_info(screens)')}:
+            # 升级不能把原先可操作的会话视为已明确授权，统一迁移为只读。
+            self.db.execute('ALTER TABLE screens ADD COLUMN control_allowed INTEGER NOT NULL DEFAULT 0')
+        self.db.commit()
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
         self.snapshots, self.pending = {}, {}
@@ -165,8 +170,31 @@ class Store:
         with self.lock, self.db:
             for (hashed,) in self.db.execute('SELECT secret FROM sessions WHERE device=? AND expires>?', (ident, time.time())).fetchall():
                 self._screen(hashed)
-            rows = self.db.execute('SELECT c.id,c.remark,c.ua,c.seen,s.expires FROM screens c JOIN sessions s ON c.secret=s.secret WHERE s.device=? AND s.expires>? ORDER BY c.seen DESC,c.id', (ident, time.time())).fetchall()
-            return {'screens': [dict(zip(('id','remark','ua','seen','expires'), row)) for row in rows]}
+            rows = self.db.execute('SELECT c.id,c.remark,c.ua,c.seen,s.expires,c.control_allowed FROM screens c JOIN sessions s ON c.secret=s.secret WHERE s.device=? AND s.expires>? ORDER BY c.seen DESC,c.id', (ident, time.time())).fetchall()
+            return {'screens': [dict(zip(('id','remark','ua','seen','expires'), row[:5])) | {'controlAllowed': bool(row[5])} for row in rows]}
+
+    def permissions(self, ident, token):
+        with self.lock:
+            row = self.db.execute('SELECT c.id,c.control_allowed FROM screens c JOIN sessions s ON c.secret=s.secret WHERE s.secret=? AND s.device=? AND s.expires>?',
+                                  (credential(token), ident, time.time())).fetchone()
+            if not row: raise Failure(401, 'unauthorized')
+            return {'screenId': row[0], 'controlAllowed': bool(row[1])}
+
+    def permission(self, ident, value):
+        screen_id, allowed = identity(value.get('id')), value.get('controlAllowed')
+        if type(allowed) is not bool: raise Failure(400, 'invalid_permission')
+        with self.condition, self.db:
+            row = self.db.execute('SELECT c.secret FROM screens c JOIN sessions s ON c.secret=s.secret WHERE c.id=? AND s.device=? AND s.expires>?',
+                                  (screen_id, ident, time.time())).fetchone()
+            if not row: raise Failure(404, 'screen_not_found')
+            self.db.execute('UPDATE screens SET control_allowed=? WHERE secret=?', (int(allowed), row[0]))
+            if not allowed:
+                # 撤权后未送达的控制命令也须失效，只读额度查询不受影响。
+                for command in self.pending.get(ident, {}).values():
+                    if command['owner'] == row[0] and command['payload']['kind'] != 'usage':
+                        command['result'] = {'ok': False, 'error': 'control_not_allowed'}
+                self.condition.notify_all()
+            return {'ok': True}
 
     def remark(self, ident, value):
         screen_id, note = identity(value.get('id')), value.get('remark')
@@ -315,6 +343,11 @@ class Store:
             return record['usage']
 
     def command(self, ident, value, kind, owner, wait=8):
+        if kind not in ('open', 'music', 'console', 'usage'): raise Failure(404, 'unsupported')
+        with self.lock:
+            if self.authenticate(owner, 'web') != ident: raise Failure(401, 'unauthorized')
+            if kind != 'usage' and not self.permissions(ident, owner)['controlAllowed']:
+                raise Failure(403, 'control_not_allowed')
         if kind == 'open':
             target = identity(value.get('threadId'))
             status = self.read(ident, 'status')
@@ -335,11 +368,6 @@ class Store:
             if not any(item['id'] == target for item in items): raise Failure(404, 'action_not_found')
             if any(item['state'] == 'running' for item in items): raise Failure(409, 'device_busy')
             payload = {'kind': 'console', 'id': target}
-        elif kind == 'subscriptions':
-            target = value.get('id')
-            if target is not None and target not in ('paoluz', 'sc', 'just'):
-                raise Failure(400, 'invalid_subscription')
-            payload = {'kind': 'subscriptions', 'id': target}
         else:
             self.read(ident, 'usage', value.get('id'))
             payload = {'kind': 'usage', 'id': value['id']}
@@ -347,7 +375,11 @@ class Store:
             # 多网页可能同时刷新额度；只读查询排队，控制指令仍避免重复执行。
             if kind == 'usage' and not self.condition.wait_for(lambda: not self.pending.get(ident), timeout=wait):
                 raise Failure(409, 'device_busy')
-            self.authenticate(owner, 'web')
+            if self.authenticate(owner, 'web') != ident: raise Failure(401, 'unauthorized')
+            permission = self.permissions(ident, owner)
+            if kind != 'usage' and not permission['controlAllowed']: raise Failure(403, 'control_not_allowed')
+            # 设备端用自己的本地授权表二次校验此 ID，不信任中继声称已授权。
+            payload['screenId'] = permission['screenId']
             commands = self.pending.setdefault(ident, {})
             if commands: raise Failure(409, 'device_busy')
             request_id = str(uuid.uuid4())
@@ -357,9 +389,11 @@ class Store:
             try:
                 self.condition.wait_for(lambda: item['result'] is not None, timeout=wait)
                 if item['result'] is None: raise Failure(504, 'unconfirmed')
-                if not item['result']['ok']: raise Failure(409, 'unconfirmed')
                 # 撤销后不会因晚到的回执重新授予读取权限。
-                self.authenticate(owner, 'web')
+                if self.authenticate(owner, 'web') != ident: raise Failure(401, 'unauthorized')
+                if kind != 'usage' and not self.permissions(ident, owner)['controlAllowed']:
+                    raise Failure(403, 'control_not_allowed')
+                if not item['result']['ok']: raise Failure(409, 'unconfirmed')
                 return item['result'].get('usage', item['result'])
             finally:
                 self.pending.pop(ident, None)
@@ -396,7 +430,7 @@ def route(handler):
         elif method == 'POST' and path == '/api/pairing/complete':
             store.throttle(('complete', peer), 10, 60); store.throttle(('complete-global', ''), 300, 60)
             result = store.complete(value, handler.headers.get('User-Agent', ''))
-        elif path in ('/api/device/exchange', '/api/pairing/code', '/api/pairing/revoke', '/api/pairing/device', '/api/pairing/screens', '/api/pairing/screen', '/api/pairing/kick'):
+        elif path in ('/api/device/exchange', '/api/pairing/code', '/api/pairing/revoke', '/api/pairing/device', '/api/pairing/screens', '/api/pairing/screen', '/api/pairing/kick', '/api/pairing/permission'):
             ident = store.authenticate(handler.headers.get('X-Device-Token', ''), 'device')
             store.throttle(('device', ident), 600, 60)
             if path == '/api/device/exchange' and method == 'POST': result = store.exchange(ident, value)
@@ -406,6 +440,7 @@ def route(handler):
             elif path == '/api/pairing/screens' and method == 'GET': result = store.screens(ident)
             elif path == '/api/pairing/screen' and method == 'POST': result = store.remark(ident, value)
             elif path == '/api/pairing/kick' and method == 'POST': result = store.kick(ident, value)
+            elif path == '/api/pairing/permission' and method == 'POST': result = store.permission(ident, value)
             else: raise Failure(405, 'method_not_allowed')
         else:
             token = handler.headers.get('X-Pairing-Token', '')
@@ -413,23 +448,23 @@ def route(handler):
             store.throttle(('web', digest(token)), 360, 60)
             if path == '/api/pairing/leave' and method == 'POST': result = store.leave(token)
             elif path == '/api/pairing/status' and method == 'GET': result = store.state(ident)
-            elif path == '/api/status' and method == 'GET': result = store.read(ident, 'status')
+            elif path == '/api/permissions' and method == 'GET': result = store.permissions(ident, token)
+            elif path == '/api/status' and method == 'GET': result = store.read(ident, 'status') | store.permissions(ident, token)
             elif path == '/api/console' and method == 'GET': result = store.read(ident, 'console')
             elif path == '/api/console/run' and method == 'POST': result = store.command(ident, value, 'console', token)
-            elif path == '/api/music' and method == 'GET': result = store.read(ident, 'music')
+            elif path == '/api/music' and method == 'GET': result = store.read(ident, 'music') | store.permissions(ident, token)
             elif path == '/api/relay/keys' and method == 'GET': result = store.read(ident, 'keys')
             elif path == '/api/relay/usage' and method == 'GET':
                 query = parse_qs(urlsplit(handler.path).query); key = query.get('id', [''])[0]
                 result = store.command(ident, {'id': key}, 'usage', token) if query.get('refresh') == ['1'] else store.read(ident, 'usage', key)
-            elif path == '/api/subscriptions' and method == 'GET':
-                result = [{'id': 'paoluz', 'remark': 'Paoluz'}, {'id': 'sc', 'remark': '顺畅网络'}, {'id': 'just', 'remark': '管人痴·ZDQ'}]
-            elif path == '/api/subscriptions/update' and method == 'POST':
-                result = store.command(ident, value, 'subscriptions', token, wait=300)
             elif path in ('/api/open', '/api/music/control') and method == 'POST':
                 result = store.command(ident, value, 'open' if path == '/api/open' else 'music', token)
             else:
                 # 配对身份绝不能回落到旧的全局 Key、订阅脚本或音乐写入接口。
                 raise Failure(404, 'unsupported')
+            # 主动退出已删除自己的会话，应正常确认；其他回包仍须防止中途撤销。
+            if not (path == '/api/pairing/leave' and method == 'POST') and store.authenticate(token, 'web') != ident:
+                raise Failure(401, 'unauthorized')
         handler.reply(200, json.dumps(result, ensure_ascii=False, allow_nan=False).encode(), 'application/json')
     except Failure as error:
         handler.reply(error.status, json.dumps({'error': error.message}).encode(), 'application/json')

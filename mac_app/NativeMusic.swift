@@ -164,7 +164,7 @@ final class NativeMusic {
             do {
                 let response = try publishDevice("api/device/exchange", ["music": snapshot()])
                 if let command = (response["commands"] as? [JSONObject])?.first, let id = command["requestId"] as? String {
-                    let result = control(command, started: started)
+                    let result = cloudCommandAllowed(command) ? control(command, started: started) : ["ok": false, "error": "read_only"]
                     let next = snapshot()
                     _ = try publishDevice("api/device/exchange", ["music": next, "acks": [["requestId": id, "ok": result["ok"] as? Bool == true]]])
                 }

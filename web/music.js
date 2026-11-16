@@ -2,6 +2,8 @@ const musicNode = id => document.getElementById(id);
 let musicSnapshot = null, musicReceived = 0, musicBusy = false;
 let lyricKey = '', renderedSnapshot = null, lastLyricFrame = null;
 let musicControlBusy = false, musicRevision = 0;
+let musicControlAllowed = false;
+let musicInvalidated = false;
 
 function lyricFrame(snapshot, elapsed) {
   if (!snapshot || elapsed > 8 || snapshot.state === 'offline') return {title:'等待音乐连接', artist:'Mac 上的音乐同步暂未连接', state:'未连接', current:'♪'};
@@ -70,7 +72,7 @@ function renderMusic() {
   // 无歌词也显示真实播放进度；断线清零，不能继续推演旧歌曲的位置。
   musicNode('music-progress').max = frame.duration > 0 ? frame.duration : 1;
   musicNode('music-progress').value = Number.isFinite(frame.position) ? frame.position : 0;
-  const available = Number.isFinite(frame.position) && !!musicSnapshot?.trackId;
+  const available = musicControlAllowed && Number.isFinite(frame.position) && !!musicSnapshot?.trackId;
   for (const action of ['previous', 'replay', 'toggle', 'next']) musicNode(`music-${action}`).disabled = musicControlBusy || !available;
   const toggle = musicNode('music-toggle'), playing = musicSnapshot?.playing === true;
   if (toggle.dataset.playing !== String(playing)) {
@@ -82,6 +84,7 @@ function renderMusic() {
 }
 
 async function controlMusic(action) {
+  if (!musicControlAllowed) { musicNode('music-control-result').textContent = '当前网页仅可查看，请在 Mac App 中授权控制'; return; }
   if (musicControlBusy || !musicSnapshot?.trackId || (performance.now() - musicReceived) / 1000 > 8) return;
   const token = localStorage.getItem('pairing-token');
   if (!token) return;
@@ -92,8 +95,11 @@ async function controlMusic(action) {
   try {
     const response = await fetch('./api/music/control', {method:'POST',headers:{'Content-Type':'application/json','X-Pairing-Token':token},
       body:JSON.stringify({action,trackId:musicSnapshot.trackId}),signal:controller.signal});
+    if (response.status === 401) { globalThis.invalidatePairing?.(); return; }
+    if (response.status === 403) { musicControlAllowed = false; throw new Error('read-only'); }
     if (!response.ok) throw new Error('unconfirmed');
     const result = await response.json();
+    if (musicInvalidated) return;
     if (result.ok !== true) throw new Error('unconfirmed');
     musicNode('music-control-result').textContent = '';
     if (result.snapshot) {
@@ -104,7 +110,7 @@ async function controlMusic(action) {
     } else await refreshMusic();
   } catch {
     // 超时不自动重试，避免上一曲/下一曲在回执丢失时执行两次。
-    musicNode('music-control-result').textContent = '未能确认操作，请检查播放器后重试';
+    musicNode('music-control-result').textContent = musicControlAllowed ? '未能确认操作，请检查播放器后重试' : '当前网页仅可查看，请在 Mac App 中授权控制';
   } finally { clearTimeout(timeout); musicControlBusy = false; renderMusic(); }
 }
 for (const action of ['previous', 'replay', 'next']) musicNode(`music-${action}`).onclick = () => controlMusic(action);
@@ -113,15 +119,17 @@ musicNode('music-toggle').onclick = () => controlMusic(musicSnapshot?.playing ? 
 async function refreshMusic() {
   if (musicBusy || document.hidden) return;
   const token = localStorage.getItem('pairing-token');
-  if (!token) { musicSnapshot = null; renderMusic(); return; }
+  if (!token) { musicSnapshot = null; musicControlAllowed = false; renderMusic(); return; }
   musicBusy = true;
   const started = performance.now(), revision = musicRevision;
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch('./api/music', {headers:{'X-Pairing-Token':token}, cache:'no-store', signal:controller.signal});
+    if (response.status === 401) { globalThis.invalidatePairing?.(); return; }
     if (!response.ok) throw new Error('music unavailable');
     const snapshot = await response.json();
     if (revision !== musicRevision) return;
+    musicControlAllowed = snapshot.controlAllowed === true;
     musicSnapshot = snapshot;
     const received = performance.now();
     // 服务器进度在响应发出前计算；用半个往返耗时估计回程延迟，不依赖设备时钟一致。
@@ -142,3 +150,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 refreshMusic();
 
 if (typeof window !== 'undefined') window.addEventListener('paired', () => refreshMusic());
+if (typeof window !== 'undefined') window.addEventListener('pairing-invalid', () => {
+  musicInvalidated = true; musicRevision++; musicSnapshot = null; musicControlAllowed = false;
+  renderMusic();
+});

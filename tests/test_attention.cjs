@@ -10,7 +10,7 @@ const get = id => {
 const context = vm.createContext({document:{getElementById:get,hidden:true,addEventListener(){}}, navigator:{},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},sessionStorage:{getItem(){return '';}}, setInterval(){}, Date,fetch:async()=>({ok:false,status:401})});
 vm.runInContext(fs.readFileSync('web/app.js','utf8'), context);
 const run = code => vm.runInContext(code, context);
-run('updateAttention({threadId:"a",title:"任务 A"})');
+run('controlAllowed=true; updateAttention({threadId:"a",title:"任务 A"})');
 assert.equal(get('attention-dialog').shown,1);
 run('dismissAttention(); updateAttention({threadId:"a",title:"任务 A"})');
 assert.equal(get('attention-dialog').open,false);
@@ -57,17 +57,17 @@ for (const id of ['task-list','windows']) {
   get(id).replaceChildren = function(...items){this.children=items;};
   get(id).append = function(...items){this.children.push(...items);};
 }
-run("render({conversationsAvailable:true,conversations:[{title:'双状态',threadId:'a',state:'running',unread:true}],quotaAvailable:false})");
+run("render({controlAllowed:true,conversationsAvailable:true,conversations:[{title:'双状态',threadId:'a',state:'running',unread:true}],quotaAvailable:false})");
 const row = get('task-list').children[0];
 assert.equal(row.className,'task running');
 assert.ok(row.children.some(node => node.textContent === '正在进行'));
 assert.ok(row.children.some(node => node.className === 'unread-mark' && node.textContent === '完成未读'));
 assert.ok(row.children.findIndex(node => node.className === 'unread-mark') < row.children.findIndex(node => node.className === 'badge'));
 assert.equal(row.children.at(-1).className,'badge');
-run("render({conversationsAvailable:true,conversations:[{title:'已读仍运行',threadId:'a',state:'running',unread:false}],quotaAvailable:false})");
+run("render({controlAllowed:true,conversationsAvailable:true,conversations:[{title:'已读仍运行',threadId:'a',state:'running',unread:false}],quotaAvailable:false})");
 assert.ok(!get('task-list').children[0].children.some(node => node.className === 'unread-mark'));
 
-run("render({conversationsAvailable:true,conversations:[{title:'计时',threadId:'a',state:'running',elapsedSeconds:125}],quotaAvailable:false})");
+run("render({controlAllowed:true,conversationsAvailable:true,conversations:[{title:'计时',threadId:'a',state:'running',elapsedSeconds:125}],quotaAvailable:false})");
 assert.equal(get('task-list').children[0].children.at(-2).textContent,'02:05');
 assert.equal(get('task-list').children[0].children.at(-1).textContent,'正在进行');
 
@@ -86,21 +86,36 @@ context.document.hidden = false;
   context.fetch = success;
   await run('refresh()');
   assert.equal(get('connection').className,'connected');
+  run("render({controlAllowed:false,conversationsAvailable:true,conversations:[{title:'只读任务',threadId:'a',state:'running'}],quotaAvailable:false})");
+  assert.equal(get('task-list').children[0].disabled,true,'只读会话不允许点击任务');
+  let openedReadOnly=false;context.fetch=async()=>{openedReadOnly=true;throw Error('must not call');};
+  await run("openConversation('a')");
+  assert.equal(openedReadOnly,false);
+  assert.match(get('footer-note').textContent,/仅可查看/);
+  run("updateAttention({threadId:'read-only-attention',title:'只读待处理'})");
+  assert.equal(get('attention-dialog').open,true,'只读会话继续显示待处理提醒');
+  assert.equal(get('open-codex').disabled,true,'提醒保留展示但禁用控制');
+  assert.match(get('open-result').textContent,/仅可查看/);
   // 被踢下线须立即隐藏旧页面并重载，清除各模块缓存；网络失败不走此路径。
   let reloads = 0;
   const pages = {style:{}};
   context.document.querySelector = selector => selector === '.pages' ? pages : null;
   context.location = {reload(){reloads++;}};
-  run("render({conversationsAvailable:true,conversations:[{title:'旧任务',threadId:'old',state:'running'}],quotaAvailable:false})");
+  run("render({controlAllowed:true,conversationsAvailable:true,conversations:[{title:'旧任务',threadId:'old',state:'running'}],quotaAvailable:false})");
   let removed;
   context.localStorage.removeItem = key => { removed = key; };
   context.fetch = async () => ({ok:false,status:401});
   get('settings').close();
+  get('console-confirm').showModal();
+  get('console-confirm-name').textContent='旧项目名称';
   await run('refresh()');
   assert.equal(run('token'), '');
   assert.equal(removed, 'pairing-token');
   assert.equal(pages.style.display, 'none', '失效后不能继续展示旧看板');
   assert.equal(reloads, 1, '重载销毁任务、音乐、额度和控制台的旧模块状态');
+  assert.equal(get('console-confirm').open,false,'失效后立即关闭页面之外的确认框');
+  assert.equal(get('console-confirm-name').textContent,'','重载前清除旧项目名称');
+  assert.equal(get('task-list').children.length,0,'重载前清除历史任务');
   run("token = ''");
   await run('refresh()');
   assert.equal(get('connection').className,'disconnected');

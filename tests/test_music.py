@@ -1,19 +1,12 @@
-import importlib.util
 import json
-from pathlib import Path
 import unittest
 import threading
 import time
-import tempfile
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 import music
 import test_server
-
-spec = importlib.util.spec_from_file_location('music_bridge', Path(__file__).resolve().parents[1] / 'music/bridge.py')
-bridge = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bridge)
 
 
 def snapshot():
@@ -23,88 +16,6 @@ def snapshot():
 
 
 class MusicTests(unittest.TestCase):
-    def test_track_identity_survives_netease_seek(self):
-        metadata = {'bundleIdentifier': 'com.netease.163music', 'title': '歌曲', 'artist': '歌手',
-                    'album': '专辑', 'duration': 200, 'elapsedTimeNow': 90, 'playing': True, 'contentItemIdentifier': 'before'}
-        with patch.object(bridge.subprocess, 'check_output', side_effect=[json.dumps(metadata).encode(),
-                json.dumps(metadata | {'elapsedTimeNow': 0, 'contentItemIdentifier': 'after'}).encode(),
-                json.dumps(metadata | {'title': '另一首歌'}).encode()]):
-            before, after, other = bridge.read_player(), bridge.read_player(), bridge.read_player()
-        self.assertEqual(before['trackId'], after['trackId'])
-        self.assertNotEqual(before['trackId'], other['trackId'])
-
-    def test_lost_ack_does_not_repeat_native_command(self):
-        command = {'requestId': 'test-request', 'trackId': 'a' * 64, 'action': 'next', 'expiresIn': 8}
-        with tempfile.TemporaryDirectory() as folder:
-            token = Path(folder) / 'token'
-            token.write_text('test-only')
-            with patch('sys.argv', ['bridge.py', '--url', 'http://127.0.0.1:18088', '--token-file', str(token)]), \
-                    patch.object(bridge, 'read_player', return_value=snapshot() | {'album': '测试专辑'}), \
-                    patch.object(bridge, 'find_lyrics', return_value=[]), \
-                    patch.object(bridge, 'publish', return_value=(command, time.monotonic())), \
-                    patch.object(bridge, 'execute_control', return_value=snapshot()) as execute, \
-                    patch.object(bridge, 'send', side_effect=OSError('ack lost')), \
-                    patch.object(bridge.time, 'sleep', side_effect=[None, RuntimeError('stop test')]):
-                with self.assertRaisesRegex(RuntimeError, 'stop test'):
-                    bridge.main()
-                execute.assert_called_once()
-
-    def test_fast_site_control_does_not_wait_for_slow_site(self):
-        command = {'requestId': 'fast-request', 'trackId': 'a' * 64, 'action': 'pause', 'expiresIn': 8}
-        slow_finished = threading.Event()
-        executed = threading.Event()
-        order = []
-
-        def publish(url, token, value):
-            if url.endswith(':18088'):
-                executed.wait(.5)
-                slow_finished.set()
-                return None, time.monotonic()
-            return command, time.monotonic()
-
-        def execute(*args):
-            order.append(slow_finished.is_set())
-            executed.set()
-            return snapshot()
-
-        with tempfile.TemporaryDirectory() as folder:
-            token = Path(folder) / 'token'
-            token.write_text('test-only')
-            with patch('sys.argv', ['bridge.py', '--url', 'http://127.0.0.1:18088',
-                                   '--url', 'https://example.test', '--token-file', str(token)]), \
-                    patch.object(bridge, 'read_player', return_value=snapshot() | {'album': '测试专辑'}) as read, \
-                    patch.object(bridge, 'find_lyrics', return_value=[]), \
-                    patch.object(bridge, 'publish', side_effect=publish), \
-                    patch.object(bridge, 'execute_control', side_effect=execute), \
-                    patch.object(bridge, 'send', return_value={}), \
-                    patch.object(bridge.time, 'sleep', side_effect=RuntimeError('stop test')) as sleep:
-                with self.assertRaisesRegex(RuntimeError, 'stop test'):
-                    bridge.main()
-                self.assertEqual(order, [False])
-                read.assert_called_once()
-                self.assertGreaterEqual(sleep.call_args.args[0], 0)
-                self.assertLessEqual(sleep.call_args.args[0], .25)
-
-    def test_upload_reuses_connection_and_reconnects_without_retry(self):
-        with patch.dict(bridge._connections, {}, clear=True), \
-                patch.object(bridge.http.client, 'HTTPSConnection') as factory:
-            connection = factory.return_value
-            response = connection.getresponse.return_value.__enter__.return_value
-            response.status = 200
-            response.read.return_value = b'{"ok":true}'
-            for _ in range(2):
-                self.assertTrue(bridge.send('https://example.test/api/music', 'test-only', snapshot())['ok'])
-            factory.assert_called_once()
-            self.assertEqual(connection.request.call_count, 2)
-            connection.request.side_effect = bridge.http.client.RemoteDisconnected('closed')
-            with self.assertRaises(OSError):
-                bridge.send('https://example.test/api/music', 'test-only', snapshot())
-            self.assertEqual(connection.request.call_count, 3, '断线不能立即重发操作')
-            connection.close.assert_called_once()
-            connection.request.side_effect = None
-            bridge.send('https://example.test/api/music', 'test-only', snapshot())
-            self.assertEqual(factory.call_count, 2)
-
     def test_waiting_upload_wakes_when_control_arrives(self):
         music.put(snapshot())
         waiting = threading.Event()
@@ -165,57 +76,6 @@ class MusicTests(unittest.TestCase):
         self.assertFalse(music.control(value)['ok'])
         with self.assertRaises(ValueError):
             music.control(value | {'action': 'rm -rf /'})
-
-    def test_mac_commands_validate_target_and_verify_result(self):
-        command = {'requestId': 'test', 'trackId': 'a' * 64, 'action': 'pause', 'expiresIn': 8}
-        with patch.object(bridge, 'read_player', side_effect=[snapshot(), snapshot() | {'playing': False}]), patch.object(bridge.subprocess, 'run') as run:
-            self.assertTrue(bridge.execute_control(command, time.monotonic()))
-            self.assertEqual(run.call_args.args[0], [bridge.MEDIA_CONTROL, 'pause'])
-        for action, args, result in [('next', ['next-track'], snapshot() | {'trackId': 'b' * 64}),
-                                     ('previous', ['previous-track'], snapshot() | {'trackId': 'b' * 64}),
-                                     ('play', ['play'], snapshot())]:
-            with patch.object(bridge, 'read_player', side_effect=[snapshot(), result]), patch.object(bridge.subprocess, 'run') as run:
-                self.assertTrue(bridge.execute_control(command | {'action': action}, time.monotonic()))
-                self.assertEqual(run.call_args.args[0], [bridge.MEDIA_CONTROL, *args])
-        with patch.object(bridge, 'read_player', side_effect=[snapshot(), snapshot(), snapshot() | {'position': 0}]), patch.object(bridge.subprocess, 'run') as run:
-            self.assertTrue(bridge.execute_control(command | {'action': 'replay'}, time.monotonic()))
-            self.assertEqual([call.args[0] for call in run.call_args_list], [[bridge.MEDIA_CONTROL, 'seek', '0'], [bridge.MEDIA_CONTROL, 'play']])
-        with patch.object(bridge, 'read_player', return_value=snapshot() | {'trackId': 'b' * 64}), patch.object(bridge.subprocess, 'run') as run:
-            self.assertFalse(bridge.execute_control(command, time.monotonic()))
-            run.assert_not_called()
-        with patch.object(bridge, 'read_player', return_value=snapshot()), patch.object(bridge.subprocess, 'run') as run:
-            self.assertFalse(bridge.execute_control(command, time.monotonic() - 9))
-            self.assertFalse(bridge.execute_control(command | {'action': 'shell'}, time.monotonic()))
-            run.assert_not_called()
-
-    def test_lrc_timestamps_offset_and_instrumental(self):
-        self.assertEqual(bridge.parse_lrc('[offset:500]\n[00:01.25][01:02.003]同一句\n[00:03.00]\n[ar:作者]'),
-                         [{'time': .75, 'text': '同一句'}, {'time': 2.5, 'text': ''}, {'time': 61.503, 'text': '同一句'}])
-        self.assertEqual(bridge.parse_lrc('没有时间轴'), [])
-        self.assertEqual(bridge.parse_lrc('[00:01]原文\n[00:01]译文')[0]['text'], '原文 / 译文')
-
-    def test_matching_rejects_cover_and_wrong_duration(self):
-        track = snapshot()
-        songs = [{'id': 1, 'name': '测试歌曲', 'artists': [{'name': '翻唱者'}], 'duration': 120000},
-                 {'id': 2, 'name': '测试歌曲', 'artists': [{'name': '歌手'}], 'duration': 200000},
-                 {'id': 3, 'name': '测试歌曲', 'artists': [{'name': '歌手'}], 'duration': 120000}]
-        with patch.object(bridge, 'fetch', side_effect=[{'result': {'songs': songs}}, {'lrc': {'lyric': '[00:01]正确歌词'}}]) as fetch:
-            self.assertEqual(bridge.find_lyrics(track)[0]['text'], '正确歌词')
-            self.assertEqual(fetch.call_args.args[1]['id'], 3)
-        with patch.object(bridge, 'fetch', return_value={'result': {'songs': songs[:2]}}) as fetch:
-            self.assertEqual(bridge.find_lyrics(track), [])
-            self.assertEqual(fetch.call_count, 1)
-
-    def test_verified_old_release_uses_exact_id_without_matching_other_versions(self):
-        track = snapshot() | {'title': '梦醒时分', 'artist': '周冰倩', 'album': '梦醒时分', 'duration': 244.333}
-        with patch.object(bridge, 'fetch', return_value={'lrc': {'lyric': '[00:01]测试歌词'}}) as fetch:
-            self.assertEqual(bridge.find_lyrics(track)[0]['text'], '测试歌词')
-            fetch.assert_called_once_with('song/lyric', {'id': 334909, 'lv': -1, 'kv': -1, 'tv': -1})
-        for change in ({'artist': '其他歌手'}, {'album': '其他专辑'}, {'duration': 238.421}):
-            with patch.object(bridge, 'fetch', return_value={'result': {'songs': []}}) as fetch:
-                self.assertEqual(bridge.find_lyrics(track | change), [])
-                self.assertEqual(fetch.call_args.args[0], 'search/get')
-
     def test_play_pause_and_stale_snapshot(self):
         with patch('music.time.monotonic', return_value=100):
             music.put(snapshot())

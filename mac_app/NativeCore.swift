@@ -3,6 +3,7 @@ import Security
 import CryptoKit
 import Darwin
 import SystemConfiguration
+import IOKit
 
 typealias JSONObject = [String: Any]
 struct ControlError: Error { let message: String; init(_ message: String) { self.message = message } }
@@ -41,9 +42,67 @@ enum NativePaths {
     static let service = app.appendingPathComponent("Contents/MacOS/iPadService")
     static let agents = home.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
     static let label = "com.iamxg.ipad-native"
+    static private(set) var identitySuffix = ""
     static var domain: String { "gui/\(getuid())" }
     static func prepare() throws {
         try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        identitySuffix = try InstallationBinding.prepare(directory: data, hardwareHash: InstallationBinding.hardwareHash())
+    }
+    static func identityAccount(_ name: String) -> String { InstallationBinding.account(name, suffix: identitySuffix) }
+}
+
+// 安装身份与硬件绑定，防止迁移助理复制钥匙串后两台 Mac 共用配对和控制权限。
+enum InstallationBinding {
+    static func hardwareHash() throws -> String {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        guard service != 0 else { throw ControlError("无法确认本机身份，暂不启动配对服务") }
+        defer { IOObjectRelease(service) }
+        guard let value = IORegistryEntryCreateCFProperty(service, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String,
+              UUID(uuidString: value) != nil else { throw ControlError("无法确认本机身份，暂不启动配对服务") }
+        return SHA256.hash(data: Data(value.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    static func account(_ name: String, suffix: String) -> String {
+        suffix.isEmpty ? name : name + "-installation-" + suffix
+    }
+    static func prepare(directory: URL, hardwareHash: String) throws -> String {
+        guard hardwareHash.count == 64, hardwareHash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw ControlError("本机身份格式不正确") }
+        let fm = FileManager.default, path = directory.appendingPathComponent("installation.json")
+        let fd = open(path.appendingPathExtension("lock").path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { throw ControlError("无法锁定安装身份") }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { throw ControlError("无法锁定安装身份") }
+        defer { _ = flock(fd, LOCK_UN) }
+        var previous: JSONObject?
+        if fm.fileExists(atPath: path.path) {
+            previous = try readJSON(path)
+            guard previous?["schema"] as? Int == 1, let hash = previous?["hardwareHash"] as? String,
+                  hash.count == 64, hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+                  let suffix = previous?["keychainSuffix"] as? String,
+                  suffix.isEmpty || UUID(uuidString: suffix) != nil else { throw ControlError("安装身份配置不可读，拒绝复用旧配对") }
+            if hash == hardwareHash { return suffix }
+        }
+        // 已安装的旧版首次升级保留原账户；新安装和异机副本获得独立的账户后缀。
+        let legacy = previous == nil && fm.fileExists(atPath: directory.appendingPathComponent("settings.json").path)
+        let suffix = legacy ? "" : UUID().uuidString.lowercased()
+        var moved = [(URL, URL)](), archive: URL?
+        do {
+            if previous != nil {
+                let destination = directory.appendingPathComponent("device-migrations", isDirectory: true).appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+                try fm.createDirectory(at: destination, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                archive = destination
+                // 只隔离配对会话和运行快照，站点、Key、控制台和设置继续由用户保留。
+                for name in ["local-screens.json", "cloud-permissions.json", "runtime.json"] {
+                    let source = directory.appendingPathComponent(name), target = destination.appendingPathComponent(name)
+                    if fm.fileExists(atPath: source.path) { try fm.moveItem(at: source, to: target); moved.append((source, target)) }
+                }
+            }
+            try writeJSON(["schema": 1, "hardwareHash": hardwareHash, "keychainSuffix": suffix], path)
+        } catch {
+            for (source, target) in moved.reversed() { try? fm.moveItem(at: target, to: source) }
+            if let archive, (try? fm.contentsOfDirectory(atPath: archive.path).isEmpty) == true { try? fm.removeItem(at: archive) }
+            throw error
+        }
+        return suffix
     }
 }
 
@@ -86,20 +145,21 @@ func writeJSON(_ value: Any, _ url: URL) throws {
 }
 func configuration() throws -> JSONObject {
     if !FileManager.default.fileExists(atPath: NativePaths.config.path) {
-        return ["publicURL": "", "musicEnabled": false, "dashboardEnabled": true, "musicLogin": true]
+        return ["publicURL": "", "musicEnabled": false, "dashboardEnabled": false, "musicLogin": false]
     }
     return try readJSON(NativePaths.config)
 }
 func displayToken() throws -> String {
-    if let token = try Secrets.get("display-token") { return token }
+    let account = NativePaths.identityAccount("display-token")
+    if let token = try Secrets.get(account) { return token }
     // 全新安装自行生成本机凭据，无需从旧 Docker 项目迁入。
     let token = UUID().uuidString + UUID().uuidString
-    try Secrets.set("display-token", token)
+    try Secrets.set(account, token)
     return token
 }
 
 // 缺少字段代表升级前的安装；新安装显式保存空值，不自动连接公共服务器。
-func publicAddress(_ config: JSONObject) -> String { config["publicURL"] as? String ?? "https://ipad.iamxg.com" }
+func publicAddress(_ config: JSONObject) -> String { config["publicURL"] as? String ?? "" }
 struct PairingConnection {
     let base: URL
     init(config: JSONObject) throws {
@@ -111,9 +171,9 @@ struct PairingConnection {
     func account(_ name: String) -> String {
         // 原站点沿用原凭据，其余地址隔离，切换地址不能泄露旧令牌。
         let origin = base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if origin == "https://ipad.iamxg.com" { return name }
+        if origin == "https://ipad.iamxg.com" { return NativePaths.identityAccount(name) }
         let suffix = SHA256.hash(data: Data(origin.utf8)).map { String(format: "%02x", $0) }.joined()
-        return name + "-" + suffix
+        return NativePaths.identityAccount(name + "-" + suffix)
     }
     func token() throws -> String? { try Secrets.get(account("device-token")) }
     func deviceID() throws -> String {
@@ -156,6 +216,10 @@ func publishDevice(_ path: String, _ body: JSONObject) throws -> JSONObject {
     let target = try PairingConnection(config: configuration())
     guard let token = try target.token() else { throw ControlError("本机尚未完成配对注册") }
     return try HTTPFetch.request(target.url(path), token: token, body: body, timeout: 5, limit: 600_000, header: "X-Device-Token") as? JSONObject ?? [:]
+}
+func cloudCommandAllowed(_ command: JSONObject) -> Bool {
+    guard let id = command["screenId"] as? String, let config = try? configuration() else { return false }
+    return CloudPermissions().allows(origin: publicAddress(config), id: id)
 }
 
 // 每个子进程都有超时和输出上限，退出异常不会把原始输出中的私人数据带到界面。

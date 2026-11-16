@@ -61,6 +61,43 @@ final class LocalScreens {
             records[index]["remark"] = trimmed(note)
         }
     }
+    func setControl(id: String, allowed: Bool, now: TimeInterval = Date().timeIntervalSince1970) throws {
+        try access(now: now) { records in
+            guard let index = records.firstIndex(where: { $0["id"] as? String == id && $0["revoked"] as? Bool != true }) else { throw ControlError("网页配对已过期或不存在") }
+            records[index]["controlAllowed"] = allowed
+        }
+    }
+    func allowsControl(id: String, now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
+        (try? access(now: now) { records in records.contains { $0["id"] as? String == id && $0["revoked"] as? Bool != true && $0["controlAllowed"] as? Bool == true } }) ?? false
+    }
+}
+
+// 公网控制权限由本机保管；中继返回的允许字段不能授权执行本机命令。
+struct CloudPermissions {
+    let path: URL
+    init(path: URL = NativePaths.data.appendingPathComponent("cloud-permissions.json")) { self.path = path }
+    private func entries() throws -> [String: [String]] {
+        guard FileManager.default.fileExists(atPath: path.path) else { return [:] }
+        guard let result = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: [String]] else { throw ControlError("公网控制权限配置不可读") }
+        return result
+    }
+    func allows(origin: String, id: String) -> Bool {
+        guard UUID(uuidString: id) != nil else { return false }
+        return (try? entries()[origin]?.contains(id)) ?? false
+    }
+    func set(origin: String, id: String, allowed: Bool) throws {
+        guard UUID(uuidString: id) != nil else { throw ControlError("网页标识不正确") }
+        let fd = open(path.appendingPathExtension("lock").path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { throw ControlError("无法锁定公网控制权限") }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { throw ControlError("无法锁定公网控制权限") }
+        defer { _ = flock(fd, LOCK_UN) }
+        var values = try entries()
+        var ids = Set(values[origin] ?? [])
+        if allowed { ids.insert(id) } else { ids.remove(id) }
+        values[origin] = ids.sorted()
+        try writeJSON(values, path)
+    }
 }
 
 // 本地配对完全由 App 完成；会话签名绑定本机钥匙串口令，不依赖公网或数据库。
@@ -108,5 +145,9 @@ final class LocalPairing {
         guard secureEqual(String(parts[2]), signature(String(parts[0]) + "." + String(parts[1]))) else { return false }
         // 每次访问都核对持久化撤销状态；无法读取记录时拒绝访问，不能绕过踢下线。
         return (try? screens.touch(id: String(parts[0]), expires: expiry, ua: userAgent, now: now)) ?? false
+    }
+    func allowsControl(_ token: String, now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
+        guard authorized(token, now: now), let id = token.split(separator: ".").first else { return false }
+        return screens.allowsControl(id: String(id), now: now)
     }
 }

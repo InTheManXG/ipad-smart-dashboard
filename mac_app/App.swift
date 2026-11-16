@@ -21,6 +21,7 @@ struct PairedScreen: Identifiable {
     let scope: String
     let remark: String
     let ua: String
+    let controlAllowed: Bool
 }
 
 @MainActor final class ControlModel: ObservableObject {
@@ -115,7 +116,7 @@ struct PairedScreen: Identifiable {
             func screens(_ key: String, scope: String) -> [PairedScreen] {
                 (result[key] as? [[String: Any]] ?? []).compactMap {
                     guard let id = $0["id"] as? String else { return nil }
-                    return PairedScreen(id: id, scope: scope, remark: $0["remark"] as? String ?? "", ua: $0["ua"] as? String ?? "")
+                    return PairedScreen(id: id, scope: scope, remark: $0["remark"] as? String ?? "", ua: $0["ua"] as? String ?? "", controlAllowed: $0["controlAllowed"] as? Bool ?? false)
                 }
             }
             self.publicScreens = screens("publicScreens", scope: "public")
@@ -138,7 +139,7 @@ struct PairedScreen: Identifiable {
             self.consoleItems = (result["items"] as? [[String: Any]] ?? []).compactMap {
                 guard let id = $0["id"] as? String, let name = $0["name"] as? String,
                       let kind = $0["kind"] as? String, let target = $0["target"] as? String else { return nil }
-                return ConsoleItem(id: id, name: name, kind: kind, target: target, shell: $0["shell"] as? String ?? "/bin/zsh")
+                return ConsoleItem(id: id, name: name, kind: kind, target: target, shell: $0["shell"] as? String ?? "/bin/zsh", subscriptionScript: $0["subscriptionScript"] as? String ?? "")
             }
         }
     }
@@ -416,6 +417,14 @@ struct ControlView: View {
                                 .controlSize(.small).foregroundStyle(.red)
                         }
                         Divider()
+                        Toggle("允许控制此 Mac", isOn: Binding(get: { screen.controlAllowed }, set: { allowed in
+                            Task {
+                                await model.perform(["action": "screen-permission", "scope": screen.scope, "id": screen.id, "controlAllowed": allowed], success: allowed ? "已允许此网页控制" : "已改为仅查看")
+                                if !model.failed { await model.loadScreens() }
+                            }
+                        })).toggleStyle(.switch)
+                        Text(screen.controlAllowed ? "可打开对话、控制音乐和执行已配置的快捷项目。" : "仅查看任务、音乐和额度；不能执行操作。")
+                            .font(.caption).foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 Text(userAgentSummary(screen.ua)).font(.subheadline).foregroundStyle(.secondary)

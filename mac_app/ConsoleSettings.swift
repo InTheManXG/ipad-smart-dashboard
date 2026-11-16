@@ -8,6 +8,7 @@ struct ConsoleItem: Identifiable, Equatable {
     let kind: String
     let target: String
     let shell: String
+    var subscriptionScript: String = ""
     var typeName: String { kind == "subscription" ? "订阅更新" : kind == "app" ? "应用" : kind == "script" ? "Shell 脚本" : "Shell 命令" }
     var typeColor: Color {
         switch kind {
@@ -330,12 +331,16 @@ struct ConsoleItemEditor: View {
     @ViewState private var kind: String
     @ViewState private var target: String
     @ViewState private var shell: String
+    @ViewState private var subscriptionScript: String
+    @ViewState private var allSubscriptions: Bool
     init(model: ControlModel, item: ConsoleItem?) {
         self.model = model; self.item = item
         _name = ViewState(initialValue: item?.name ?? "")
         _kind = ViewState(initialValue: item?.kind ?? "app")
         _target = ViewState(initialValue: item?.target ?? "")
         _shell = ViewState(initialValue: item?.shell ?? "/bin/zsh")
+        _subscriptionScript = ViewState(initialValue: item?.subscriptionScript ?? "")
+        _allSubscriptions = ViewState(initialValue: item?.target == "all" || item == nil)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -346,13 +351,23 @@ struct ConsoleItemEditor: View {
                 Text("脚本文件").tag("script")
                 Text("Shell 命令").tag("command")
                 Text("订阅更新").tag("subscription")
-            }.pickerStyle(.segmented).onChange(of: kind) { _ in target = kind == "subscription" ? "all" : "" }
+            }.pickerStyle(.segmented).onChange(of: kind) { _ in
+                target = kind == "subscription" ? "all" : ""
+                if kind == "subscription" { allSubscriptions = true; shell = "/usr/bin/python3" }
+                else { shell = "/bin/zsh" }
+            }
             if kind == "subscription" {
-                Picker("更新范围", selection: $target) {
-                    Text("全部订阅").tag("all")
-                    ForEach(["paoluz", "sc", "just"], id: \.self) { Text($0).tag($0) }
+                HStack {
+                    TextField("订阅脚本绝对路径", text: $subscriptionScript).textFieldStyle(.roundedBorder)
+                    Button("选择脚本…") { chooseFile(subscription: true) }
                 }
-                Text("使用这台 Mac 现有的订阅更新脚本，保留校验和失败回滚；仅在网页确认执行后更新。")
+                HStack {
+                    TextField("解释器绝对路径，例如 /usr/bin/python3", text: $shell).textFieldStyle(.roundedBorder)
+                    Button("选择解释器…") { chooseInterpreter() }
+                }
+                Toggle("更新全部订阅", isOn: $allSubscriptions).onChange(of: allSubscriptions) { all in target = all ? "all" : "" }
+                if !allSubscriptions { TextField("订阅 ID", text: $target).textFieldStyle(.roundedBorder) }
+                Text("脚本需支持 sync（全部）或 sync --id 订阅ID（单项）。以脚本目录为工作目录，校验与失败回滚由所选脚本负责；路径和参数仅存本机。")
                     .font(.caption).foregroundStyle(.secondary)
             } else if kind == "command" {
                 Text("Shell 命令").font(.headline)
@@ -377,22 +392,30 @@ struct ConsoleItemEditor: View {
                 Spacer()
                 Button("保存") {
                     var body: [String: Any] = ["action": "console-save", "name": name, "kind": kind, "target": target, "shell": shell]
+                    if kind == "subscription" { body["subscriptionScript"] = subscriptionScript }
                     if let item { body["id"] = item.id }
                     Task {
                         await model.perform(body, success: "快捷项目已保存")
                         if !model.failed { await model.loadConsole(); if !model.failed { dismiss() } }
                     }
                 }.buttonStyle(.borderedProminent)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (kind == "subscription" && (subscriptionScript.isEmpty || shell.isEmpty)))
             }
         }.padding(24).frame(width: 540).disabled(model.busy)
     }
-    private func chooseFile() {
+    private func chooseFile(subscription: Bool = false) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
-        if kind == "app" { panel.allowedContentTypes = [.applicationBundle]; panel.directoryURL = URL(fileURLWithPath: "/Applications") }
+        if kind == "app" && !subscription { panel.allowedContentTypes = [.applicationBundle]; panel.directoryURL = URL(fileURLWithPath: "/Applications") }
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        target = url.path
+        if subscription { subscriptionScript = url.path } else { target = url.path }
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { name = url.deletingPathExtension().lastPathComponent }
+    }
+    private func chooseInterpreter() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/usr/bin")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        shell = url.path
     }
 }

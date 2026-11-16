@@ -11,6 +11,65 @@ import pairing
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_control_permission_migration_and_isolation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'pairing.sqlite'
+            store = pairing.Store(path)
+            ident, other = str(uuid.uuid4()), str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            store.register({'deviceId': other, 'deviceToken': 'b' * 64})
+            first = store.complete({'code': store.code(ident)['code']})['token']
+            second = store.complete({'code': store.code(ident)['code']})['token']
+            permission = store.permissions(ident, first)
+            self.assertFalse(permission['controlAllowed'])
+            for kind, value in [('open', {'threadId': str(uuid.uuid4())}), ('console', {'id': str(uuid.uuid4())}), ('music', {})]:
+                with self.assertRaises(pairing.Failure) as denied:
+                    store.command(ident, value, kind, first, wait=.01)
+                self.assertEqual(denied.exception.status, 403)
+            with self.assertRaises(pairing.Failure):
+                store.permission(other, {'id': permission['screenId'], 'controlAllowed': True})
+            with self.assertRaises(pairing.Failure):
+                store.permission(ident, {'id': permission['screenId'], 'controlAllowed': 'true'})
+            store.permission(ident, {'id': permission['screenId'], 'controlAllowed': True})
+            self.assertTrue(store.permissions(ident, first)['controlAllowed'])
+            self.assertFalse(store.permissions(ident, second)['controlAllowed'])
+            self.assertTrue(next(s for s in store.screens(ident)['screens'] if s['id'] == permission['screenId'])['controlAllowed'])
+            store.close()
+            store = pairing.Store(path)
+            self.assertTrue(store.permissions(ident, first)['controlAllowed'], '明确授权在升级后保留')
+            # 重建升级前的 screens 表，历史会话不得自动获得控制权。
+            store.db.execute('ALTER TABLE screens DROP COLUMN control_allowed')
+            store.db.commit(); store.close()
+            store = pairing.Store(path)
+            self.assertFalse(store.permissions(ident, first)['controlAllowed'])
+            self.assertFalse(store.permissions(ident, second)['controlAllowed'])
+            store.close()
+
+    def test_control_revocation_cancels_pending_and_attaches_screen(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = pairing.Store(Path(folder) / 'pairing.sqlite')
+            ident, target = str(uuid.uuid4()), str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            token = store.complete({'code': store.code(ident)['code']})['token']
+            screen = store.permissions(ident, token)['screenId']
+            store.permission(ident, {'id': screen, 'controlAllowed': True})
+            store.exchange(ident, {'status': {'conversations': [{'threadId': target}]}})
+            errors = []
+            def run():
+                try: store.command(ident, {'threadId': target}, 'open', token, wait=2)
+                except pairing.Failure as error: errors.append(error.status)
+            worker = threading.Thread(target=run); worker.start()
+            deadline = time.monotonic() + 2
+            while not store.pending.get(ident) and time.monotonic() < deadline: time.sleep(.01)
+            command = store.exchange(ident, {'status': {}})['commands'][0]
+            self.assertEqual(command['screenId'], screen)
+            store.permission(ident, {'id': screen, 'controlAllowed': False})
+            store.exchange(ident, {'acks': [{'requestId': command['requestId'], 'ok': True}]})
+            worker.join(2)
+            self.assertEqual(errors, [403])
+            self.assertEqual(store.authenticate(token, 'web'), ident, '撤回控制后仍能读取')
+            store.close()
+
     def test_retina_icon_size_boundary(self):
         item = {'id': str(uuid.uuid4()), 'name': '高清应用', 'kind': 'app', 'state': 'idle'}
         # 使用边界大小验证传输限制，PNG 像素及真实解码由原生测试覆盖。
@@ -27,6 +86,7 @@ class PairingStoreTests(unittest.TestCase):
             ident, target = str(uuid.uuid4()), str(uuid.uuid4())
             store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
             token = store.complete({'code': store.code(ident)['code']})['token']
+            store.permission(ident, {'id': store.permissions(ident, token)['screenId'], 'controlAllowed': True})
             status = {'conversations': [{'threadId': target, 'title': '测试', 'state': 'running'}]}
             waiting, delivered = threading.Event(), threading.Event()
             responses, results = [], []
@@ -87,6 +147,7 @@ class PairingStoreTests(unittest.TestCase):
             ident = str(uuid.uuid4())
             store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
             token = store.complete({'code': store.code(ident)['code']})['token']
+            store.permission(ident, {'id': store.permissions(ident, token)['screenId'], 'controlAllowed': True})
             item = {'id': str(uuid.uuid4()), 'name': '测试脚本', 'kind': 'script', 'state': 'idle', 'target': '/private/test.sh', 'output': 'secret'}
             store.exchange(ident, {'status': {}, 'console': [item]})
             self.assertEqual(set(store.read(ident, 'console')[0]), {'id', 'name', 'kind', 'state', 'icon'})
@@ -263,6 +324,7 @@ class PairingStoreTests(unittest.TestCase):
             ident = str(uuid.uuid4())
             store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
             token = store.complete({'code': store.code(ident)['code']})['token']
+            store.permission(ident, {'id': store.permissions(ident, token)['screenId'], 'controlAllowed': True})
             key = str(uuid.uuid4())
             store.exchange(ident, {'status': {}, 'keys': [{'id': key, 'name': '测试'}]})
             result = []
