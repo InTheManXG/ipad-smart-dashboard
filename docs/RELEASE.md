@@ -53,7 +53,7 @@ bash mac_app/release.sh 0.1.0-beta.2
 
 ## GitHub Actions
 
-`.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查与 arm64 原生构建。`.github/workflows/release.yml` 提供两条明确的发布路径：
+`.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查、arm64 原生构建及组包后媒体组件只读加载。`.github/workflows/release.yml` 提供两条明确的发布路径：
 
 - 推送 `v*` 标签，或手动选择 `artifact=source-only`：运行源码检查并创建源码预览 prerelease，不上传 `.app` 或安装包。GitHub 自动附带该标签的源码归档。这是当前首发采用的路径。
 - 手动选择已有版本标签及 `artifact=notarized`：执行完整测试、签名和公证，成功后向对应发行版添加 ZIP 与 SHA-256，或在尚无发行版时创建它。该路径才需要以下仓库 Secret。

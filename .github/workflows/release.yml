@@ -45,6 +45,7 @@ jobs:
           test "$(uname -m)" = arm64
           bash mac_app/test.sh
           APP_VERSION="${RELEASE_TAG#v}" bash mac_app/build.sh
+          python3 scripts/check-media.py
 
   source-release:
     needs: [verify-source, secrets]

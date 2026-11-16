@@ -49,3 +49,5 @@ jobs:
         run: bash mac_app/build.sh
       - name: Validate signatures
         run: codesign --verify --deep --strict '.build/iPad 控制台.app'
+      - name: Load packaged media adapter
+        run: python3 scripts/check-media.py
