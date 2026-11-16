@@ -2,13 +2,13 @@
 
 把 iPad 或其他浏览器变成 Mac 的任务看板：查看 Codex 工作状态、额度和音乐，并按需控制已配置的应用与脚本。Mac 端使用 SwiftUI 和 Swift 原生服务，本地核心功能不需要 Docker、Python 或 Homebrew。
 
-项目目前为 **0.1.0-beta.3 未公证测试版**。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 测试包使用 ad-hoc 签名，没有 Apple 颁发的开发者身份签名，也没有经过 Apple 公证。系统可能阻止首次打开，需要用户自行确认信任。
+项目目前为 **0.1.0-beta.4 未公证测试版**。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 测试包使用 ad-hoc 签名，没有 Apple 颁发的开发者身份签名，也没有经过 Apple 公证。系统可能阻止首次打开，需要用户自行确认信任。
 
 ## 下载测试版
 
-从 [v0.1.0-beta.3 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.3) 下载 `iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip`、`SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`。仅支持 Apple Silicon Mac；先校验文件，再按 [未公证测试版安装说明](docs/UNNOTARIZED_INSTALL.md) 解压、移动到“应用程序”并打开。
+从 [v0.1.0-beta.4 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.4) 优先下载 `iPad-Control-0.1.0-beta.4-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。仅支持 Apple Silicon Mac；先按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验，打开 DMG 后将 App 拖入“应用程序”，再从“应用程序”打开。
 
-测试包不需要 Docker、Python 或编译工具。已在独立的 M1 Mac mini、macOS 27.0.1 上完成首次安装、配对与控制权限、版本替换保留配置及退出后台验证，详见 [实际验收记录](docs/ACCEPTANCE.md)。旧版 macOS、实际 iPad 和多播放器兼容性仍未验证；测试机原本关闭了 Gatekeeper，本次运行不代表系统安全放行通过。
+测试包不需要 Docker、Python 或编译工具。beta.3 已在独立的 M1 Mac mini、macOS 27.0.1 上完成首次安装、配对与控制权限、版本替换保留配置及退出后台验证，详见 [实际验收记录](docs/ACCEPTANCE.md)。旧版 macOS、实际 iPad 和多播放器兼容性仍未验证；测试机原本关闭了 Gatekeeper，本次运行不代表系统安全放行通过。
 
 ## 支持范围
 

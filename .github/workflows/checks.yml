@@ -51,3 +51,5 @@ jobs:
         run: codesign --verify --deep --strict '.build/iPad 控制台.app'
       - name: Load packaged media adapter
         run: python3 scripts/check-media.py
+      - name: Verify disk image and copied application
+        run: bash mac_app/package-dmg.sh '.build/iPad 控制台.app' '.build/check-installer.dmg'

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing version tag, for example v0.1.0-beta.3
+        description: Existing version tag, for example v0.1.0-beta.4
         type: string
         required: true
       artifact:
@@ -128,7 +128,7 @@ jobs:
           cat > "$RUNNER_TEMP/preview-notes.md" <<'NOTES'
           此预发布附件是 Apple Silicon Mac 的未公证测试包，仅使用 ad-hoc 临时签名，没有 Developer ID 身份签名，也未通过 Apple 公证。
 
-          下载文件名包含 unnotarized 的 ZIP，先按 SHA256SUMS 校验，再阅读随附的 UNNOTARIZED_INSTALL.md。macOS 可能阻止首次打开；只在确认来源后对本 App 单独允许，不需要关闭全局安全保护。构建通过不等于所有 macOS、播放器或独立设备已完成验收。
+          优先下载文件名包含 unnotarized 的 DMG，ZIP 作为备用，无需两者都下载。按随附 UNNOTARIZED_INSTALL.md 从 SHA256SUMS 中校验选中的安装包，再将 App 拖入“应用程序”并从该文件夹打开，之后推出镜像。macOS 可能阻止首次打开；只在确认来源后对本 App 单独允许，不需要关闭全局安全保护。构建通过不等于所有 macOS、播放器或独立设备已完成验收。
 
           本地 App 不依赖 Docker、Python 或 Homebrew。兼容限制与更新说明见仓库 README、docs/RELEASE.md 及 CHANGELOG.md。
           NOTES

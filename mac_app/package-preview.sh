@@ -4,7 +4,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 version="${1:-${APP_VERSION:-}}"
 version="${version#v}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*$ ]]; then
-  printf '%s\n' '未公证测试包只接受预发布版本，例如：bash mac_app/package-preview.sh 0.1.0-beta.3' >&2
+  printf '%s\n' '未公证测试包只接受预发布版本，例如：bash mac_app/package-preview.sh 0.1.0-beta.4' >&2
   exit 1
 fi
 cd "$root"
@@ -50,6 +50,8 @@ stage="$(mktemp -d "$root/.build/previews/.preview.XXXXXX")"
 verification="$(mktemp -d "$root/.build/previews/.verify.XXXXXX")"
 trap 'rm -rf "$stage" "$verification"' EXIT
 archive="iPad-Control-$version-unnotarized-macos-arm64.zip"
+image="iPad-Control-$version-unnotarized-macos-arm64.dmg"
+bash "$root/mac_app/package-dmg.sh" "$app" "$stage/$image"
 ditto -c -k --keepParent --sequesterRsrc "$app" "$stage/$archive"
 # 验收下载后真正解压的成品，避免打包遗漏或损坏被原目录的检查掩盖。
 ditto -x -k "$stage/$archive" "$verification"
@@ -60,6 +62,6 @@ done
 codesign --verify --deep --strict "$unpacked"
 [[ "$(plutil -extract CFBundleGetInfoString raw -o - "$unpacked/Contents/Info.plist")" == "$version" ]]
 cp "$root/docs/UNNOTARIZED_INSTALL.md" "$stage/UNNOTARIZED_INSTALL.md"
-(cd "$stage" && shasum -a 256 "$archive" UNNOTARIZED_INSTALL.md > SHA256SUMS)
+(cd "$stage" && shasum -a 256 "$image" "$archive" UNNOTARIZED_INSTALL.md > SHA256SUMS)
 mv "$stage" "$output"
-printf '已生成未公证测试包（非正式发行）：%s\n' "$output/$archive"
+printf '已生成未公证测试包（非正式发行）：%s\n' "$output/$image"

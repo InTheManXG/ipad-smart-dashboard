@@ -20,7 +20,7 @@ def rejects(script, expected, values=None, args=()):
     assert expected in result.stderr, f"{script} 未返回预期的拒绝原因"
 
 
-for script in ("mac_app/build.sh", "mac_app/release.sh", "mac_app/package-preview.sh"):
+for script in ("mac_app/build.sh", "mac_app/release.sh", "mac_app/package-preview.sh", "mac_app/package-dmg.sh"):
     subprocess.run(["bash", "-n", str(ROOT / script)], check=True)
 rejects("mac_app/build.sh", "APP_VERSION", {"APP_VERSION": "0.1.0;echo unsafe"})
 rejects("mac_app/build.sh", "APP_BUILD", {"APP_BUILD": "0"})
@@ -28,6 +28,18 @@ rejects("mac_app/build.sh", "BUILD_CONFIGURATION", {"BUILD_CONFIGURATION": "unkn
 rejects("mac_app/build.sh", "Developer ID Application", {"BUILD_CONFIGURATION": "release", "SIGNING_IDENTITY": "-"})
 rejects("mac_app/release.sh", "用法", args=("invalid",))
 rejects("mac_app/release.sh", "不会产出未公证安装包", args=("0.1.0-beta.1",))
+rejects("mac_app/package-dmg.sh", "用法")
+rejects("mac_app/package-dmg.sh", "用法", args=("missing.app", "output.dmg"))
+# 已有产物及符号链接一律不能覆盖，校验必须先于签名与挂载操作。
+with tempfile.TemporaryDirectory(prefix="ipad-dmg-gate-") as folder:
+    source = Path(folder) / "iPad 控制台.app"
+    source.mkdir()
+    output = Path(folder) / "existing.dmg"
+    output.write_bytes(b"fixture")
+    rejects("mac_app/package-dmg.sh", "拒绝覆盖", args=(str(source), str(output)))
+    output.unlink()
+    output.symlink_to(Path(folder) / "missing-target")
+    rejects("mac_app/package-dmg.sh", "拒绝覆盖", args=(str(source), str(output)))
 # 使用隔离命令夹具验证真实发行脚本，不触碰系统策略、签名或公证服务。
 with tempfile.TemporaryDirectory(prefix="ipad-release-gate-") as folder:
     bin_path = Path(folder)

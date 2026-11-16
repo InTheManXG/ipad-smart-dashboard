@@ -2,7 +2,7 @@
 
 ## 当前发布范围
 
-当前预览版本号为 `0.1.0-beta.3`，Git 标签为 `v0.1.0-beta.3`。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
+当前预览版本号为 `0.1.0-beta.4`，Git 标签为 `v0.1.0-beta.4`。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
 
 当前提供明确标注 `unnotarized` 的 ad-hoc 测试包，没有 Apple 颁发的开发者身份签名，也没有 Apple 公证，不能称为已通过 Gatekeeper 的正式发行包。用户按 [未公证安装说明](UNNOTARIZED_INSTALL.md) 自行核对来源、校验并决定是否仅允许该 App。GitHub 自动提供的源码归档不代表 Mac 安装包。
 
@@ -13,18 +13,19 @@
 在满足这些条件的源码仓库中执行：
 
 ```sh
-bash mac_app/package-preview.sh 0.1.0-beta.3
+bash mac_app/package-preview.sh 0.1.0-beta.4
 ```
 
-产物位于 `.build/previews/0.1.0-beta.3/`：
+产物位于 `.build/previews/0.1.0-beta.4/`：
 
 ```text
-iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip
+iPad-Control-0.1.0-beta.4-unnotarized-macos-arm64.dmg
+iPad-Control-0.1.0-beta.4-unnotarized-macos-arm64.zip
 SHA256SUMS
 UNNOTARIZED_INSTALL.md
 ```
 
-ZIP 和安装说明均计入 `SHA256SUMS`，测试包内保留项目及第三方许可证。不执行公证，也不把签名结构通过写成 Gatekeeper 通过。发布页必须醒目标明 ad-hoc、未公证、arm64，以及实际完成和未完成的验收范围。
+DMG 为主要下载项，ZIP 保留为备用。DMG、ZIP 和安装说明均计入同一份 `SHA256SUMS`；用户仅下载其中一种安装包，按安装说明筛选对应条目校验即可。DMG 窗口提供 App、指向 `/Applications` 的快捷方式和安装说明；拖入后从“应用程序”打开 App，再推出镜像。测试包内保留项目及第三方许可证。不执行公证，也不把签名结构通过写成 Gatekeeper 通过。发布页必须醒目标明 ad-hoc、未公证、arm64，以及实际完成和未完成的验收范围。
 
 安装说明只使用 Finder 和系统设置对单个 App 的“仍要打开”流程；不要求用户关闭全局安全保护、清除隔离属性或通过终端绕过。受管 Mac 可能拒绝运行。更新后可能重新出现钥匙串授权，但不应删除用户数据或降低整个钥匙串的保护。
 
@@ -61,25 +62,26 @@ bash mac_app/build.sh
 ```sh
 SIGNING_IDENTITY='Developer ID Application: 你的证书名称' \
 NOTARY_KEYCHAIN_PROFILE='你的公证凭据名称' \
-bash mac_app/release.sh 0.1.0-beta.3
+bash mac_app/release.sh 0.1.0-beta.4
 ```
 
-脚本要求构建前和最终验收时 Gatekeeper 均处于启用状态；关闭或无法确认状态时直接拒绝，避免把系统跳过评估误判为通过。之后使用 hardened runtime 和时间戳签名，提交公证并要求状态为 `Accepted`，随后 staple、验证票据、执行严格签名检查和 Gatekeeper 检查。全部通过才生成：
+脚本要求构建前和最终验收时 Gatekeeper 均处于启用状态；关闭或无法确认状态时直接拒绝，避免把系统跳过评估误判为通过。之后使用 hardened runtime 和时间戳签名，提交公证并要求状态为 `Accepted`，随后 staple、验证票据、执行严格签名检查和 Gatekeeper 检查。由已公证 App 生成 DMG 后，还会对 DMG 单独签名、提交公证、staple 并验证 Gatekeeper 打开评估；ZIP 保留为备用。全部通过才生成：
 
 ```text
-.build/releases/0.1.0-beta.3/iPad-Control-0.1.0-beta.3-macos-arm64.zip
-.build/releases/0.1.0-beta.3/SHA256SUMS
+.build/releases/0.1.0-beta.4/iPad-Control-0.1.0-beta.4-macos-arm64.dmg
+.build/releases/0.1.0-beta.4/iPad-Control-0.1.0-beta.4-macos-arm64.zip
+.build/releases/0.1.0-beta.4/SHA256SUMS
 ```
 
 缺少凭据、证书不合适、源码未提交、标签不匹配或公证失败时，正式发行流程停止，不会静默降级上传开发包。未公证测试版是单独明确选择的路径。公证流程本身仍需用真实发行凭据完成端到端验证；媒体兼容组件是否被公证接受不能靠本机构建推断。
 
 ## GitHub Actions
 
-`.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查、arm64 原生构建及组包后媒体组件只读加载。`.github/workflows/release.yml` 提供三条明确的发布路径：
+`.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查、arm64 原生构建、组包后媒体组件只读加载及 DMG 挂载复制验证。`.github/workflows/release.yml` 提供三条明确的发布路径：
 
-- 推送预发布 `v*` 标签，或手动选择 `artifact=unnotarized`：运行凭据扫描、原生、Python 和网页检查，生成上述明确命名的未公证测试包、安装说明和校验清单，创建测试版 prerelease。这是当前 beta.3 采用的路径；正式版本号不能走此路径。
+- 推送预发布 `v*` 标签，或手动选择 `artifact=unnotarized`：运行凭据扫描、原生、Python 和网页检查，生成上述明确命名的未公证测试包、安装说明和校验清单，创建测试版 prerelease。这是当前 beta.4 采用的路径；正式版本号不能走此路径。
 - 手动选择 `artifact=source-only`：运行源码检查并创建源码预览 prerelease，不上传 `.app` 或安装包。GitHub 自动附带该标签的源码归档。
-- 手动选择已有版本标签及 `artifact=notarized`：执行完整测试、签名和公证，成功后向对应发行版添加 ZIP 与 SHA-256，或在尚无发行版时创建它。该路径才需要以下仓库 Secret。
+- 手动选择已有版本标签及 `artifact=notarized`：执行完整测试、签名和公证，成功后向对应发行版添加 DMG、ZIP 与 SHA-256，或在尚无发行版时创建它。该路径才需要以下仓库 Secret。
 
 | Secret | 内容 |
 | --- | --- |

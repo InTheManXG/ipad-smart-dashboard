@@ -59,7 +59,25 @@ codesign --verify --deep --strict "$app"
 require_gatekeeper
 spctl --assess --type execute --verbose=4 "$app"
 archive="iPad-Control-$version-macos-arm64.zip"
-mkdir -p "$output"
-ditto -c -k --keepParent --sequesterRsrc "$app" "$output/$archive"
-(cd "$output" && shasum -a 256 "$archive" > SHA256SUMS)
-printf '已生成公证发行包：%s\n' "$output/$archive"
+image="iPad-Control-$version-macos-arm64.dmg"
+mkdir "$submission/artifacts"
+ditto -c -k --keepParent --sequesterRsrc "$app" "$submission/artifacts/$archive"
+bash "$root/mac_app/package-dmg.sh" "$app" "$submission/artifacts/$image"
+# App 的公证票据不能替代分发容器的公证；最终 DMG 也单独签名、提交和验收。
+codesign --force --sign "$SIGNING_IDENTITY" --timestamp "$submission/artifacts/$image"
+xcrun notarytool submit "$submission/artifacts/$image" "${notary_args[@]}" --wait --output-format json > "$submission/dmg-result.json"
+if [[ "$(plutil -extract status raw -o - "$submission/dmg-result.json")" != Accepted ]]; then
+  printf '%s\n' 'DMG 公证未通过，未生成可发布的归档。' >&2
+  plutil -extract id raw -o - "$submission/dmg-result.json" >&2 || true
+  exit 1
+fi
+xcrun stapler staple "$submission/artifacts/$image"
+xcrun stapler validate "$submission/artifacts/$image"
+codesign --verify --strict "$submission/artifacts/$image"
+hdiutil verify "$submission/artifacts/$image"
+require_gatekeeper
+spctl --assess --type open --context context:primary-signature --verbose=4 "$submission/artifacts/$image"
+(cd "$submission/artifacts" && shasum -a 256 "$image" "$archive" > SHA256SUMS)
+mkdir -p "$(dirname "$output")"
+mv "$submission/artifacts" "$output"
+printf '已生成公证发行包：%s\n' "$output/$image"
