@@ -24,6 +24,11 @@ if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --
   printf '%s\n' '请先提交已验证的源码，再从干净工作区创建发行包。' >&2
   exit 1
 fi
+# 忽略规则不等于可以分发；资源目录中的本机私密文件也必须拒绝。
+if [[ -n "$(git ls-files --others -- web mac_app/vendor/MediaAdapter mac_app/assets | sed '/\(^\|\/\)\.DS_Store$/d')" ]]; then
+  printf '%s\n' '打包资源含未跟踪文件（包括被忽略的文件），请先移出本机配置和私密文件。' >&2
+  exit 1
+fi
 if ! git tag --points-at HEAD | grep -Fxq "v$version"; then
   printf '当前提交缺少对应版本标签 v%s。\n' "$version" >&2
   exit 1

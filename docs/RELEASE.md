@@ -2,9 +2,31 @@
 
 ## 当前发布范围
 
-当前预览版本号为 `0.1.0-beta.2`，Git 标签为 `v0.1.0-beta.2`。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。当前已完成本机自动化检查，以及隔离用户目录的首次运行和旧配置保留检查；这不是独立 Mac 的完整安装验收。Intel Mac、其他 macOS 版本、干净用户的完整 GUI 安装升级流程及实际 iPad 仍需分别验收。
+当前预览版本号为 `0.1.0-beta.3`，Git 标签为 `v0.1.0-beta.3`。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。当前已完成本机自动化检查，以及隔离用户目录的首次运行和旧配置保留检查；这不是独立 Mac 的完整安装验收。Intel Mac、其他 macOS 版本、干净用户的完整 GUI 安装升级流程及实际 iPad 仍需分别验收。
 
-当前没有完成 Developer ID 签名和 Apple 公证，不能把开发包称为正式可分发安装包。允许先发布开源预览的源码和兼容限制，暂不附加未公证的 `.app`、ZIP 或 DMG；GitHub 自动提供的源码归档不代表 Mac 安装包。
+当前提供明确标注 `unnotarized` 的 ad-hoc 测试包，没有 Apple 颁发的开发者身份签名，也没有 Apple 公证，不能称为已通过 Gatekeeper 的正式发行包。用户按 [未公证安装说明](UNNOTARIZED_INSTALL.md) 自行核对来源、校验并决定是否仅允许该 App。GitHub 自动提供的源码归档不代表 Mac 安装包。
+
+## 未公证测试版
+
+`unnotarized` 路径不需要 Developer ID。打包强制使用 `BUILD_CONFIGURATION=development` 与 `SIGNING_IDENTITY=-`，只接受预发布版本号及指向当前提交的匹配标签，工作区必须干净；已有输出目录时拒绝覆盖，以免混入上一版本产物。
+
+在满足这些条件的源码仓库中执行：
+
+```sh
+bash mac_app/package-preview.sh 0.1.0-beta.3
+```
+
+产物位于 `.build/previews/0.1.0-beta.3/`：
+
+```text
+iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip
+SHA256SUMS
+UNNOTARIZED_INSTALL.md
+```
+
+ZIP 和安装说明均计入 `SHA256SUMS`，测试包内保留项目及第三方许可证。不执行公证，也不把签名结构通过写成 Gatekeeper 通过。发布页必须醒目标明 ad-hoc、未公证、arm64 和未完成的独立设备验收。
+
+安装说明只使用 Finder 和系统设置对单个 App 的“仍要打开”流程；不要求用户关闭全局安全保护、清除隔离属性或通过终端绕过。受管 Mac 可能拒绝运行。更新后可能重新出现钥匙串授权，但不应删除用户数据或降低整个钥匙串的保护。
 
 ## 开发构建
 
@@ -17,7 +39,7 @@ for test in tests/test_*.cjs; do node "$test" || exit; done
 bash mac_app/build.sh
 ```
 
-构建结果在 `.build/iPad 控制台.app`。默认使用 ad-hoc 签名，仅用于本机开发；设置 `SIGNING_IDENTITY` 可以指定已有开发证书。没有对应证书或私钥时构建应报错，不应静默替换身份。开发包能启动、`codesign --verify` 通过，都不等于 Gatekeeper 接受或公证通过。
+构建结果在 `.build/iPad 控制台.app`。默认使用 ad-hoc 签名；设置 `SIGNING_IDENTITY` 可以指定已有开发证书。没有对应证书或私钥时构建应报错，不应静默替换身份。常规开发构建和明确标注的未公证测试包，都不能因为能启动或 `codesign --verify` 通过而宣称 Gatekeeper 接受或公证通过。
 
 从源码构建不需要 Docker 或 Homebrew。可选订阅更新由用户配置自己的脚本和解释器，App 不自带该业务脚本及 Python 运行时。包内媒体适配器需要保留许可证和说明。
 
@@ -39,23 +61,24 @@ bash mac_app/build.sh
 ```sh
 SIGNING_IDENTITY='Developer ID Application: 你的证书名称' \
 NOTARY_KEYCHAIN_PROFILE='你的公证凭据名称' \
-bash mac_app/release.sh 0.1.0-beta.2
+bash mac_app/release.sh 0.1.0-beta.3
 ```
 
 脚本要求构建前和最终验收时 Gatekeeper 均处于启用状态；关闭或无法确认状态时直接拒绝，避免把系统跳过评估误判为通过。之后使用 hardened runtime 和时间戳签名，提交公证并要求状态为 `Accepted`，随后 staple、验证票据、执行严格签名检查和 Gatekeeper 检查。全部通过才生成：
 
 ```text
-.build/releases/0.1.0-beta.2/iPad-Control-0.1.0-beta.2-macos-arm64.zip
-.build/releases/0.1.0-beta.2/SHA256SUMS
+.build/releases/0.1.0-beta.3/iPad-Control-0.1.0-beta.3-macos-arm64.zip
+.build/releases/0.1.0-beta.3/SHA256SUMS
 ```
 
-缺少凭据、证书不合适、源码未提交、标签不匹配或公证失败时，应停止发行，不上传开发包作为替代品。该流程本身仍需用真实发行凭据完成端到端验证；媒体兼容组件是否被公证接受不能靠本机构建推断。
+缺少凭据、证书不合适、源码未提交、标签不匹配或公证失败时，正式发行流程停止，不会静默降级上传开发包。未公证测试版是单独明确选择的路径。公证流程本身仍需用真实发行凭据完成端到端验证；媒体兼容组件是否被公证接受不能靠本机构建推断。
 
 ## GitHub Actions
 
-`.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查、arm64 原生构建及组包后媒体组件只读加载。`.github/workflows/release.yml` 提供两条明确的发布路径：
+`.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查、arm64 原生构建及组包后媒体组件只读加载。`.github/workflows/release.yml` 提供三条明确的发布路径：
 
-- 推送 `v*` 标签，或手动选择 `artifact=source-only`：运行源码检查并创建源码预览 prerelease，不上传 `.app` 或安装包。GitHub 自动附带该标签的源码归档。这是当前首发采用的路径。
+- 推送预发布 `v*` 标签，或手动选择 `artifact=unnotarized`：运行凭据扫描、原生、Python 和网页检查，生成上述明确命名的未公证测试包、安装说明和校验清单，创建测试版 prerelease。这是当前 beta.3 采用的路径；正式版本号不能走此路径。
+- 手动选择 `artifact=source-only`：运行源码检查并创建源码预览 prerelease，不上传 `.app` 或安装包。GitHub 自动附带该标签的源码归档。
 - 手动选择已有版本标签及 `artifact=notarized`：执行完整测试、签名和公证，成功后向对应发行版添加 ZIP 与 SHA-256，或在尚无发行版时创建它。该路径才需要以下仓库 Secret。
 
 | Secret | 内容 |
@@ -69,7 +92,7 @@ bash mac_app/release.sh 0.1.0-beta.2
 
 工作流使用临时钥匙串导入凭据并在结束时清理，不使用明文 Apple ID 密码。正式使用前核对仓库中工作流的实际权限与 Secret 名称，并保护能够修改发布工作流和版本标签的账号。
 
-CI 配置存在不代表已经运行成功。首次开源时记录实际 Actions 结果；没有凭据则使用源码预览路径，不声称已完成自动公证。预发布版本应标记为 GitHub prerelease，附件只允许来自同一提交、同一版本且通过上述检查的产物。后续补上公证二进制时，也应更新发行说明中的验收结果，不能保留“仅源码”的过时描述。
+CI 配置存在不代表已经运行成功。发布时记录实际 Actions 结果；没有凭据时可明确选择源码预览或未公证测试路径，不声称已完成自动公证。预发布版本应标记为 GitHub prerelease，附件只允许来自同一提交、同一版本且通过对应检查的产物。后续补上公证二进制时，也应更新发行说明中的验收结果，不能保留“仅源码”或“全部未公证”的过时描述。
 
 ## 每次发行需要记录
 
@@ -81,7 +104,7 @@ CI 配置存在不代表已经运行成功。首次开源时记录实际 Actions
 
 未完成的项目写明原因，不把构建成功替代运行、升级、真机或生产部署验收。
 
-## 本次源码预览验证记录
+## beta.1 / beta.2 源码预览验证记录
 
 - 本机环境：Apple Silicon，macOS 27.2.1；原生 227 项断言、服务端 Python 回归、全部 7 组网页 Node 回归通过。
 - 开发包构建及严格签名结构检查通过，确认包含许可证且不含 Python 运行时、密钥文件或个人配置。媒体框架和测试客户端从锁定上游源码按 macOS 13 重建，打包后只读媒体查询返回合法 JSON；这不代表旧系统或所有播放器已经验收。开发包未作为下载附件发布。
@@ -89,3 +112,5 @@ CI 配置存在不代表已经运行成功。首次开源时记录实际 Actions
 - OrbStack 临时独立容器通过非 root、只读文件系统、健康检查及数据库重启持久化验证，原有容器和线上 1Panel 部署未修改。
 - Git 历史及待公开源码进行了 Gitleaks 凭据扫描；个人路径、旧签名标识和不再分发的第三方图标清理后再公开。
 - 未完成：真实 Developer ID 签名与公证、Gatekeeper 下载验收、另一台 Mac 上的完整 GUI 安装升级卸载、实际 iPad 和多播放器兼容验收。
+
+beta.3 的打包和 Actions 结果以该版本实际发行记录为准。独立 Mac 的首次 GUI 安装、系统单 App 放行、钥匙串升级授权及卸载流程仍需实际用户环境验收。

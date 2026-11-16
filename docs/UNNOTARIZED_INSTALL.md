@@ -1,0 +1,46 @@
+# 未公证测试版安装说明
+
+适用于 `0.1.0-beta.3`，仅支持 Apple Silicon（arm64）Mac。最低构建目标为 macOS 13；独立 Mac 的首次图形界面安装、升级和各旧版系统兼容性尚未完成验收。
+
+这个测试包使用 **ad-hoc 签名**，没有 Apple 颁发的开发者身份签名，也没有 Apple 公证。它不是已通过 Gatekeeper 的正式发行版。签名结构检查和 SHA-256 校验不能替代开发者身份验证或恶意软件审查；是否信任并运行，由你自行决定。
+
+## 下载与校验
+
+只从 [本项目 v0.1.0-beta.3 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.3) 下载以下三个附件，并放在同一文件夹：
+
+- `iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip`
+- `SHA256SUMS`
+- `UNNOTARIZED_INSTALL.md`
+
+发行页自动提供的 `Source code` 是源码，不是 App 安装包。不要从聊天转发或不明镜像获得测试包。
+
+在终端进入下载文件所在文件夹后运行：
+
+```sh
+shasum -a 256 -c SHA256SUMS
+```
+
+所有文件都应显示 `OK`。出现不匹配或缺失时，停止安装并从同一发行页重新下载。校验用于确认文件与这份清单一致，不能证明被入侵的下载源可信；清单和附件来自同一来源。
+
+## 安装与首次打开
+
+1. 如果已经运行旧版，从 App 菜单选择“退出 iPad 控制台（停止后台服务）”。只关闭窗口不会退出后台。
+2. 在 Finder 中双击 ZIP 解压，将完整的 `iPad 控制台.app` 拖到“应用程序”文件夹。升级时替换原来同一位置的 App，不要只复制里面的可执行文件。
+3. 在“应用程序”中双击 App。macOS 可能提示无法验证开发者或无法确认没有恶意软件；先关闭该提示。
+4. 如果你已经校验下载来源并决定信任此测试版，打开“系统设置 → 隐私与安全性”，找到刚才针对 `iPad 控制台` 的阻止提示，选择“仍要打开”（Open Anyway），随后仅为该 App 确认打开。系统可能要求在本机验证管理员身份。
+
+必须先尝试打开 App，系统才可能显示上述例外入口；这不是保证所有 Mac 都能运行的安装方法。步骤依据 [Apple 的“在 Mac 上安全地打开 App”说明](https://support.apple.com/zh-cn/102445)，具体按钮及可用性以你的 macOS 和管理策略为准。
+
+不要关闭全局 Gatekeeper，不要修改全局安全策略，也不要通过删除隔离属性或终端绕过系统判断。受组织管理的 Mac 可能不提供“仍要打开”或禁止运行此类 App；这时联系管理员或停止安装。若提示文件已损坏、证书撤销、检测到恶意软件，或找不到只针对该 App 的允许入口，请停止并记录系统提示，不要继续绕过。
+
+系统可能另行要求 `iPadService` 访问钥匙串。先核对来源确实是刚安装 App 的 `Contents/MacOS/iPadService`，再自行决定是否允许；密码只在系统界面输入，不要发送给项目维护者。测试包每次更新的签名标识可能变化，因此以后升级仍可能重复询问。不要通过放宽整个钥匙串的访问权限解决。
+
+## 使用、升级与退出
+
+首次安装默认不连接公网，不启用局域网看板、音乐同步或登录启动。在 App 里启用需要的功能后，按 [README 的配对步骤](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.1.0-beta.3/README.md#配对和使用) 连接浏览器；新配对默认只读。
+
+同一 Mac 的配置、配对和 Key 保存在 App 包之外。升级时保留 `~/Library/Application Support/iPadControl/` 和该 App 的钥匙串条目，先退出旧版再替换完整 App；不要为了处理授权提示删除这些数据。跨 Mac 复制会隔离旧配对及控制授权，需要重新配对。
+
+退出请使用菜单中的“退出 iPad 控制台（停止后台服务）”。只关窗口后可从菜单栏重新打开。卸载前先关闭 App 内两个登录启动选项，再退出并移走 App；移走 App 不会自动清理已保存的配置和钥匙串。
+
+数据去向和中继信任限制见 [隐私说明](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.1.0-beta.3/docs/PRIVACY.md) 与 [安全说明](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.1.0-beta.3/docs/SECURITY.md)。

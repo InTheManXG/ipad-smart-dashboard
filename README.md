@@ -2,7 +2,13 @@
 
 把 iPad 或其他浏览器变成 Mac 的任务看板：查看 Codex 工作状态、额度和音乐，并按需控制已配置的应用与脚本。Mac 端使用 SwiftUI 和 Swift 原生服务，本地核心功能不需要 Docker、Python 或 Homebrew。
 
-项目目前为 **0.1.0-beta.2 源码预览版**。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。当前没有经过 Apple 公证的正式安装包，不应把开发构建当成已通过 Gatekeeper 的发行版。
+项目目前为 **0.1.0-beta.3 未公证测试版**。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 测试包使用 ad-hoc 签名，没有 Apple 颁发的开发者身份签名，也没有经过 Apple 公证。系统可能阻止首次打开，需要用户自行确认信任。
+
+## 下载测试版
+
+从 [v0.1.0-beta.3 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.3) 下载 `iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip`、`SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`。仅支持 Apple Silicon Mac；先校验文件，再按 [未公证测试版安装说明](docs/UNNOTARIZED_INSTALL.md) 解压、移动到“应用程序”并打开。
+
+测试包不需要 Docker、Python 或编译工具。独立 Mac 的首次图形界面安装、升级及旧版 macOS 兼容性仍未完成验收；不接受这些限制时，可先阅读源码并等待公证发行版。
 
 ## 支持范围
 
@@ -22,7 +28,7 @@ bash mac_app/build.sh
 open '.build/iPad 控制台.app'
 ```
 
-默认是显式的 ad-hoc 开发构建，不需要维护者的签名证书。它只适合本机开发，下载到其他电脑可能被系统拦截。不要关闭系统安全保护来部署给他人；正式发行按 [发行说明](docs/RELEASE.md) 使用 Developer ID 和 Apple 公证。
+默认是显式的 ad-hoc 开发构建，不需要维护者的签名证书，也不代表 Apple 验证过开发者身份。公开测试包单独标明“未公证”；正式发行仍按 [发行说明](docs/RELEASE.md) 使用 Developer ID 和 Apple 公证。不要关闭全局系统安全保护。
 
 首次运行默认不连接公网、不启用局域网看板、不启用音乐同步或登录启动。数据保存在 `~/Library/Application Support/iPadControl`；Key 和设备凭据保存在该用户钥匙串中。
 
@@ -61,7 +67,7 @@ Swift 测试包括隔离的配置和钥匙串条目，使用后清理；不会�
 
 ## 更新与卸载
 
-先退出 App，再用新版本替换旧 `.app`。同机升级保留配置和配对；检测到配置复制到了另一台 Mac 后，会保留设置、Key 和快捷项目，并隔离旧配对和授权，要求重新配对。安装绑定只在本机保存硬件标识的 SHA-256 摘要，不上传硬件标识。
+先从菜单选择“退出 iPad 控制台（停止后台服务）”，再用新版本替换旧 `.app`。同机升级保留配置和配对；ad-hoc 测试包更新后，macOS 可能重新请求钥匙串授权。核对请求来自刚安装的 App 后在本机处理，不需要导出或发送 Key。检测到配置复制到了另一台 Mac 后，会保留设置、Key 和快捷项目，并隔离旧配对和授权，要求重新配对。安装绑定只在本机保存硬件标识的 SHA-256 摘要，不上传硬件标识。
 
 首次升级到本版本之前已复制的两份旧安装缺少绑定基线，无法自动分辨，应先停止旧电脑服务，再使用独立配对。不要手工复制别人的配置和钥匙串。旧订阅更新项目会保留名称和顺序，需要在 App 中补选自己的脚本及解释器后才能执行。
 
