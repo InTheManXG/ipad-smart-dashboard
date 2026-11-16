@@ -6,17 +6,27 @@
 
 当前提供明确标注 `unnotarized` 的 ad-hoc 测试包，没有 Apple 颁发的开发者身份签名，也没有 Apple 公证，不能称为已通过 Gatekeeper 的正式发行包。用户按 [未公证安装说明](UNNOTARIZED_INSTALL.md) 自行核对来源、校验并决定是否仅允许该 App。GitHub 自动提供的源码归档不代表 Mac 安装包。
 
+## 通过 GitHub 打包发布
+
+发行附件统一由 GitHub Actions 的 `macos-15` Apple Silicon runner 从版本标签编译、打包、验证并直接上传到 GitHub Release。维护者本机只做开发和验收，不上传本机构建的安装包。beta.4 已通过这一流程发布，见[实际打包记录](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/43840655193)。
+
+1. 将已验证的源码提交并推送到 GitHub，为该提交创建新的预发布标签，例如 `v0.1.0-beta.5`。推送新标签会自动触发 `Release` 工作流。
+2. 也可在仓库的 [Actions → Release](https://github.com/InTheManXG/ipad-smart-dashboard/actions/workflows/release.yml) 点击 `Run workflow`，选择 `main`，将 `version` 填为已推送的版本标签，`artifact` 选择 `unnotarized`。
+3. 等待工作流全部通过，再从对应 Release 下载 DMG、备用 ZIP、安装说明及 `SHA256SUMS`。手动入口同样在 GitHub 构建，不需要本机预先编译或上传文件。
+
+已有同名附件时上传会拒绝覆盖。修改源码后应使用新标签和版本，不移动已经发布的标签；未生成附件的失败任务可在修复运行环境后重试。
+
 ## 未公证测试版
 
 `unnotarized` 路径不需要 Developer ID。打包强制使用 `BUILD_CONFIGURATION=development` 与 `SIGNING_IDENTITY=-`，只接受预发布版本号及指向当前提交的匹配标签，工作区必须干净；已有输出目录时拒绝覆盖，以免混入上一版本产物。
 
-在满足这些条件的源码仓库中执行：
+GitHub 工作流在 runner 内调用以下打包入口；本地仅在调试或复现打包问题时使用：
 
 ```sh
 bash mac_app/package-preview.sh 0.1.0-beta.4
 ```
 
-产物位于 `.build/previews/0.1.0-beta.4/`：
+产物先写入 runner 的 `.build/previews/0.1.0-beta.4/`，随后由同一任务上传：
 
 ```text
 iPad-Control-0.1.0-beta.4-unnotarized-macos-arm64.dmg
@@ -48,7 +58,7 @@ bash mac_app/build.sh
 
 发布者需持有有效的 **Developer ID Application** 证书及私钥，并配置 Apple 公证凭据。不要把证书私钥、P12 密码、App Store Connect API 私钥或钥匙串导出文件提交到仓库。
 
-本机发布脚本读取：
+正式发布在 GitHub 的 `Release` 工作流中选择 `artifact=notarized`，凭据通过下文列出的仓库 Secret 提供。工作流内部的发布脚本读取：
 
 | 变量 | 用途 |
 | --- | --- |
@@ -57,7 +67,7 @@ bash mac_app/build.sh
 | `NOTARY_KEYCHAIN` | 可选，存放上述凭据的钥匙串路径 |
 | `APP_BUILD` | 正整数构建号，默认 `1` |
 
-发布前必须使用已验证、已提交的干净工作区，并在当前提交打好同版本标签。运行示例：
+发布前必须使用已验证、已提交的源码和对应版本标签。工作流 checkout 后使用干净工作区，以下为脚本内部调用方式，也可用于本地调试：
 
 ```sh
 SIGNING_IDENTITY='Developer ID Application: 你的证书名称' \

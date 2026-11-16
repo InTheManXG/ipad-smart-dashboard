@@ -8,6 +8,8 @@
 
 从 [v0.1.0-beta.4 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.4) 优先下载 `iPad-Control-0.1.0-beta.4-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。仅支持 Apple Silicon Mac；先按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验，打开 DMG 后将 App 拖入“应用程序”，再从“应用程序”打开。
 
+发行附件由 GitHub Actions 的 macOS runner 从版本标签编译、打包并直接上传，不使用维护者本机生成的安装包。beta.4 的[打包发布记录](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/43840655193)已通过；后续发布入口见[发行流程](docs/RELEASE.md)。
+
 测试包不需要 Docker、Python 或编译工具。beta.3 已在独立的 M1 Mac mini、macOS 27.0.1 上完成首次安装、配对与控制权限、版本替换保留配置及退出后台验证，详见 [实际验收记录](docs/ACCEPTANCE.md)。旧版 macOS、实际 iPad 和多播放器兼容性仍未验证；测试机原本关闭了 Gatekeeper，本次运行不代表系统安全放行通过。
 
 ## 支持范围
