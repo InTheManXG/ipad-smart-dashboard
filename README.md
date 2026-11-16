@@ -8,11 +8,11 @@
 
 从 [v0.1.0-beta.3 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.3) 下载 `iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip`、`SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`。仅支持 Apple Silicon Mac；先校验文件，再按 [未公证测试版安装说明](docs/UNNOTARIZED_INSTALL.md) 解压、移动到“应用程序”并打开。
 
-测试包不需要 Docker、Python 或编译工具。独立 Mac 的首次图形界面安装、升级及旧版 macOS 兼容性仍未完成验收；不接受这些限制时，可先阅读源码并等待公证发行版。
+测试包不需要 Docker、Python 或编译工具。已在独立的 M1 Mac mini、macOS 27.0.1 上完成首次安装、配对与控制权限、版本替换保留配置及退出后台验证，详见 [实际验收记录](docs/ACCEPTANCE.md)。旧版 macOS、实际 iPad 和多播放器兼容性仍未验证；测试机原本关闭了 Gatekeeper，本次运行不代表系统安全放行通过。
 
 ## 支持范围
 
-- Apple Silicon Mac；构建目标 macOS 13+，目前仅在维护者当前系统上验证，旧版系统与其他 Mac 尚未完成验收。
+- Apple Silicon Mac；构建目标 macOS 13+，已在维护者当前系统及独立 M1 Mac mini 的 macOS 27.0.1 上验证，macOS 13 和其他未列出的系统版本尚未验收。
 - iPad Safari、添加到主屏幕的网页，以及现代桌面浏览器。
 - Codex 任务采集依赖本机 Codex App 的数据格式，后续版本变化可能需要适配。
 - 音乐采集使用随包附带的 MediaRemote 兼容组件与系统 Perl。它依赖系统接口，不能保证所有 macOS 版本、播放器或歌曲都有歌词。
@@ -75,7 +75,8 @@ Swift 测试包括隔离的配置和钥匙串条目，使用后清理；不会�
 
 ## 发布与贡献
 
-- [发行流程与未完成验收](docs/RELEASE.md)
+- [发行流程](docs/RELEASE.md)
+- [实际验收记录与未验证范围](docs/ACCEPTANCE.md)
 - [变更记录](CHANGELOG.md)
 - [贡献说明](CONTRIBUTING.md)
 - [第三方组件和素材](THIRD_PARTY_NOTICES.md)
