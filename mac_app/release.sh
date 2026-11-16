@@ -11,6 +11,14 @@ if [[ -z "${SIGNING_IDENTITY:-}" || -z "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
   printf '%s\n' '正式发行需要 SIGNING_IDENTITY 和已保存在钥匙串的 NOTARY_KEYCHAIN_PROFILE；不会产出未公证安装包。' >&2
   exit 1
 fi
+require_gatekeeper() {
+  # 关闭系统评估时 assess 也可能返回成功，不能把这一结果当作发行验收。
+  if [[ "$(spctl --status 2>/dev/null)" != 'assessments enabled' ]]; then
+    printf '%s\n' 'Gatekeeper 未启用或状态无法确认，拒绝执行正式发行验收。' >&2
+    exit 1
+  fi
+}
+require_gatekeeper
 cd "$root"
 if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
   printf '%s\n' '请先提交已验证的源码，再从干净工作区创建发行包。' >&2
@@ -43,6 +51,7 @@ fi
 xcrun stapler staple "$app"
 xcrun stapler validate "$app"
 codesign --verify --deep --strict "$app"
+require_gatekeeper
 spctl --assess --type execute --verbose=4 "$app"
 archive="iPad-Control-$version-macos-arm64.zip"
 mkdir -p "$output"

@@ -71,13 +71,22 @@ curl --fail http://127.0.0.1:18086/api/mode
 
 以下是**使用本文同一 Compose 路径的安装**的一种停机备份方式；1Panel 现有编排使用自己的原路径和项目名执行等价操作。先停止写入再复制数据库，避免直接复制运行中的 SQLite 得到不一致的文件。
 
+从 GitHub 下载的源码 ZIP 不含 `.git`。这种安装请先填写当前下载版本对应的标签；示例中的 `v0.1.0-beta.2` 仅适用于该版本。通过 Git 克隆的安装会自动记录当前提交。版本检查在停止服务之前完成。
+
 ```sh
 umask 077
+source_tag="v0.1.0-beta.2"
+if git rev-parse --show-toplevel >/dev/null 2>&1; then
+  source_version="$(git rev-parse HEAD)"
+else
+  test -n "$source_tag" || { echo "请先填写当前源码的版本标签" >&2; exit 1; }
+  source_version="$source_tag (GitHub source archive)"
+fi
 backup_dir="./backup/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$backup_dir"
 cp deploy/compose.yaml "$backup_dir/compose.yaml"
 cp deploy/.env "$backup_dir/.env"
-git rev-parse HEAD > "$backup_dir/source-commit.txt"
+printf '%s\n' "$source_version" > "$backup_dir/source-version.txt"
 docker compose --env-file deploy/.env -f deploy/compose.yaml stop ipad-dashboard
 docker compose --env-file deploy/.env -f deploy/compose.yaml cp ipad-dashboard:/relay-data "$backup_dir/relay-data"
 docker compose --env-file deploy/.env -f deploy/compose.yaml start ipad-dashboard

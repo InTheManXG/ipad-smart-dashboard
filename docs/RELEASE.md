@@ -2,7 +2,7 @@
 
 ## 当前发布范围
 
-首发版本号为 `0.1.0-beta.1`，Git 标签为 `v0.1.0-beta.1`。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。当前已完成本机自动化检查，以及隔离用户目录的首次运行和旧配置保留检查；这不是独立 Mac 的完整安装验收。Intel Mac、其他 macOS 版本、干净用户的完整 GUI 安装升级流程及实际 iPad 仍需分别验收。
+当前预览版本号为 `0.1.0-beta.2`，Git 标签为 `v0.1.0-beta.2`。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。当前已完成本机自动化检查，以及隔离用户目录的首次运行和旧配置保留检查；这不是独立 Mac 的完整安装验收。Intel Mac、其他 macOS 版本、干净用户的完整 GUI 安装升级流程及实际 iPad 仍需分别验收。
 
 当前没有完成 Developer ID 签名和 Apple 公证，不能把开发包称为正式可分发安装包。允许先发布开源预览的源码和兼容限制，暂不附加未公证的 `.app`、ZIP 或 DMG；GitHub 自动提供的源码归档不代表 Mac 安装包。
 
@@ -39,14 +39,14 @@ bash mac_app/build.sh
 ```sh
 SIGNING_IDENTITY='Developer ID Application: 你的证书名称' \
 NOTARY_KEYCHAIN_PROFILE='你的公证凭据名称' \
-bash mac_app/release.sh 0.1.0-beta.1
+bash mac_app/release.sh 0.1.0-beta.2
 ```
 
-脚本会使用 hardened runtime 和时间戳签名，提交公证并要求状态为 `Accepted`，随后 staple、验证票据、执行严格签名检查和 Gatekeeper 检查。全部通过才生成：
+脚本要求构建前和最终验收时 Gatekeeper 均处于启用状态；关闭或无法确认状态时直接拒绝，避免把系统跳过评估误判为通过。之后使用 hardened runtime 和时间戳签名，提交公证并要求状态为 `Accepted`，随后 staple、验证票据、执行严格签名检查和 Gatekeeper 检查。全部通过才生成：
 
 ```text
-.build/releases/0.1.0-beta.1/iPad-Control-0.1.0-beta.1-macos-arm64.zip
-.build/releases/0.1.0-beta.1/SHA256SUMS
+.build/releases/0.1.0-beta.2/iPad-Control-0.1.0-beta.2-macos-arm64.zip
+.build/releases/0.1.0-beta.2/SHA256SUMS
 ```
 
 缺少凭据、证书不合适、源码未提交、标签不匹配或公证失败时，应停止发行，不上传开发包作为替代品。该流程本身仍需用真实发行凭据完成端到端验证；媒体兼容组件是否被公证接受不能靠本机构建推断。
@@ -84,7 +84,7 @@ CI 配置存在不代表已经运行成功。首次开源时记录实际 Actions
 ## 本次源码预览验证记录
 
 - 本机环境：Apple Silicon，macOS 27.2.1；原生 227 项断言、服务端 Python 回归、全部 7 组网页 Node 回归通过。
-- 开发包构建及严格签名结构检查通过，确认包含许可证且不含 Python 运行时、密钥文件或个人配置。开发包未作为下载附件发布。
+- 开发包构建及严格签名结构检查通过，确认包含许可证且不含 Python 运行时、密钥文件或个人配置。媒体框架和测试客户端从锁定上游源码按 macOS 13 重建，打包后只读媒体查询返回合法 JSON；这不代表旧系统或所有播放器已经验收。开发包未作为下载附件发布。
 - 真实后台二进制在隔离用户目录完成首次状态查询；默认关闭公网、局域网、音乐及登录启动，旧配置模拟升级保留文件内容与钥匙串账户归属。没有替换维护者当前安装。
 - OrbStack 临时独立容器通过非 root、只读文件系统、健康检查及数据库重启持久化验证，原有容器和线上 1Panel 部署未修改。
 - Git 历史及待公开源码进行了 Gitleaks 凭据扫描；个人路径、旧签名标识和不再分发的第三方图标清理后再公开。

@@ -2,11 +2,11 @@
 
 ## MediaRemote Adapter
 
-- 来源：https://github.com/ungive/mediaremote-adapter ，来自 media-control 0.7.7 分发包。
-- 作者：Jonas van den Berg。
+- 来源：https://github.com/ungive/mediaremote-adapter ，固定版本 v0.7.7（提交 `e3ff5021eb0875858bd05f48d2e9ba2e962d1cf6`）。
+- 作者：Jonas van den Berg and contributors。
 - 许可证：BSD 3-Clause，全文见 `mac_app/vendor/MediaAdapter/LICENSE`。
 - 分发内容：媒体框架、Perl 脚本和兼容测试客户端。现有二进制仅支持 Apple Silicon。
-- 打包只调整框架 install name，并按所选身份签名；不宣称苹果官方支持此接口。
+- 框架与测试客户端从上述源码按 `arm64-apple-macosx13.0` 重建，脚本保持原样；打包按所选身份签名。不宣称苹果官方支持此接口。复现步骤见组件 NOTICE。
 
 ## 本项目图标
 
