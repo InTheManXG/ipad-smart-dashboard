@@ -34,7 +34,9 @@ export BUILD_CONFIGURATION=development SIGNING_IDENTITY=- APP_VERSION="$version"
 bash "$root/mac_app/build.sh"
 app="$root/.build/iPad 控制台.app"
 codesign --verify --deep --strict "$app"
-if ! codesign -dv "$app" 2>&1 | grep -Fxq 'Signature=adhoc'; then
+signature_info="$(codesign -dv "$app" 2>&1)"
+# 先完整读取输出，避免 pipefail 把 grep 提前退出造成的 SIGPIPE 误判为验签失败。
+if ! grep -Fxq 'Signature=adhoc' <<< "$signature_info"; then
   printf '%s\n' '测试包必须使用 ad-hoc 签名。' >&2
   exit 1
 fi
