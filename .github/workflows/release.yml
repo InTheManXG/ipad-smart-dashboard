@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing version tag, for example v0.1.0-beta.4
+        description: Existing version tag, for example v0.1.0-beta.5
         type: string
         required: true
       artifact:
@@ -96,6 +96,7 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event.inputs.version || github.ref_name }}
       APP_BUILD: ${{ github.run_number }}
+      SIGNING_IDENTITY: ${{ secrets.DEVELOPMENT_SIGNING_IDENTITY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,6 +118,26 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py'
           python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
+      - name: Import fixed Apple Development certificate
+        env:
+          DEVELOPMENT_CERTIFICATE_P12_BASE64: ${{ secrets.DEVELOPMENT_CERTIFICATE_P12_BASE64 }}
+          DEVELOPMENT_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPMENT_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ "$SIGNING_IDENTITY" =~ ^[[:xdigit:]]{40}$ ]]
+          test -n "$DEVELOPMENT_CERTIFICATE_P12_BASE64"
+          test -n "$DEVELOPMENT_CERTIFICATE_PASSWORD"
+          keychain="$RUNNER_TEMP/ipad-development.keychain-db"
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          printf '%s' "$DEVELOPMENT_CERTIFICATE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/development-signing.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/development-signing.p12" -P "$DEVELOPMENT_CERTIFICATE_PASSWORD" -k "$keychain" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          rm -f "$RUNNER_TEMP/development-signing.p12"
       - name: Package unnotarized test application
         run: bash mac_app/package-preview.sh "$RELEASE_TAG"
       - name: Publish unnotarized prerelease
@@ -126,7 +147,7 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           cat > "$RUNNER_TEMP/preview-notes.md" <<'NOTES'
-          此预发布附件是 Apple Silicon Mac 的未公证测试包，仅使用 ad-hoc 临时签名，没有 Developer ID 身份签名，也未通过 Apple 公证。
+          此预发布附件是 Apple Silicon Mac 的未公证测试包，使用固定 Apple Development 证书签名，保持 App 与后台的更新身份。它不是 Developer ID 签名，也未通过 Apple 公证。
 
           优先下载文件名包含 unnotarized 的 DMG，ZIP 作为备用，无需两者都下载。按随附 UNNOTARIZED_INSTALL.md 从 SHA256SUMS 中校验选中的安装包，再将 App 拖入“应用程序”并从该文件夹打开，之后推出镜像。macOS 可能阻止首次打开；只在确认来源后对本 App 单独允许，不需要关闭全局安全保护。构建通过不等于所有 macOS、播放器或独立设备已完成验收。
 
@@ -138,6 +159,11 @@ jobs:
           else
             gh release create "$RELEASE_TAG" ".build/previews/$version/"* --verify-tag --prerelease --title "$RELEASE_TAG · 未公证测试版" --notes-file "$RUNNER_TEMP/preview-notes.md"
           fi
+      - name: Remove development signing credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/development-signing.p12"
+          security delete-keychain "$RUNNER_TEMP/ipad-development.keychain-db" || true
 
   release:
     needs: secrets

@@ -1,12 +1,12 @@
 # 安全说明
 
-`0.1.0-beta.4` 是开源测试版本，目前只有本机与 CI 环境的验证记录。它没有独立安全审计，也不应被当作隔离不可信用户或不可信中继的远程管理系统。
+`0.1.0-beta.5` 是开源测试版本，目前只有本机与 CI 环境的验证记录。它没有独立安全审计，也不应被当作隔离不可信用户或不可信中继的远程管理系统。
 
 ## 未公证测试包
 
-文件名含 `unnotarized` 的 App 使用 ad-hoc 签名，没有 Apple 颁发的开发者身份签名和 Apple 公证，不能宣称通过正式 Gatekeeper 验收。发布 SHA-256 清单仅用于检查下载一致性，不提供独立的发布者身份证明。
+自 beta.5 起，文件名含 `unnotarized` 的 App 使用固定 Apple Development 证书签名，以保持更新时的身份连续性；它不是 Developer ID 发行签名，也没有 Apple 公证，不能宣称通过正式 Gatekeeper 验收。发布 SHA-256 清单仅用于检查下载一致性，不提供独立的发布者身份证明。早期 beta.3、beta.4 附件仍为原来的 ad-hoc 签名。
 
-用户必须自行信任来源，并在系统提供时，仅为该 App 选择“仍要打开”。不应关闭全局 Gatekeeper、清除隔离属性或用终端绕过；受管 Mac 不允许时应停止。安装步骤见 [UNNOTARIZED_INSTALL.md](UNNOTARIZED_INSTALL.md)。ad-hoc 更新可能重新触发钥匙串授权，不能通过放宽整个钥匙串权限规避。
+用户必须自行信任来源，并在系统提供时，仅为该 App 选择“仍要打开”。不应关闭全局 Gatekeeper、清除隔离属性或用终端绕过；受管 Mac 不允许时应停止。安装步骤见 [UNNOTARIZED_INSTALL.md](UNNOTARIZED_INSTALL.md)。从 ad-hoc 版本切换或以后更换证书时可能重新触发钥匙串授权，不能通过放宽整个钥匙串权限规避。
 
 ## 信任边界
 

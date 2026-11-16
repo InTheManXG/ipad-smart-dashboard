@@ -2,11 +2,11 @@
 
 把 iPad 或其他浏览器变成 Mac 的任务看板：查看 Codex 工作状态、额度和音乐，并按需控制已配置的应用与脚本。Mac 端使用 SwiftUI 和 Swift 原生服务，本地核心功能不需要 Docker、Python 或 Homebrew。
 
-项目目前为 **0.1.0-beta.4 未公证测试版**。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 测试包使用 ad-hoc 签名，没有 Apple 颁发的开发者身份签名，也没有经过 Apple 公证。系统可能阻止首次打开，需要用户自行确认信任。
+项目目前为 **0.1.0-beta.5 未公证测试版**。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 测试包使用固定的 Apple Development 证书签名，以保持更新时的签名身份；这不是 Developer ID 发行签名，也没有经过 Apple 公证。系统仍可能阻止首次打开，需要用户自行确认信任。
 
 ## 下载测试版
 
-从 [v0.1.0-beta.4 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.4) 优先下载 `iPad-Control-0.1.0-beta.4-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。仅支持 Apple Silicon Mac；先按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验，打开 DMG 后将 App 拖入“应用程序”，再从“应用程序”打开。
+从 [v0.1.0-beta.5 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.5) 优先下载 `iPad-Control-0.1.0-beta.5-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。仅支持 Apple Silicon Mac；先按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验，打开 DMG 后将 App 拖入“应用程序”，再从“应用程序”打开。
 
 发行附件由 GitHub Actions 的 macOS runner 从版本标签编译、打包并直接上传，不使用维护者本机生成的安装包。beta.4 的[打包发布记录](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/43840655193)已通过；后续发布入口见[发行流程](docs/RELEASE.md)。
 
@@ -69,7 +69,7 @@ Swift 测试包括隔离的配置和钥匙串条目，使用后清理；不会�
 
 ## 更新与卸载
 
-先从菜单选择“退出 iPad 控制台（停止后台服务）”，再用新版本替换旧 `.app`。同机升级保留配置和配对；ad-hoc 测试包更新后，macOS 可能重新请求钥匙串授权。核对请求来自刚安装的 App 后在本机处理，不需要导出或发送 Key。检测到配置复制到了另一台 Mac 后，会保留设置、Key 和快捷项目，并隔离旧配对和授权，要求重新配对。安装绑定只在本机保存硬件标识的 SHA-256 摘要，不上传硬件标识。
+先从菜单选择“退出 iPad 控制台（停止后台服务）”，再用新版本替换旧 `.app`。同机升级保留配置和配对。从旧 ad-hoc 测试版首次切换到 Apple Development 签名时，macOS 可能重新请求钥匙串授权；之后保持证书、Bundle ID 和后台服务标识不变。证书到期或更换时仍需重新验证升级和授权行为。核对请求来自刚安装的 App 后在本机处理，不需要导出或发送 Key。检测到配置复制到了另一台 Mac 后，会保留设置、Key 和快捷项目，并隔离旧配对和授权，要求重新配对。安装绑定只在本机保存硬件标识的 SHA-256 摘要，不上传硬件标识。
 
 首次升级到本版本之前已复制的两份旧安装缺少绑定基线，无法自动分辨，应先停止旧电脑服务，再使用独立配对。不要手工复制别人的配置和钥匙串。旧订阅更新项目会保留名称和顺序，需要在 App 中补选自己的脚本及解释器后才能执行。
 

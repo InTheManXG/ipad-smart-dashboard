@@ -4,7 +4,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 version="${1:-${APP_VERSION:-}}"
 version="${version#v}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*$ ]]; then
-  printf '%s\n' '未公证测试包只接受预发布版本，例如：bash mac_app/package-preview.sh 0.1.0-beta.4' >&2
+  printf '%s\n' '未公证测试包只接受预发布版本，例如：bash mac_app/package-preview.sh 0.1.0-beta.5' >&2
   exit 1
 fi
 cd "$root"
@@ -29,17 +29,15 @@ fi
 for notice in LICENSE THIRD_PARTY_NOTICES.md docs/UNNOTARIZED_INSTALL.md; do
   if [[ ! -f "$root/$notice" ]]; then printf '测试包缺少说明文件：%s\n' "$notice" >&2; exit 1; fi
 done
-# 测试包始终使用临时签名，不能继承外部证书配置而被误认为正式发行。
-export BUILD_CONFIGURATION=development SIGNING_IDENTITY=- APP_VERSION="$version" APP_BUILD="${APP_BUILD:-1}"
-bash "$root/mac_app/build.sh"
-app="$root/.build/iPad 控制台.app"
-codesign --verify --deep --strict "$app"
-signature_info="$(codesign -dv "$app" 2>&1)"
-# 先完整读取输出，避免 pipefail 把 grep 提前退出造成的 SIGPIPE 误判为验签失败。
-if ! grep -Fxq 'Signature=adhoc' <<< "$signature_info"; then
-  printf '%s\n' '测试包必须使用 ad-hoc 签名。' >&2
+# 测试版固定到同一开发证书；缺证书不能降级，否则升级会改变钥匙串识别的身份。
+if [[ ! "${SIGNING_IDENTITY:-}" =~ ^[[:xdigit:]]{40}$ ]]; then
+  printf '%s\n' '测试包必须设置固定 Apple Development 证书的 SIGNING_IDENTITY SHA-1 指纹，不接受 ad-hoc 签名。' >&2
   exit 1
 fi
+export BUILD_CONFIGURATION=development SIGNING_IDENTITY APP_VERSION="$version" APP_BUILD="${APP_BUILD:-1}"
+bash "$root/mac_app/build.sh"
+app="$root/.build/iPad 控制台.app"
+bash "$root/mac_app/check-development-signature.sh" "$app" "$SIGNING_IDENTITY"
 if [[ "$(plutil -extract CFBundleGetInfoString raw -o - "$app/Contents/Info.plist")" != "$version" ]]; then
   printf '%s\n' '测试包版本与标签不一致。' >&2
   exit 1
@@ -52,6 +50,8 @@ trap 'rm -rf "$stage" "$verification"' EXIT
 archive="iPad-Control-$version-unnotarized-macos-arm64.zip"
 image="iPad-Control-$version-unnotarized-macos-arm64.dmg"
 bash "$root/mac_app/package-dmg.sh" "$app" "$stage/$image"
+codesign --force --sign "$SIGNING_IDENTITY" "$stage/$image"
+codesign --verify --strict "$stage/$image"
 ditto -c -k --keepParent --sequesterRsrc "$app" "$stage/$archive"
 # 验收下载后真正解压的成品，避免打包遗漏或损坏被原目录的检查掩盖。
 ditto -x -k "$stage/$archive" "$verification"
@@ -59,7 +59,7 @@ unpacked="$verification/iPad 控制台.app"
 for binary in MacOS/iPadControl MacOS/iPadService Resources/MediaAdapter/MediaRemoteAdapter.framework/Versions/A/MediaRemoteAdapter Resources/MediaAdapter/MediaRemoteAdapterTestClient; do
   [[ -f "$unpacked/Contents/$binary" ]]
 done
-codesign --verify --deep --strict "$unpacked"
+bash "$root/mac_app/check-development-signature.sh" "$unpacked" "$SIGNING_IDENTITY"
 [[ "$(plutil -extract CFBundleGetInfoString raw -o - "$unpacked/Contents/Info.plist")" == "$version" ]]
 cp "$root/docs/UNNOTARIZED_INSTALL.md" "$stage/UNNOTARIZED_INSTALL.md"
 (cd "$stage" && shasum -a 256 "$image" "$archive" UNNOTARIZED_INSTALL.md > SHA256SUMS)

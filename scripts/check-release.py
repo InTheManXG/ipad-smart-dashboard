@@ -20,7 +20,7 @@ def rejects(script, expected, values=None, args=()):
     assert expected in result.stderr, f"{script} 未返回预期的拒绝原因"
 
 
-for script in ("mac_app/build.sh", "mac_app/release.sh", "mac_app/package-preview.sh", "mac_app/package-dmg.sh"):
+for script in ("mac_app/build.sh", "mac_app/release.sh", "mac_app/package-preview.sh", "mac_app/package-dmg.sh", "mac_app/check-development-signature.sh"):
     subprocess.run(["bash", "-n", str(ROOT / script)], check=True)
 rejects("mac_app/build.sh", "APP_VERSION", {"APP_VERSION": "0.1.0;echo unsafe"})
 rejects("mac_app/build.sh", "APP_BUILD", {"APP_BUILD": "0"})
@@ -30,6 +30,7 @@ rejects("mac_app/release.sh", "用法", args=("invalid",))
 rejects("mac_app/release.sh", "不会产出未公证安装包", args=("0.1.0-beta.1",))
 rejects("mac_app/package-dmg.sh", "用法")
 rejects("mac_app/package-dmg.sh", "用法", args=("missing.app", "output.dmg"))
+rejects("mac_app/check-development-signature.sh", "用法", args=("missing.app", "-"))
 # 已有产物及符号链接一律不能覆盖，校验必须先于签名与挂载操作。
 with tempfile.TemporaryDirectory(prefix="ipad-dmg-gate-") as folder:
     source = Path(folder) / "iPad 控制台.app"
@@ -108,4 +109,18 @@ with tempfile.TemporaryDirectory(prefix="ipad-preview-private-") as folder:
     result = subprocess.run(["bash", "mac_app/package-preview.sh", "0.1.0-beta.3"],
                             cwd=repository, capture_output=True, text=True, timeout=15)
     assert result.returncode != 0 and "包括被忽略的文件" in result.stderr
+    (repository / "web/.env").unlink()
+    (repository / "docs").mkdir()
+    for notice in ("LICENSE", "THIRD_PARTY_NOTICES.md", "docs/UNNOTARIZED_INSTALL.md"):
+        (repository / notice).write_text("fixture\n")
+    subprocess.run(["git", "add", "."], cwd=repository, check=True, capture_output=True)
+    subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "notices"], cwd=repository, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.1.0-beta.5"], cwd=repository, check=True, capture_output=True)
+    # 测试版不能再接受空身份、临时签名或同名证书，须使用唯一指纹。
+    for identity in ("", "-", "Apple Development: Fixture"):
+        env = os.environ.copy()
+        env["SIGNING_IDENTITY"] = identity
+        result = subprocess.run(["bash", "mac_app/package-preview.sh", "0.1.0-beta.5"], cwd=repository,
+                                env=env, capture_output=True, text=True, timeout=15)
+        assert result.returncode != 0 and "固定 Apple Development" in result.stderr
 print("资源中的 Git 忽略文件泄漏保护验证通过")
