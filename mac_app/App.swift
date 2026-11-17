@@ -302,7 +302,7 @@ struct ControlView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     } else if !model.pairingCode.isEmpty {
                         Text("在网页输入配对码")
-                        Text(model.pairingCode).font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                        pairingCodeButton(model.pairingCode)
                         Text("配对码 10 分钟有效，只能使用一次。完成后点击下方按钮刷新状态。")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
@@ -312,7 +312,7 @@ struct ControlView: View {
                     if !model.publicURL.isEmpty {
                         Button("配对新网页") { Task { await model.newCode() } }
                         if !model.extraCode.isEmpty {
-                            Text(model.extraCode).font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                            pairingCodeButton(model.extraCode)
                             Text("10 分钟有效、仅使用一次；不会断开已配对的网页。").font(.caption).foregroundStyle(.secondary)
                         }
                         if !model.publicScreensError.isEmpty { Text(model.publicScreensError).foregroundStyle(.red) }
@@ -344,7 +344,7 @@ struct ControlView: View {
                         Divider()
                         if !model.localPairingCode.isEmpty {
                             Text("配对新网页 · 本地配对码")
-                            Text(model.localPairingCode).font(.system(size: 28, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                            pairingCodeButton(model.localPairingCode)
                             Text("配对码 10 分钟有效，使用后更新。与公网配对码分别使用。")
                                 .font(.caption).foregroundStyle(.secondary)
                         } else {
@@ -383,6 +383,21 @@ struct ControlView: View {
         } message: {
             Text("“\(kickingScreen?.remark.isEmpty == false ? kickingScreen!.remark : "未备注网页")”将失去访问权限，需要重新配对。其他端不受影响。")
         }
+    }
+
+    private func pairingCodeButton(_ code: String) -> some View {
+        Button {
+            // 使用本次点击对应的完整配对码，不把提示文案写入剪贴板。
+            NSPasteboard.general.clearContents()
+            let copied = NSPasteboard.general.setString(code, forType: .string)
+            model.failed = !copied
+            model.message = copied ? "配对码已复制" : "复制失败，请重试"
+        } label: {
+            Text(code).font(.system(size: 28, weight: .bold, design: .monospaced))
+        }
+        .buttonStyle(.plain)
+        .help("点击复制配对码")
+        .accessibilityLabel("复制配对码 \(code)")
     }
 
     private var visibleScreens: [PairedScreen] {
