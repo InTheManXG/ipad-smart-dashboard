@@ -51,7 +51,7 @@
 
 ## 下载发行版
 
-当前发行版为 **0.2.6**。前往 [最新发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest)，优先下载 `iPad-Control-0.2.6-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。
+当前发行版为 **0.3.0**。前往 [最新发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest)，优先下载 `iPad-Control-0.3.0-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。
 
 1. 按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验下载文件。
 2. 打开 DMG，将 App 拖入“应用程序”。
@@ -99,6 +99,7 @@ open '.build/iPad 控制台.app'
 3. 新配对默认为只读。配对后在 Mac 的“连接与配对”中点击“刷新连接状态与地址”，需要远程操作时，在对应网页卡片开启“允许控制此 Mac”。
 4. 在“快捷控制台”配置应用、Shell 脚本、命令或订阅脚本。网页仅提交项目 ID，路径和命令保留在 Mac；脚本以当前用户权限执行。
 5. 可给多个网页添加备注，查看浏览器简介，或踢下线。撤销控制权限会阻止后续控制请求。
+6. 在 Mac 的“音乐同步”中选择标准、音乐优先或全屏音乐，布局会同步到所有网页。全屏音乐将任务与音乐分为相邻整页，可左右滑动切换。
 
 公网服务器可以读取任务标题、额度、音乐等同步信息，并传递控制指令。它不是端到端加密的盲中继。即使 Mac 还会检查本地授权，也必须信任所使用的服务器与其网页代码。详见 [隐私说明](docs/PRIVACY.md) 和 [安全边界](docs/SECURITY.md)。
 

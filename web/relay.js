@@ -102,22 +102,35 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 setInterval(refreshRelay, 60000);
 refreshRelay();
 
-// 三页导航共用现有入口，避免不同后端的静态资源白名单出现差异。
+// 分页导航共用现有入口，布局变化时按页面 ID 保留位置。
 const pages = document.querySelector('.pages');
-const pageIds = ['console', 'home', 'company'];
-let currentPage = 1;
+const pageIds = ['console', 'home', 'music', 'company'];
+let currentPage = 'home';
+let pendingPage = null;
+function visiblePageIds() { return pageIds.filter(id => !document.getElementById(id).hidden); }
 function showPage(id) {
-  currentPage = Math.max(0, pageIds.indexOf(id));
-  pages.scrollLeft = currentPage * pages.clientWidth;
+  const visible = visiblePageIds();
+  currentPage = visible.includes(id) ? id : 'home';
+  pages.scrollLeft = visible.indexOf(currentPage) * pages.clientWidth;
 }
 function restorePage() {
   const id = location.hash.slice(1);
+  // 音乐布局由稍后抵达的快照决定，先记住刷新前的音乐页位置。
+  pendingPage = id === 'music' && document.getElementById(id).hidden ? id : null;
   showPage(pageIds.includes(id) ? id : 'home');
 }
 // 首页位于中间，加载和恢复页面时必须明确定位，不能默认露出左侧控制台。
 restorePage();
 window.addEventListener('pageshow', () => requestAnimationFrame(restorePage));
 window.addEventListener('hashchange', restorePage);
-pages.addEventListener('scroll', () => { currentPage = Math.round(pages.scrollLeft / pages.clientWidth); }, {passive:true});
+window.addEventListener('page-layout-change', () => {
+  if (pendingPage && visiblePageIds().includes(pendingPage)) {
+    showPage(pendingPage); pendingPage = null;
+  } else showPage(currentPage);
+});
+pages.addEventListener('scroll', () => {
+  currentPage = visiblePageIds()[Math.round(pages.scrollLeft / pages.clientWidth)] || 'home';
+  if (currentPage !== 'home') pendingPage = null;
+}, {passive:true});
 // 旋转屏幕后按页定位，避免停留在两页之间。
-window.addEventListener('resize', () => showPage(pageIds[currentPage] || 'home'));
+window.addEventListener('resize', () => showPage(currentPage));

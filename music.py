@@ -16,7 +16,10 @@ ACTIONS = ('previous', 'replay', 'play', 'pause', 'next')
 def validate(value):
     if not isinstance(value, dict) or value.get('state') not in ('idle', 'ready', 'unavailable', 'offline'):
         raise ValueError('invalid music state')
-    result = {'state': value['state']}
+    layout = value.get('layout', 'standard')
+    if not isinstance(layout, str) or layout not in ('standard', 'priority', 'full'):
+        raise ValueError('invalid music layout')
+    result = {'state': value['state'], 'layout': layout}
     # 显式开关与断线状态独立，禁止字符串等伪布尔值影响网页布局。
     if 'enabled' in value:
         if type(value['enabled']) is not bool:
@@ -113,9 +116,12 @@ def put(value):
 def get():
     with _lock:
         age = time.monotonic() - _received
-        # Mac 休眠或采集退出后，不允许客户端继续推演旧进度。
+        # 断线只保留布局和开关，不让客户端继续显示或推演旧歌曲。
         if _snapshot is None or age > 8:
-            return {'state': 'offline'}
+            result = {'state': 'offline', 'layout': _snapshot.get('layout', 'standard') if _snapshot else 'standard'}
+            if _snapshot and 'enabled' in _snapshot:
+                result['enabled'] = _snapshot['enabled']
+            return result
         result = dict(_snapshot)
     if result['state'] == 'ready' and result['playing']:
         result['position'] = min(result['duration'], result['position'] + age)

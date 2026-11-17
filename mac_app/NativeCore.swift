@@ -145,9 +145,19 @@ func writeJSON(_ value: Any, _ url: URL) throws {
 }
 func configuration() throws -> JSONObject {
     if !FileManager.default.fileExists(atPath: NativePaths.config.path) {
-        return ["publicURL": "", "musicEnabled": false, "dashboardEnabled": false, "musicLogin": false]
+        return ["publicURL": "", "musicEnabled": false, "musicLayout": "standard", "dashboardEnabled": false, "musicLogin": false]
     }
     return try readJSON(NativePaths.config)
+}
+func validatedMusicLayout(_ value: Any?) throws -> String {
+    guard let layout = value as? String, ["standard", "priority", "full"].contains(layout) else {
+        throw ControlError("音乐布局不正确")
+    }
+    return layout
+}
+// 旧配置没有布局字段，损坏或未来版本的值也安全回退到原有标准布局。
+func configuredMusicLayout(_ config: JSONObject) -> String {
+    (try? validatedMusicLayout(config["musicLayout"])) ?? "standard"
 }
 func displayToken() throws -> String {
     let account = NativePaths.identityAccount("display-token")

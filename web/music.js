@@ -4,7 +4,26 @@ let lyricKey = '', renderedSnapshot = null, lastLyricFrame = null;
 let musicControlBusy = false, musicRevision = 0;
 let musicControlAllowed = false;
 let musicInvalidated = false;
+let musicLayoutKey = '';
 const musicControlMessage = globalThis.controlRequiredMessage;
+
+function applyMusicLayout(visible, layout) {
+  const mode = ['priority', 'full'].includes(layout) ? layout : 'standard';
+  const key = `${visible}:${mode}`;
+  if (key === musicLayoutKey) return;
+  musicLayoutKey = key;
+  const home = musicNode('home'), page = musicNode('music'), panel = musicNode('music-panel');
+  const full = visible && mode === 'full';
+  home.classList.toggle('music-hidden', !visible || full);
+  home.classList.toggle('music-priority', visible && mode === 'priority');
+  home.classList.toggle('music-full', full);
+  panel.hidden = !visible;
+  page.hidden = !full;
+  // 只搬动同一个播放器；每帧歌词更新不能重建控件或重新排列页面。
+  const parent = full ? page : home;
+  if (panel.parentElement !== parent) parent.append(panel);
+  window.dispatchEvent(new Event('page-layout-change'));
+}
 
 function lyricFrame(snapshot, elapsed) {
   if (!snapshot || elapsed > 8 || snapshot.state === 'offline') return {title:'等待音乐连接', artist:'Mac 上的音乐同步暂未连接', state:'未连接', current:'♪'};
@@ -58,8 +77,7 @@ function renderLyrics(snapshot, frame) {
 function renderMusic() {
   // 未配置或已停用时不占位；启用但暂时未播放仍保留音乐区域。
   const visible = !!musicSnapshot && (musicSnapshot.enabled === true || (musicSnapshot.enabled !== false && musicSnapshot.state !== 'offline'));
-  musicNode('music-panel').hidden = !visible;
-  musicNode('home').classList.toggle('music-hidden', !visible);
+  applyMusicLayout(visible, musicSnapshot?.layout);
   const frame = lyricFrame(musicSnapshot, (performance.now() - musicReceived) / 1000);
   // 其他播放器及断线状态不显示网易云品牌图标。
   musicNode('music-source-logo').hidden = frame.source !== '网易云音乐';
@@ -145,7 +163,8 @@ async function refreshMusic() {
     // 服务器进度在响应发出前计算；用半个往返耗时估计回程延迟，不依赖设备时钟一致。
     musicReceived = musicSnapshot.state === 'ready' && musicSnapshot.playing ? (started + received) / 2 : received;
   } catch {
-    if (revision === musicRevision) musicSnapshot = null;
+    // 断线只清除歌曲信息，保留已同步的布局与开关，避免整页突然消失。
+    if (revision === musicRevision) musicSnapshot = musicSnapshot ? {state:'offline', enabled:musicSnapshot.enabled, layout:musicSnapshot.layout} : null;
   } finally { clearTimeout(timer); musicBusy = false; renderMusic(); }
 }
 

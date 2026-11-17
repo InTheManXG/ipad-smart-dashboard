@@ -199,12 +199,30 @@ import AppKit
         try check(afterKick.authorized(repaired, now: 2077) && !afterKick.authorized(firstWeb, now: 2077), "重新配对只授予新令牌权限")
         try check(try reopened.list(now: 2001 + 31 * 86400).isEmpty, "列表清理过期网页")
         let disabledMusic = NativeMusic()
+        try check(configuredMusicLayout([:]) == "standard", "旧配置默认使用标准音乐布局")
+        try check(configuredMusicLayout(["musicLayout": "future"]) == "standard", "未知配置布局安全回退")
+        for invalid in ["unknown", "", 1, true, NSNull()] as [Any] {
+            try rejects("音乐布局写入拒绝无效值") { _ = try validatedMusicLayout(invalid) }
+        }
+        for layout in ["standard", "priority", "full"] {
+            let layoutMusic = NativeMusic()
+            try check(try validatedMusicLayout(layout) == layout, "音乐布局允许明确的三种模式")
+            layoutMusic.setLayout(layout)
+            try check(layoutMusic.snapshot()["layout"] as? String == layout, "离线快照保留布局")
+            layoutMusic.update(["state": "idle"])
+            try check(layoutMusic.snapshot()["layout"] as? String == layout, "空闲快照保留布局")
+            layoutMusic.update(["state": "ready", "playing": false])
+            try check(layoutMusic.snapshot()["layout"] as? String == layout, "播放快照保留布局")
+        }
+        disabledMusic.setLayout("full")
         disabledMusic.setEnabled(false)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用音乐明确通知网页隐藏歌词")
+        try check(disabledMusic.snapshot()["layout"] as? String == "full", "停用音乐仍保留所选布局")
         disabledMusic.update(["state": "idle"])
         try check(disabledMusic.snapshot()["enabled"] as? Bool == false, "停用时晚到采集不能重新启用")
         disabledMusic.setEnabled(true)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == true, "启用但离线仍保留音乐区域")
+        try check(disabledMusic.snapshot()["layout"] as? String == "full", "再次启用不重置所选布局")
         let subscriptions = ConsoleActions(path: root.appendingPathComponent("subscriptions.json"))
         let subscriptionScript = root.appendingPathComponent("subscription test.sh")
         try "printf '%s\\n' \"$@\" > invocation.txt\nsleep 0.05\n".write(to: subscriptionScript, atomically: true, encoding: .utf8)

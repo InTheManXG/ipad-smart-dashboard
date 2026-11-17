@@ -181,6 +181,34 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .music-panel[hidden]{display:none}
 @media(max-height:500px){.home-page.music-hidden{height:100dvh;min-height:0;overflow:hidden}.home-page.music-hidden main{flex:1;height:auto}}
 
+/* 音乐优先把可用内容高度按 2:1 分给音乐和任务，任务列表仍在卡片内部滚动。 */
+.home-page.music-priority{display:grid;grid-template-rows:auto minmax(0,2fr) minmax(0,1fr) auto;gap:16px;height:100dvh;min-height:0;overflow:hidden}
+.home-page.music-priority header{grid-row:1}
+.home-page.music-priority .music-panel{grid-row:2;min-height:0}
+.home-page.music-priority main{grid-row:3;height:auto;min-height:0;padding:0}
+.home-page.music-priority footer{grid-row:4;padding:0}
+.music-priority .lyric-lines{--lyric-step:clamp(36px,7dvh,68px)}
+.music-priority .lyric-line{font-size:clamp(24px,3.3vw,42px)}
+.music-priority #music-title{font-size:20px}
+.music-priority #music-artist{font-size:14px}
+.music-page-open{display:none;flex:none;font-size:13px;color:var(--accent);text-decoration:none;min-height:44px;align-items:center;margin-left:auto}
+.music-full .music-page-open{display:inline-flex;gap:5px}
+
+/* 全屏音乐复用同一播放器，独立横向整页，不复制控件或歌词时间轴。 */
+.music-page{height:100dvh;min-height:0;display:flex;flex-direction:column;gap:16px;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom));overflow:hidden}
+.music-page[hidden]{display:none}
+.music-page-header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex:none;min-height:44px}
+.music-page-header h1{font-size:24px;margin:0}
+.music-page-back{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:var(--accent);text-decoration:none;font-size:14px}
+.music-page>.music-panel{flex:1;min-height:0;padding:32px 20px}
+.music-page .lyric-lines{--lyric-step:clamp(44px,10dvh,96px)}
+.music-page .lyric-line{font-size:clamp(28px,4.4vw,56px)}
+.music-page #music-title{font-size:clamp(20px,2.6vw,30px)}
+.music-page #music-artist{font-size:16px}
+.music-page .music-timeline{width:min(100%,420px)}
+@media(max-width:540px){.music-page .music-meta,.music-priority .music-meta{flex-direction:column;align-items:center;gap:2px}.music-page>.music-panel{padding:32px 12px 12px}.music-page .lyric-lines{--lyric-step:clamp(42px,8dvh,76px)}.music-page .lyric-line{font-size:30px}.music-priority .lyric-line{font-size:26px}}
+@media(max-height:560px){.home-page.music-priority{height:620px;grid-template-rows:auto minmax(210px,2fr) minmax(140px,1fr) auto;overflow:visible}.music-page .lyric-lines{--lyric-step:42px}.music-page>.music-panel{padding-top:24px}.music-page .lyric-line{font-size:28px}}
+
 /* 类型分组保留 Mac 配置的组内顺序，整个图标入口可点击。 */
 .console-shortcuts{margin-top:32px}.console-actions{margin-top:20px}.console-group{margin-bottom:28px}.console-group h3{font-size:16px;margin:0 0 14px}.console-group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px}.console-action{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px 12px;background:var(--panel);border:1px solid var(--line);border-radius:18px;min-height:160px}.console-action strong{font-size:15px;overflow-wrap:anywhere;text-align:center}.console-icon{display:flex;align-items:center;justify-content:center;width:54px;height:54px;font:600 26px ui-monospace,monospace;color:var(--ink);background:var(--bg);border-radius:12px}.console-icon img{width:48px;height:48px;object-fit:contain}.console-action-state{font-size:12px;color:var(--muted)}
 

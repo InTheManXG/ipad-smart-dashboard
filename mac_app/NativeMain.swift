@@ -40,7 +40,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         return ["ok": true]
     }
     if action == "status" {
-        var status: JSONObject = ["musicEnabled": config["musicEnabled"] as? Bool ?? true, "publicURL": publicAddress(config), "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
+        var status: JSONObject = ["musicEnabled": config["musicEnabled"] as? Bool ?? true, "musicLayout": configuredMusicLayout(config), "publicURL": publicAddress(config), "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
                                   "appLogin": FileManager.default.fileExists(atPath: NativePaths.agents.appendingPathComponent("com.iamxg.ipad-control.plist").path)]
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]
@@ -151,6 +151,11 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     if ["key-save", "key-delete"].contains(action) {
         var body = value; body["action"] = action == "key-save" ? "save" : "delete"
         _ = try managedKeys(body)
+    } else if action == "music-layout" {
+        config["musicLayout"] = try validatedMusicLayout(value["layout"])
+        try writeJSON(config, NativePaths.config); try installService(start: true)
+        // 仅保存布局，不改变音乐启用状态；已有后台下一轮读取后同步所有网页。
+        Thread.sleep(forTimeInterval: 1.2)
     } else if ["dashboard-start", "dashboard-stop", "music-start", "music-stop"].contains(action) {
         config[action.hasPrefix("dashboard") ? "dashboardEnabled" : "musicEnabled"] = action.hasSuffix("start")
         try writeJSON(config, NativePaths.config); try installService(start: true)

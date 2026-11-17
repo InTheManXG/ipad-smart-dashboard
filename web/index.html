@@ -27,7 +27,7 @@
 </header>
 <main>
   <section class="tasks">
-    <div class="section-head"><div><h2>任务现场</h2><p id="summary" class="section-description">等待第一份状态</p></div><span id="task-count">—</span></div>
+    <div class="section-head"><div><h2>任务现场</h2><p id="summary" class="section-description">等待第一份状态</p></div><a class="music-page-open" href="#music">音乐 <span aria-hidden="true">→</span></a><span id="task-count">—</span></div>
     <div id="task-list" aria-live="polite"></div><p id="list-note" class="note"></p>
   </section>
 </main>
@@ -44,6 +44,9 @@
   <p id="music-control-result" role="status"></p>
 </section>
 </div>
+<section id="music" class="dashboard-page music-page" hidden aria-labelledby="music-page-title">
+  <div class="music-page-header"><h1 id="music-page-title">音乐</h1><a class="music-page-back" href="#home">任务现场 <span aria-hidden="true">↗</span></a></div>
+</section>
 <section id="company" class="dashboard-page company-page" aria-labelledby="company-title">
   <div class="section-head"><div><h2 id="company-title">中转站key 额度信息</h2><p class="section-description">订阅额度 · 每分钟更新 · Key 请在 Mac 控制台管理</p></div><div class="relay-actions"><button id="relay-refresh" type="button">更新</button></div></div>
   <p id="relay-message" class="note" role="status"></p><div id="relay-cards"></div>

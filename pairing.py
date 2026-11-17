@@ -327,7 +327,10 @@ class Store:
         with self.lock:
             item = self.snapshots.get(ident)
             if not item or time.monotonic()-item[0] > FRESH_TTL:
-                if kind == 'music': return {'state': 'offline', 'enabled': bool(item and item[2].get('enabled', True))}
+                if kind == 'music':
+                    # 连接过期不能丢失显示模式，但旧歌曲及歌词不再下发。
+                    return {'state': 'offline', 'enabled': bool(item and item[2].get('enabled', True)),
+                            'layout': item[2].get('layout', 'standard') if item else 'standard'}
                 raise Failure(503, 'device_offline')
             age, status, song, keys = time.monotonic()-item[0], item[1], item[2], item[3]
             if kind == 'status': return status | {'servedAt': time.time()}

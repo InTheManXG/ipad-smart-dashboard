@@ -292,6 +292,31 @@ class PairingStoreTests(unittest.TestCase):
                 store.exchange(ident, {'music': {'state': 'offline', 'enabled': 'false'}})
             store.close()
 
+    def test_music_layout_survives_exchange_and_disconnect(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = pairing.Store(Path(folder) / 'pairing.sqlite')
+            ident = str(uuid.uuid4())
+            store.register({'deviceId': ident, 'deviceToken': 'a' * 64})
+            self.assertEqual(store.read(ident, 'music')['layout'], 'standard')
+            store.exchange(ident, {'music': {'state': 'idle'}})
+            self.assertEqual(store.read(ident, 'music')['layout'], 'standard', '旧 App 未发送布局时沿用标准模式')
+            for layout in ('standard', 'priority', 'full'):
+                for enabled in (False, True):
+                    song = {'state': 'ready', 'title': '不应保留的旧歌', 'artist': '歌手', 'source': '播放器',
+                            'lyricsState': 'ready', 'playing': False, 'position': 10, 'duration': 100,
+                            'lines': [{'time': 0, 'text': '不应保留的歌词'}], 'enabled': enabled, 'layout': layout}
+                    store.exchange(ident, {'music': song})
+                    self.assertEqual(store.read(ident, 'music')['layout'], layout)
+                    store.exchange(ident, {'status': {}})
+                    self.assertEqual(store.read(ident, 'music')['layout'], layout, '并行状态上传不得覆盖布局')
+                    item = store.snapshots[ident]
+                    store.snapshots[ident] = (time.monotonic() - 100,) + item[1:]
+                    self.assertEqual(store.read(ident, 'music'), {'state': 'offline', 'enabled': enabled, 'layout': layout})
+            for invalid in (None, True, 1, [], {}, '', 'unknown'):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    store.exchange(ident, {'music': {'state': 'offline', 'layout': invalid}})
+            store.close()
+
     def test_code_binds_browser_to_one_device(self):
         with tempfile.TemporaryDirectory() as folder:
             store = pairing.Store(Path(folder) / 'pairing.sqlite')

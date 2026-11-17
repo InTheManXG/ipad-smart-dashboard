@@ -27,6 +27,7 @@ struct PairedScreen: Identifiable {
 @MainActor final class ControlModel: ObservableObject {
     @Published var dashboard = "正在检查…"
     @Published var musicEnabled = false
+    @Published var musicLayout = "standard"
     @Published var musicLogin = false
     @Published var appLogin = false
     @Published var publicURL = ""
@@ -88,6 +89,7 @@ struct PairedScreen: Identifiable {
         await perform(["action": "status"]) { result in
             self.dashboard = result["dashboard"] as? String ?? "未知"
             self.musicEnabled = result["musicEnabled"] as? Bool ?? false
+            self.musicLayout = result["musicLayout"] as? String ?? "standard"
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
             let address = result["publicURL"] as? String ?? ""
@@ -109,6 +111,12 @@ struct PairedScreen: Identifiable {
         if let enabled { body["enabled"] = enabled }
         await perform(body, success: "设置已更新")
         if !failed { await refresh() }
+    }
+
+    func setMusicLayout(_ layout: String) async {
+        await perform(["action": "music-layout", "layout": layout], success: "音乐布局已更新") { _ in
+            self.musicLayout = layout
+        }
     }
 
     func loadScreens() async {
@@ -277,6 +285,18 @@ struct ControlView: View {
                     Text("启用后，网页显示音乐、歌词和播放控制；关闭后隐藏整个音乐区域，任务现场占满剩余空间。")
                         .font(.callout).foregroundStyle(.secondary)
                     Text("同时作用于公网和局域网看板，不会退出或暂停 Mac 上的音乐播放器。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    Picker("看板布局", selection: Binding(get: { model.musicLayout }, set: { layout in
+                        Task { await model.setMusicLayout(layout) }
+                    })) {
+                        Text("标准").tag("standard")
+                        Text("音乐优先").tag("priority")
+                        Text("全屏音乐").tag("full")
+                    }.pickerStyle(.segmented)
+                    Text(model.musicLayout == "priority" ? "音乐在上、任务现场在下，音乐占据更多空间。" : model.musicLayout == "full" ? "任务现场与音乐分别占据一个整页，可左右滑动切换。" : "任务现场在上，音乐与歌词显示在下方。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Text("布局统一应用到所有已配对网页；关闭音乐同步时仅显示任务，保留所选布局。")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }

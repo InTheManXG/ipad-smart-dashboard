@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const nodes = new Map();
 const permissionMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
-const node = () => ({textContent:'',className:'',classList:{toggle(name,on){this[name]=on;}},style:{},dataset:{},children:[],setAttribute(name,value){this[name]=value;},replaceChildren(...children){this.children=children;}});
-const context = vm.createContext({document:{hidden:false,addEventListener(){},createElement:node,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);}},sessionStorage:{getItem(){return '';}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},performance:{now(){return 0;}},setInterval(){},requestAnimationFrame(){},setTimeout,clearTimeout,AbortController});
+const node = () => ({textContent:'',className:'',classList:{toggle(name,on){this[name]=on;}},style:{},dataset:{},children:[],setAttribute(name,value){this[name]=value;},replaceChildren(...children){this.children=children;},append(child){if(child.parentElement)child.parentElement.children=child.parentElement.children.filter(item=>item!==child);child.parentElement=this;this.children.push(child);}});
+const layoutEvents = [];
+const context = vm.createContext({document:{hidden:false,addEventListener(){},createElement:node,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);}},window:{addEventListener(){},dispatchEvent(event){layoutEvents.push(event.type);}},Event,sessionStorage:{getItem(){return '';}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},performance:{now(){return 0;}},setInterval(){},requestAnimationFrame(){},setTimeout,clearTimeout,AbortController});
 context.controlRequiredMessage = permissionMessage;
 vm.runInContext(fs.readFileSync('web/music.js','utf8'),context);
 for (const [snapshot, visible] of [[null,false],[{state:'offline',enabled:false},false],[{state:'idle',enabled:true},true],[{state:'offline',enabled:true},true],[{state:'unavailable',enabled:true},true],[{state:'idle'},true]]) {
@@ -14,8 +15,23 @@ for (const [snapshot, visible] of [[null,false],[{state:'offline',enabled:false}
   assert.equal(nodes.get('music-panel').hidden, !visible, '按启用状态控制整个音乐区域');
   assert.equal(nodes.get('home').classList['music-hidden'], !visible, '停用时任务扩展布局');
 }
+for (const [layout, parent, priority, full] of [['standard','home',false,false],['priority','home',true,false],['full','music',false,true],['unknown','home',false,false]]) {
+  context.visibilitySnapshot = {state:'idle',enabled:true,layout};
+  vm.runInContext('musicSnapshot = visibilitySnapshot; renderMusic()',context);
+  assert.equal(nodes.get('music-panel').parentElement,nodes.get(parent),'切换布局复用同一播放器');
+  assert.equal(nodes.get('home').classList['music-priority'],priority);
+  assert.equal(nodes.get('home').classList['music-full'],full);
+  assert.equal(nodes.get('music').hidden,!full,'独立音乐页仅在全屏音乐模式出现');
+  const count=layoutEvents.length;
+  vm.runInContext('renderMusic(); renderMusic()',context);
+  assert.equal(layoutEvents.length,count,'逐帧歌词渲染不能反复重排分页');
+}
+context.visibilitySnapshot={state:'offline',enabled:false,layout:'full'};
+vm.runInContext('musicSnapshot = visibilitySnapshot; renderMusic()',context);
+assert.equal(nodes.get('music').hidden,true,'关闭音乐时移除独立音乐页');
+assert.equal(nodes.get('home').classList['music-hidden'],true);
 const frame = (snapshot, elapsed = 0) => context.lyricFrame(snapshot, elapsed);
-const song = {state:'ready',trackId:'a'.repeat(64),title:'歌',artist:'歌手',source:'网易云音乐',position:0,duration:100,playing:true,lyricsState:'ready',lines:[{time:2,text:'第一句'},{time:5,text:'第二句'},{time:8,text:''},{time:12,text:'第三句'}]};
+const song = {state:'ready',enabled:true,layout:'full',trackId:'a'.repeat(64),title:'歌',artist:'歌手',source:'网易云音乐',position:0,duration:100,playing:true,lyricsState:'ready',lines:[{time:2,text:'第一句'},{time:5,text:'第二句'},{time:8,text:''},{time:12,text:'第三句'}]};
 assert.equal(frame(song).current,'前奏');
 assert.equal(frame(song,3).current,'第一句');
 assert.equal(frame(song,5).current,'第二句');
@@ -145,5 +161,7 @@ assert.equal(track.children[0].textContent,'♪');
   for (const action of ['previous','replay','toggle','next']) assert.equal(nodes.get(`music-${action}`).disabled,true);
   context.fetch=async()=>({ok:false,status:503});await context.refreshMusic();
   assert.notEqual(nodes.get('music-control-result').textContent,permissionMessage,'连接失败不能显示成尚未授权');
+  assert.equal(nodes.get('music').hidden,false,'暂时断线保留全屏音乐页');
+  assert.equal(nodes.get('music-title').textContent,'等待音乐连接','断线不残留旧歌名');
   console.log('歌词时间轴、动画、网络耗时补偿、暂停及跨秒显示验证通过');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -299,7 +299,9 @@ final class NativeBackend {
         } catch { return json(["error": "操作失败，请检查输入或服务状态"], 400) }
     }
     func run() throws {
-        music.setEnabled(try configuration()["musicEnabled"] as? Bool ?? true)
+        let initialConfig = try configuration()
+        music.setEnabled(initialConfig["musicEnabled"] as? Bool ?? true)
+        music.setLayout(configuredMusicLayout(initialConfig))
         var listenerError = ""
         // 公网不可用不能阻塞本地监听、采集和 App 状态刷新。
         Thread.detachNewThread {
@@ -371,6 +373,7 @@ final class NativeBackend {
         while true {
             let config = try configuration()
             music.setEnabled(config["musicEnabled"] as? Bool ?? true)
+            music.setLayout(configuredMusicLayout(config))
             if server?.failed == true { listenerError = server?.errorDescription ?? ""; server?.stop(); server = nil }
             if config["dashboardEnabled"] as? Bool != false && server == nil {
                 server = try LocalHTTPServer(port: 18088, host: "0.0.0.0", handler: handle); server?.start()

@@ -81,16 +81,18 @@ func readPlayer() throws -> JSONObject {
 final class NativeMusic {
     private let lock = NSLock(), commandLock = NSLock()
     private var value: JSONObject = ["state": "offline"], received = 0.0, enabled = true
+    private var layout = "standard"
     private var cache: [String: (Date, String, [JSONObject])] = [:], loading = Set<String>()
     private var completed = [String: Bool](), order = [String]()
     func setEnabled(_ next: Bool) { lock.lock(); enabled = next; if !next { value = ["state": "offline"] }; lock.unlock() }
+    func setLayout(_ next: String) { lock.lock(); layout = (try? validatedMusicLayout(next)) ?? "standard"; lock.unlock() }
     func isEnabled() -> Bool { lock.lock(); defer { lock.unlock() }; return enabled }
     func snapshot() -> JSONObject {
         lock.lock(); defer { lock.unlock() }
         // 停用与采集离线必须区分，网页用此开关决定是否为歌词保留布局空间。
-        guard enabled else { return ["state": "offline", "enabled": false] }
-        guard ProcessInfo.processInfo.systemUptime - received <= 8 else { return ["state": "offline", "enabled": true] }
-        var result = value; result["enabled"] = true
+        guard enabled else { return ["state": "offline", "enabled": false, "layout": layout] }
+        guard ProcessInfo.processInfo.systemUptime - received <= 8 else { return ["state": "offline", "enabled": true, "layout": layout] }
+        var result = value; result["enabled"] = true; result["layout"] = layout
         if result["state"] as? String == "ready", result["playing"] as? Bool == true {
             result["position"] = min(number(result["duration"]) ?? 0, (number(result["position"]) ?? 0) + ProcessInfo.processInfo.systemUptime - received)
         }

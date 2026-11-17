@@ -82,7 +82,7 @@ class MusicTests(unittest.TestCase):
         with patch('music.time.monotonic', return_value=102):
             self.assertEqual(music.get()['position'], 12)
         with patch('music.time.monotonic', return_value=109):
-            self.assertEqual(music.get(), {'state': 'offline'})
+            self.assertEqual(music.get(), {'state': 'offline', 'layout': 'standard'})
         paused = snapshot() | {'playing': False}
         music.put(paused)
         self.assertEqual(music.get()['position'], 10)
@@ -96,6 +96,25 @@ class MusicTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 music.validate(snapshot() | change)
         self.assertNotIn('private', music.validate(snapshot() | {'private': 'secret'}))
+
+    def test_layout_is_validated_for_every_state(self):
+        for state in ('ready', 'idle', 'unavailable', 'offline'):
+            value = snapshot() | {'state': state}
+            self.assertEqual(music.validate(value)['layout'], 'standard', '旧版本快照默认标准布局')
+            for layout in ('standard', 'priority', 'full'):
+                with self.subTest(state=state, layout=layout):
+                    self.assertEqual(music.validate(value | {'layout': layout})['layout'], layout)
+            for invalid in (None, True, 1, [], {}, '', 'unknown', ' full'):
+                with self.subTest(state=state, invalid=invalid), self.assertRaises(ValueError):
+                    music.validate(value | {'layout': invalid})
+
+    def test_stale_snapshot_keeps_layout_without_song(self):
+        for layout in ('standard', 'priority', 'full'):
+            for enabled in (False, True):
+                with patch('music.time.monotonic', return_value=100):
+                    music.put(snapshot() | {'enabled': enabled, 'layout': layout})
+                with patch('music.time.monotonic', return_value=109):
+                    self.assertEqual(music.get(), {'state': 'offline', 'enabled': enabled, 'layout': layout})
 
 
 class MusicHTTPTests(unittest.TestCase):
