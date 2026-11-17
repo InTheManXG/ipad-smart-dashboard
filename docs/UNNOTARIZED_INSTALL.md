@@ -1,14 +1,14 @@
 # 未公证版安装说明
 
-适用于 `0.1.0`，仅支持 Apple Silicon（arm64）Mac。最低构建目标为 macOS 13；beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次图形界面安装、版本替换保留配置与退出后台，详见 [实际验收记录](ACCEPTANCE.md)。旧版系统兼容性仍未验证。测试机原本关闭了 Gatekeeper，本次验收不证明以下单 App 放行步骤已经通过。
+适用于 `0.2.6`，仅支持 Apple Silicon（arm64）Mac。最低构建目标为 macOS 13；beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次图形界面安装、版本替换保留配置与退出后台，详见 [实际验收记录](ACCEPTANCE.md)。旧版系统兼容性仍未验证。测试机原本关闭了 Gatekeeper，本次验收不证明以下单 App 放行步骤已经通过。
 
 这个安装包使用固定的 **Apple Development 证书签名**，用于保持更新时的签名身份。它不是 Developer ID 发行签名，没有 Apple 公证，GitHub 普通 Release 标记不代表通过 Gatekeeper 验收。签名和 SHA-256 校验不能替代 Apple 公证或恶意软件审查；是否信任并运行，由你自行决定。
 
 ## 下载与校验
 
-只从 [本项目 v0.1.0 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0) 下载以下三个附件，并放在同一文件夹：
+只从 [本项目 v0.2.6 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.2.6) 下载以下三个附件，并放在同一文件夹：
 
-- `iPad-Control-0.1.0-unnotarized-macos-arm64.dmg`（推荐；也可选择同名 `.zip`，无需两者都下载）
+- `iPad-Control-0.2.6-unnotarized-macos-arm64.dmg`（推荐；也可选择同名 `.zip`，无需两者都下载）
 - `SHA256SUMS`
 - `UNNOTARIZED_INSTALL.md`
 
@@ -19,7 +19,7 @@
 ```sh
 (
   set -e
-  package='iPad-Control-0.1.0-unnotarized-macos-arm64.dmg'
+  package='iPad-Control-0.2.6-unnotarized-macos-arm64.dmg'
   for file in "$package" UNNOTARIZED_INSTALL.md; do
     checksum_line="$(awk -v file="$file" '$2 == file { print; count++ } END { if (count != 1) exit 1 }' SHA256SUMS)"
     printf '%s\n' "$checksum_line" | shasum -a 256 -c -
@@ -46,10 +46,10 @@
 
 已知后台在额度采集时曾发生异常退出，本版仍可能短暂掉线；本次常规发行未宣称修复该问题。
 
-首次安装默认不连接公网，不启用局域网看板、音乐同步或登录启动。在 App 里启用需要的功能后，按 [README 的配对步骤](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.1.0/README.md#配对和使用) 连接浏览器；新配对默认只读。
+首次安装默认不连接公网，不启用局域网看板、音乐同步或登录启动。在 App 里启用需要的功能后，按 [README 的配对步骤](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.2.6/README.md#配对和使用) 连接浏览器；新配对默认只读。
 
 同一 Mac 的配置、配对和 Key 保存在 App 包之外。升级时保留 `~/Library/Application Support/iPadControl/` 和该 App 的钥匙串条目，先退出旧版再替换完整 App；不要为了处理授权提示删除这些数据。跨 Mac 复制会隔离旧配对及控制授权，需要重新配对。
 
 退出请使用菜单中的“退出 iPad 控制台（停止后台服务）”。只关窗口后可从菜单栏重新打开。卸载前先关闭 App 内两个登录启动选项，再退出并移走 App；移走 App 不会自动清理已保存的配置和钥匙串。
 
-数据去向和中继信任限制见 [隐私说明](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.1.0/docs/PRIVACY.md) 与 [安全说明](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.1.0/docs/SECURITY.md)。
+数据去向和中继信任限制见 [隐私说明](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.2.6/docs/PRIVACY.md) 与 [安全说明](https://github.com/InTheManXG/ipad-smart-dashboard/blob/v0.2.6/docs/SECURITY.md)。

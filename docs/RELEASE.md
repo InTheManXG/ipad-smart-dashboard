@@ -2,7 +2,7 @@
 
 ## 当前发布范围
 
-当前发行版本号为 `0.2.5`，Git 标签为 `v0.2.5`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
+当前发行版本号为 `0.2.6`，Git 标签为 `v0.2.6`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
 
 当前提供明确标注 `unnotarized` 的 Apple Development 签名安装包，固定证书用于保持更新身份。它不是 Developer ID 发行签名，也没有 Apple 公证，不能称为已通过 Gatekeeper 的发行包。用户按 [未公证安装说明](UNNOTARIZED_INSTALL.md) 自行核对来源、校验并决定是否仅允许该 App。GitHub 自动提供的源码归档不代表 Mac 安装包。
 
@@ -103,7 +103,7 @@ bash mac_app/release.sh 0.1.0
 
 `.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查、arm64 原生构建、组包后媒体组件只读加载及 DMG 挂载复制验证。`.github/workflows/release.yml` 提供三条明确的发布路径：
 
-- 推送 `v*` 语义版本标签，或手动选择 `artifact=unnotarized`：运行凭据扫描、原生、Python 和网页检查，生成上述未公证安装包、安装说明和校验清单。无预发布后缀（如 `v0.1.0`）创建普通 Release；有后缀（如 `v0.2.0-beta.1`）才创建 prerelease。这是当前 `0.1.0` 采用的路径。
+- 推送 `v*` 语义版本标签，或手动选择 `artifact=unnotarized`：运行凭据扫描、原生、Python 和网页检查，生成上述未公证安装包、安装说明和校验清单。无预发布后缀（如 `v0.1.0`）创建普通 Release；有后缀（如 `v0.2.0-beta.1`）才创建 prerelease。这是当前发行版采用的路径。
 - 手动选择 `artifact=source-only`：运行源码检查并创建源码预览 prerelease，不上传 `.app` 或安装包。GitHub 自动附带该标签的源码归档。
 - 手动选择已有版本标签及 `artifact=notarized`：执行完整测试、签名和公证，成功后向对应发行版添加 DMG、ZIP 与 SHA-256，或在尚无发行版时创建它。该路径使用下表的正式发行与公证 Secret。
 
