@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 app="$root/.build/iPad 控制台.app"
-app_version="${APP_VERSION:-0.2.0}"
+app_version="${APP_VERSION:-0.2.1}"
 deployment_target="13.0"
 app_build="${APP_BUILD:-1}"
 configuration="${BUILD_CONFIGURATION:-development}"
@@ -63,7 +63,7 @@ for binary in "$sparkle/Sparkle.framework/Versions/B/Sparkle" "$sparkle/Sparkle.
   "$sparkle/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater" \
   "$sparkle/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader" \
   "$sparkle/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer"; do
-  xcrun lipo -verify_arch arm64 "$binary"
+  xcrun lipo "$binary" -verify_arch arm64
   if ! xcrun vtool -show-build -arch arm64 "$binary" | awk -v target="$deployment_target" '
     $1 == "platform" { count++; platform = $2 }
     $1 == "minos" { minimum = $2 }
