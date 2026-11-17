@@ -14,6 +14,8 @@ function invalidatePairing() {
   if (pairingInvalidated) return;
   pairingInvalidated = true; token = ''; controlAllowed = false;
   localStorage.removeItem('pairing-token');
+  // 旧版管理口令也必须清除，避免重载后继续携带失效凭据。
+  sessionStorage.removeItem('display-token');
   // 先清除弹窗与敏感展示，再重载；慢网或重载失败也不能残留上一台 Mac 的内容。
   const pages = document.querySelector('.pages');
   if (pages) pages.style.display = 'none';

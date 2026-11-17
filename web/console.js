@@ -20,9 +20,12 @@ function consoleMessage(message, error = false) {
   consoleStatus.className = error ? 'subscription-error' : 'note';
 }
 async function consoleRequest(path, body) {
+  const headers = consoleHeaders();
+  // 未配对不请求受保护接口，否则 401 会触发整页重载并再次进入未配对状态。
+  if (!Object.values(headers).some(Boolean)) throw new Error('请先在工作看板中配对 Mac');
   const response = await fetch(path, {
     method: body ? 'POST' : 'GET', cache: 'no-store',
-    headers: {...consoleHeaders(), ...(body ? {'Content-Type': 'application/json'} : {})},
+    headers: {...headers, ...(body ? {'Content-Type': 'application/json'} : {})},
     ...(body ? {body: JSON.stringify(body)} : {}), signal: AbortSignal.timeout(12000)
   });
   if (response.status === 401) globalThis.invalidatePairing?.();
@@ -103,7 +106,7 @@ function renderConsole(items) {
   if (!items.length) consoleList.append(Object.assign(document.createElement('p'), {className: 'empty', textContent: '在 Mac App 的「快捷控制台」中添加应用或脚本'}));
 }
 async function loadConsole() {
-  if (consoleLoading || consoleSubmitting) return;
+  if (consoleInvalidated || consoleLoading || consoleSubmitting) return;
   consoleLoading = true;
   try {
     try { consoleControlAllowed = (await consoleRequest('./api/permissions')).controlAllowed === true; }
@@ -160,6 +163,7 @@ document.getElementById('console-confirm-cancel').onclick = () => { consoleSelec
 consoleConfirm.addEventListener('cancel', () => { consoleSelection = null; });
 consoleRefresh.onclick = loadConsole;
 window.addEventListener('hashchange', loadConsole);
+window.addEventListener('paired', loadConsole);
 window.addEventListener('pairing-invalid', () => {
   consoleInvalidated = true; consoleControlAllowed = false; consoleSelection = null;
   subscriptionFeedback.clear(); consoleRenderKey = '';
