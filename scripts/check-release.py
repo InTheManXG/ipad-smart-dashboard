@@ -1,9 +1,11 @@
 """验证发行脚本在凭据或参数不正确时提前拒绝，不调用签名或提交公证。"""
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
 import tempfile
+import textwrap
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,8 +77,8 @@ esac
     rejects("mac_app/build.sh", "arm64 架构", values | {"TEST_MEDIA_ARCH": "x86_64", "TEST_MEDIA_MINIMUM": "13.0"})
 print("媒体架构与最低系统阻断验证通过")
 
-for version in ("invalid", "0.1.0", "0.1.0;echo unsafe"):
-    rejects("mac_app/package-preview.sh", "只接受预发布版本", args=(version,))
+for version in ("invalid", "0.1", "0.1.0;echo unsafe"):
+    rejects("mac_app/package-preview.sh", "有效版本号", args=(version,))
 # Git 夹具只允许测试执行到打包之前，不能意外触发构建或修改已安装 App。
 with tempfile.TemporaryDirectory(prefix="ipad-preview-gate-") as folder:
     git = Path(folder) / "git"
@@ -116,11 +118,45 @@ with tempfile.TemporaryDirectory(prefix="ipad-preview-private-") as folder:
     subprocess.run(["git", "add", "."], cwd=repository, check=True, capture_output=True)
     subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "notices"], cwd=repository, check=True, capture_output=True)
     subprocess.run(["git", "tag", "v0.1.0-beta.5"], cwd=repository, check=True, capture_output=True)
-    # 测试版不能再接受空身份、临时签名或同名证书，须使用唯一指纹。
-    for identity in ("", "-", "Apple Development: Fixture"):
-        env = os.environ.copy()
-        env["SIGNING_IDENTITY"] = identity
-        result = subprocess.run(["bash", "mac_app/package-preview.sh", "0.1.0-beta.5"], cwd=repository,
-                                env=env, capture_output=True, text=True, timeout=15)
-        assert result.returncode != 0 and "固定 Apple Development" in result.stderr
+    subprocess.run(["git", "tag", "v0.1.0"], cwd=repository, check=True, capture_output=True)
+    # 稳定版和预发布都通过版本校验，但都不能绕过固定开发证书要求。
+    for version in ("0.1.0", "0.1.0-beta.5"):
+        for identity in ("", "-", "Apple Development: Fixture"):
+            env = os.environ.copy()
+            env["SIGNING_IDENTITY"] = identity
+            result = subprocess.run(["bash", "mac_app/package-preview.sh", version], cwd=repository,
+                                    env=env, capture_output=True, text=True, timeout=15)
+            assert result.returncode != 0 and "固定 Apple Development" in result.stderr
 print("资源中的 Git 忽略文件泄漏保护验证通过")
+
+# 执行工作流里的真实发布脚本，验证新建和更新时都按版本后缀设置发行类型。
+workflow = (ROOT / ".github/workflows/release.yml").read_text()
+publish_step = workflow.split("      - name: Publish unnotarized release\n", 1)[1].split("      - name:", 1)[0]
+publish_script = textwrap.dedent(publish_step.split("        run: |\n", 1)[1])
+with tempfile.TemporaryDirectory(prefix="ipad-release-type-") as folder:
+    fixture = Path(folder)
+    gh = fixture / "gh"
+    gh.write_text('''#!/usr/bin/env python3
+import json, os, sys
+if sys.argv[1:3] == ['release', 'view']:
+    sys.exit(0 if os.environ['TEST_RELEASE_EXISTS'] == '1' else 1)
+with open(os.environ['GH_ARGUMENT_LOG'], 'a') as output:
+    output.write(json.dumps(sys.argv[1:]) + '\\n')
+''')
+    gh.chmod(0o700)
+    log = fixture / "arguments.jsonl"
+    for version in ("0.1.0", "0.2.0-beta.1"):
+        (fixture / ".build/previews" / version).mkdir(parents=True)
+        for exists in ("0", "1"):
+            env = os.environ | {"PATH": folder + os.pathsep + os.environ.get("PATH", os.defpath),
+                                "RELEASE_TAG": "v" + version, "RUNNER_TEMP": folder,
+                                "TEST_RELEASE_EXISTS": exists, "GH_ARGUMENT_LOG": str(log)}
+            subprocess.run(["bash", "-c", publish_script], cwd=fixture, env=env, check=True)
+            args = json.loads(log.read_text().splitlines()[-1])
+            assert args[:2] == ["release", "edit" if exists == "1" else "create"]
+            if "-" in version:
+                assert "--prerelease" in args and "--latest" not in args
+            else:
+                assert "--latest" in args and "--prerelease" not in args
+                assert ("--prerelease=false" in args) == (exists == "1")
+print("GitHub 普通发行与预发布的新建、更新分类验证通过")

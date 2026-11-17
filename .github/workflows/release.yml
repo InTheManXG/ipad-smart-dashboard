@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing version tag, for example v0.1.0-beta.5
+        description: Existing version tag, for example v0.1.0
         type: string
         required: true
       artifact:
-        description: Source only, unnotarized test application, or notarized application
+        description: Source only, unnotarized application, or notarized application
         type: choice
         options: [source-only, unnotarized, notarized]
         default: unnotarized
@@ -108,11 +108,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Verify unnotarized preview source
+      - name: Verify unnotarized release source
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
           git tag --points-at HEAD | grep -Fx "$RELEASE_TAG"
           bash mac_app/test.sh
           python3 -m unittest discover -s tests -p 'test_*.py'
@@ -138,26 +138,35 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
           rm -f "$RUNNER_TEMP/development-signing.p12"
-      - name: Package unnotarized test application
+      - name: Package unnotarized application
         run: bash mac_app/package-preview.sh "$RELEASE_TAG"
-      - name: Publish unnotarized prerelease
+      - name: Publish unnotarized release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           cat > "$RUNNER_TEMP/preview-notes.md" <<'NOTES'
-          此预发布附件是 Apple Silicon Mac 的未公证测试包，使用固定 Apple Development 证书签名，保持 App 与后台的更新身份。它不是 Developer ID 签名，也未通过 Apple 公证。
+          此发行版面向 Apple Silicon Mac，使用固定 Apple Development 证书签名，保持 App 与后台的更新身份。它不是 Developer ID 签名，也未通过 Apple 公证。GitHub 的普通发行标记不代表 Apple 公证或全部兼容性验收通过。
 
           优先下载文件名包含 unnotarized 的 DMG，ZIP 作为备用，无需两者都下载。按随附 UNNOTARIZED_INSTALL.md 从 SHA256SUMS 中校验选中的安装包，再将 App 拖入“应用程序”并从该文件夹打开，之后推出镜像。macOS 可能阻止首次打开；只在确认来源后对本 App 单独允许，不需要关闭全局安全保护。构建通过不等于所有 macOS、播放器或独立设备已完成验收。
 
           本地 App 不依赖 Docker、Python 或 Homebrew。兼容限制与更新说明见仓库 README、docs/RELEASE.md 及 CHANGELOG.md。
+
+          已知问题：后台曾出现读取额度时异常退出，尚未修复；本版没有将这一问题标为解决。
           NOTES
+          # GitHub 发行类型只由版本后缀决定，与证书类型、公证状态分别处理。
+          create_args=(--latest)
+          edit_args=(--prerelease=false --latest)
+          if [[ "$version" == *-* ]]; then
+            create_args=(--prerelease)
+            edit_args=(--prerelease)
+          fi
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" ".build/previews/$version/"*
-            gh release edit "$RELEASE_TAG" --prerelease --title "$RELEASE_TAG · 未公证测试版" --notes-file "$RUNNER_TEMP/preview-notes.md"
+            gh release edit "$RELEASE_TAG" "${edit_args[@]}" --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/preview-notes.md"
           else
-            gh release create "$RELEASE_TAG" ".build/previews/$version/"* --verify-tag --prerelease --title "$RELEASE_TAG · 未公证测试版" --notes-file "$RUNNER_TEMP/preview-notes.md"
+            gh release create "$RELEASE_TAG" ".build/previews/$version/"* --verify-tag "${create_args[@]}" --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/preview-notes.md"
           fi
       - name: Remove development signing credentials
         if: always()

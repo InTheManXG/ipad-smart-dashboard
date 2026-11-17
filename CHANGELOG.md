@@ -1,5 +1,12 @@
 # 变更记录
 
+## 0.1.0 — 常规发行版
+
+- 将现有功能发布为 GitHub 普通 Release，移除版本号的预发布后缀；清理旧预发布发行页与附件，保留源码标签和历史变更记录。
+- 继续由 GitHub Actions 构建 DMG 与备用 ZIP，使用同一 Apple Development 证书，保留原有 Bundle ID、配置和配对格式。
+- 安装包仍明确标记 `unnotarized`；普通 Release 标记不表示 Developer ID 签名、Apple 公证或 Gatekeeper 验收通过。
+- 已知后台在额度采集时曾发生异常退出，偶发掉线问题仍待修复；本次发布未包含该问题的修复。
+
 ## 0.1.0-beta.5 — 固定开发证书签名
 
 - GitHub 测试包改用固定 Apple Development 证书，App、后台服务及媒体组件复用同一签名身份。

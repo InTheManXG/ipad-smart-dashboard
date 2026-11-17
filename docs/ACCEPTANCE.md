@@ -7,7 +7,7 @@
 - 验收日期：2026-11-16。
 - 独立设备：Apple M1 Mac mini，macOS 27.0.1，Apple Silicon / arm64；首次安装前没有本 App 的安装、配置、后台进程或登录项。
 - 网页端：桌面浏览器；另一个独立 HTTP 会话用于确认逐端权限隔离。此处不包含实际 iPad 验收。
-- 新版来源：[v0.1.0-beta.3 Release](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.3) 的 `iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip`。
+- 新版来源：当时 `v0.1.0-beta.3` Release 的 `iPad-Control-0.1.0-beta.3-unnotarized-macos-arm64.zip`。该预发布发行页现已清理；[源码标签](https://github.com/InTheManXG/ipad-smart-dashboard/tree/v0.1.0-beta.3)和[原始打包记录](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/43826336624)保留。
 - ZIP SHA-256：`1afa0c0f1d7b5b4fc31f0294291f07ef38dff324a6aa889adb18a1b6ddba0225`。下载后按随附 `SHA256SUMS` 校验通过，并验证严格签名结构。
 - 测试机的 Gatekeeper 在验收前已关闭，本次没有修改系统安全设置。因此以下运行结果不代表 Gatekeeper 接受、单 App 放行、开发者身份认证或 Apple 公证。
 

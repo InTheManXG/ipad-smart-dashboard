@@ -2,15 +2,17 @@
 
 把 iPad 或其他浏览器变成 Mac 的任务看板：查看 Codex 工作状态、额度和音乐，并按需控制已配置的应用与脚本。Mac 端使用 SwiftUI 和 Swift 原生服务，本地核心功能不需要 Docker、Python 或 Homebrew。
 
-项目目前为 **0.1.0-beta.5 未公证测试版**。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 测试包使用固定的 Apple Development 证书签名，以保持更新时的签名身份；这不是 Developer ID 发行签名，也没有经过 Apple 公证。系统仍可能阻止首次打开，需要用户自行确认信任。
+当前发行版为 **0.1.0**，在 GitHub 作为普通 Release 发布。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 安装包使用固定的 Apple Development 证书签名，以保持更新时的签名身份；这不是 Developer ID 发行签名，也没有经过 Apple 公证。系统仍可能阻止首次打开，需要用户自行确认信任。
 
-## 下载测试版
+## 下载发行版
 
-从 [v0.1.0-beta.5 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0-beta.5) 优先下载 `iPad-Control-0.1.0-beta.5-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。仅支持 Apple Silicon Mac；先按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验，打开 DMG 后将 App 拖入“应用程序”，再从“应用程序”打开。
+从 [v0.1.0 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0) 优先下载 `iPad-Control-0.1.0-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。仅支持 Apple Silicon Mac；先按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验，打开 DMG 后将 App 拖入“应用程序”，再从“应用程序”打开。
 
 发行附件由 GitHub Actions 的 macOS runner 从版本标签编译、打包并直接上传，不使用维护者本机生成的安装包。beta.4 的[打包发布记录](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/43840655193)已通过；后续发布入口见[发行流程](docs/RELEASE.md)。
 
-测试包不需要 Docker、Python 或编译工具。beta.3 已在独立的 M1 Mac mini、macOS 27.0.1 上完成首次安装、配对与控制权限、版本替换保留配置及退出后台验证，详见 [实际验收记录](docs/ACCEPTANCE.md)。旧版 macOS、实际 iPad 和多播放器兼容性仍未验证；测试机原本关闭了 Gatekeeper，本次运行不代表系统安全放行通过。
+安装包不需要 Docker、Python 或编译工具。beta.3 已在独立的 M1 Mac mini、macOS 27.0.1 上完成首次安装、配对与控制权限、版本替换保留配置及退出后台验证，详见 [实际验收记录](docs/ACCEPTANCE.md)。旧版 macOS、实际 iPad 和多播放器兼容性仍未验证；测试机原本关闭了 Gatekeeper，本次运行不代表系统安全放行通过。
+
+GitHub 普通 Release 标记不等同 Apple 公证。后台已知存在额度采集时偶发异常退出的问题，本版未修复，可能出现短暂掉线。
 
 ## 支持范围
 
@@ -30,7 +32,7 @@ bash mac_app/build.sh
 open '.build/iPad 控制台.app'
 ```
 
-默认是显式的 ad-hoc 开发构建，不需要维护者的签名证书，也不代表 Apple 验证过开发者身份。公开测试包单独标明“未公证”；正式发行仍按 [发行说明](docs/RELEASE.md) 使用 Developer ID 和 Apple 公证。不要关闭全局系统安全保护。
+默认是显式的 ad-hoc 开发构建，不需要维护者的签名证书，也不代表 Apple 验证过开发者身份。公开安装包单独标明“未公证”；如需 Apple 公证，按 [发行说明](docs/RELEASE.md) 使用 Developer ID 路径。不要关闭全局系统安全保护。
 
 首次运行默认不连接公网、不启用局域网看板、不启用音乐同步或登录启动。数据保存在 `~/Library/Application Support/iPadControl`；Key 和设备凭据保存在该用户钥匙串中。
 
