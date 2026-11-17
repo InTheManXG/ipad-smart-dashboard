@@ -2,7 +2,7 @@
 
 把 iPad 或其他浏览器变成 Mac 的任务看板：查看 Codex 工作状态、额度和音乐，并按需控制已配置的应用与脚本。Mac 端使用 SwiftUI 和 Swift 原生服务，本地核心功能不需要 Docker、Python 或 Homebrew。
 
-当前发行版为 **0.2.4**，在 GitHub 作为普通 Release 发布。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 安装包使用固定的 Apple Development 证书签名，以保持更新时的签名身份；这不是 Developer ID 发行签名，也没有经过 Apple 公证。系统仍可能阻止首次打开，需要用户自行确认信任。
+当前发行版为 **0.2.5**，在 GitHub 作为普通 Release 发布。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 安装包使用固定的 Apple Development 证书签名，以保持更新时的签名身份；这不是 Developer ID 发行签名，也没有经过 Apple 公证。系统仍可能阻止首次打开，需要用户自行确认信任。
 
 ## 下载发行版
 

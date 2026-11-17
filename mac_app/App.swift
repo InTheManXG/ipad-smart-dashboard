@@ -702,6 +702,7 @@ struct ControlMenu: View {
 
 @main struct IPadControlApp: App {
     @NSApplicationDelegateAdaptor(ControlAppDelegate.self) private var delegate
+    init() { ControlAppInstance.acquireOrExit() }
     var body: some Scene {
         Window("iPad 控制台", id: "main") { ControlView() }
             .defaultSize(width: 900, height: 680)
