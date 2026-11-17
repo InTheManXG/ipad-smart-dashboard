@@ -12,6 +12,8 @@ const wakeUsesHTTPS = globalThis.location?.protocol === 'https:';
 let busy = false, lastSuccess = 0, wakeLock = null, wantWake = wakeUsesHTTPS;
 let controlAllowed = false;
 const controlRequiredMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
+// 各页面共用同一授权指引；入口脚本先于其他页面模块执行。
+globalThis.controlRequiredMessage = controlRequiredMessage;
 let pairingInvalidated = false;
 function invalidatePairing() {
   if (pairingInvalidated) return;

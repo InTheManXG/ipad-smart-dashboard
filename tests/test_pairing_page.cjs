@@ -3,12 +3,12 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
-function page({storage = new Map(), session = new Map(), reject = false} = {}) {
+function page({storage = new Map(), session = new Map(), reject = false, permissions = {allowed:true}} = {}) {
   const nodes = new Map(), intervals = [], requests = [], listeners = new Map();
   const item = {id:'test-app', name:'测试应用', kind:'app', state:'idle'};
   let reloads = 0;
   function node(tag = '') {
-    return {tag, children:[], style:{}, dataset:{}, open:false, textContent:'', value:'',
+    return {tag, children:[], style:{}, classList:{toggle(){}}, dataset:{}, open:false, textContent:'', value:'',
       listeners:new Map(), setAttribute(name, value){this[name] = value;},
       addEventListener(name, listener){this.listeners.set(name, listener);},
       showModal(){this.open = true;}, close(){this.open = false;}, focus(){},
@@ -26,23 +26,24 @@ function page({storage = new Map(), session = new Map(), reject = false} = {}) {
     navigator:{}, location:{reload(){reloads++;}},
     localStorage:{getItem:key => storage.get(key) || null, setItem:(key, value) => storage.set(key, value), removeItem:key => storage.delete(key)},
     sessionStorage:{getItem:key => session.get(key) || null, removeItem:key => session.delete(key)},
-    Event, Date, AbortController, AbortSignal, setTimeout, clearTimeout,
+    Event, Date, AbortController, AbortSignal, setTimeout, clearTimeout, performance:{now(){return 0;}}, requestAnimationFrame(){},
     setInterval(callback){intervals.push(callback);},
     fetch:async (path, options) => {
       requests.push({path, options});
       if (path.endsWith('/pairing/complete')) return {ok:true, status:200, json:async () => ({token:'paired-token'})};
       const authenticated = Boolean(options.headers['X-Pairing-Token'] || options.headers['X-Display-Token']);
       if (!authenticated || reject) return {ok:false, status:401};
-      const value = path.endsWith('/permissions') ? {controlAllowed:true} : path.endsWith('/console') ? [item] :
-        {servedAt:Date.now() / 1000, conversations:[], conversationsAvailable:true, quotaAvailable:false};
+      const value = path.endsWith('/permissions') ? {controlAllowed:permissions.allowed} : path.endsWith('/console') ? [item] :
+        path.endsWith('/music') ? {controlAllowed:permissions.allowed, enabled:true, state:'idle'} :
+        {servedAt:Date.now() / 1000, controlAllowed:permissions.allowed, conversations:[], conversationsAvailable:true, quotaAvailable:false};
       return {ok:true, status:200, json:async () => value};
     }
   });
   // 各文件独立作用域对应浏览器 module，失效入口仍通过 globalThis 跨模块共享。
-  for (const file of ['web/app.js', 'web/console.js']) {
+  for (const file of ['web/app.js', 'web/console.js', 'web/music.js']) {
     vm.runInContext(`(function () {\n${fs.readFileSync(file, 'utf8')}\n})()`, context, {filename:file});
   }
-  return {get, pages, storage, session, requests, intervals, reloads:() => reloads};
+  return {get, pages, storage, session, requests, intervals, permissions, reloads:() => reloads};
 }
 const settle = async () => { await new Promise(setImmediate); await new Promise(setImmediate); };
 
@@ -86,6 +87,21 @@ const settle = async () => { await new Promise(setImmediate); await new Promise(
   assert.equal(legacy.requests.filter(request => request.path.endsWith('/console')).length, 1, '旧管理凭据仍可读取控制台');
   assert.equal(legacy.requests[0].options.headers['X-Display-Token'], 'legacy-token');
   assert.equal(legacy.reloads(), 0);
+  const readonly = page({storage:new Map([['pairing-token','readonly']]), permissions:{allowed:false}});
+  await settle();
+  const permissionMessage = readonly.get('footer-note').textContent;
+  assert.match(permissionMessage,/控制台尚未允许.*允许控制此 Mac/);
+  assert.equal(readonly.get('console-status').textContent,permissionMessage,'快捷操作与任务页共用授权文案');
+  assert.equal(readonly.get('music-control-result').textContent,permissionMessage,'音乐与任务页共用授权文案');
+  assert.equal(readonly.get('console-actions').querySelectorAll('button')[0].disabled,true);
+  assert.equal(readonly.get('music-next').disabled,true);
+  assert.equal(readonly.requests.filter(request=>request.options.method==='POST').length,0,'仅查看不会提交控制指令');
+  readonly.permissions.allowed=true;
+  for (const tick of readonly.intervals) tick();
+  await settle();
+  assert.equal(readonly.get('console-status').textContent,'');
+  assert.equal(readonly.get('music-control-result').textContent,'');
+  assert.equal(readonly.get('footer-note').textContent,'','恢复授权后三页旧提示均清除');
   const expiredSession = new Map([['display-token', 'expired-legacy-token']]);
   const expiredLegacy = page({session:expiredSession, reject:true});
   await settle();

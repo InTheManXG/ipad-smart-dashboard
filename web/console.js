@@ -10,6 +10,14 @@ let consoleControlAllowed = false;
 let consoleInvalidated = false;
 const subscriptionFeedback = new Map();
 const consoleConfirm = document.getElementById('console-confirm');
+const consoleControlMessage = globalThis.controlRequiredMessage;
+
+function setConsoleControl(allowed) {
+  consoleControlAllowed = allowed;
+  document.getElementById('console-confirm-run').disabled = !allowed;
+  // 撤权时关闭尚未提交的确认框，不能留下看起来仍可执行的入口。
+  if (!allowed) { consoleSelection = null; consoleConfirm.close(); }
+}
 
 function consoleHeaders() {
   const token = localStorage.getItem('pairing-token');
@@ -29,8 +37,8 @@ async function consoleRequest(path, body) {
     ...(body ? {body: JSON.stringify(body)} : {}), signal: AbortSignal.timeout(12000)
   });
   if (response.status === 401) globalThis.invalidatePairing?.();
-  if (response.status === 403) consoleControlAllowed = false;
-  if (!response.ok) throw new Error(response.status === 401 ? '配对已失效，请在首页重新配对' : response.status === 403 ? '当前网页仅可查看，请在 Mac App 中授权控制' : response.status === 409 ? '项目不可执行或已有任务运行，请刷新后重试' : response.status === 404 ? '项目已删除，请刷新列表' : 'Mac 未连接或控制台暂不可用');
+  if (response.status === 403) setConsoleControl(false);
+  if (!response.ok) throw new Error(response.status === 401 ? '配对已失效，请在首页重新配对' : response.status === 403 ? consoleControlMessage : response.status === 409 ? '项目不可执行或已有任务运行，请刷新后重试' : response.status === 404 ? '项目已删除，请刷新列表' : 'Mac 未连接或控制台暂不可用');
   return response.json();
 }
 function renderConsole(items) {
@@ -109,19 +117,19 @@ async function loadConsole() {
   if (consoleInvalidated || consoleLoading || consoleSubmitting) return;
   consoleLoading = true;
   try {
-    try { consoleControlAllowed = (await consoleRequest('./api/permissions')).controlAllowed === true; }
-    catch { consoleControlAllowed = false; }
+    setConsoleControl((await consoleRequest('./api/permissions')).controlAllowed === true);
     const items = await consoleRequest('./api/console');
     if (consoleInvalidated) return;
-    renderConsole(items); consoleMessage(consoleControlAllowed ? '' : '当前网页仅可查看，请在 Mac App 中授权控制');
+    renderConsole(items); consoleMessage(consoleControlAllowed ? '' : consoleControlMessage);
   } catch (error) {
     // 离线时禁止使用旧卡片触发操作，恢复连接后再读取最新配置。
+    setConsoleControl(false);
     consoleRenderKey = ''; consoleList.replaceChildren(); consoleMessage(error.message, true);
   } finally { consoleLoading = false; }
 }
 function requestConsoleAction(item) {
   if (consoleInvalidated) return;
-  if (!consoleControlAllowed) { consoleMessage('当前网页仅可查看，请在 Mac App 中授权控制'); return; }
+  if (!consoleControlAllowed) { consoleMessage(consoleControlMessage); return; }
   if (consoleSubmitting) return;
   if (item.kind === 'app') { runConsoleAction(item); return; }
   consoleSelection = item;
@@ -138,7 +146,7 @@ function requestConsoleAction(item) {
 }
 async function runConsoleAction(item) {
   if (consoleInvalidated) return;
-  if (!consoleControlAllowed) { consoleMessage('当前网页仅可查看，请在 Mac App 中授权控制'); return; }
+  if (!consoleControlAllowed) { consoleMessage(consoleControlMessage); return; }
   if (consoleSubmitting) return;
   consoleSubmitting = true; consoleRenderKey = '';
   consoleList.querySelectorAll('button').forEach(button => { button.disabled = true; });

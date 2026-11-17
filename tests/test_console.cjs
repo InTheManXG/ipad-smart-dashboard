@@ -9,8 +9,10 @@ const nodes = new Map(['console-actions', 'console-status', 'console-refresh','c
 const pages = {clientWidth:1024,scrollLeft:1024};
 const calls = [], timers = [], intervals = [], item = {id:'d46acd26-c9c3-4afc-9ac6-64b9088c7005',name:'<script>test</script>',kind:'script',state:'idle'};
 const events = {};
+const permissionMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
 let items = [item], status = 200, controlAllowed = true;
 const ctx = vm.createContext({
+  controlRequiredMessage:permissionMessage,
   document:{hidden:false,querySelector(){return pages;},getElementById:id => nodes.get(id),createElement:tag => Object.assign(node(),{tag}),addEventListener(){}},
   window:{addEventListener(name, callback){events[name] = callback;}}, location:{hash:'#console'},
   localStorage:{getItem(){return 'test-only';}},sessionStorage:{getItem(){return null;}}, AbortSignal,
@@ -162,7 +164,33 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   const postsBefore=calls.filter(call=>call.options.method==='POST').length;
   await run('requestConsoleAction('+JSON.stringify(item)+')');
   assert.equal(calls.filter(call=>call.options.method==='POST').length,postsBefore,'只读会话不能提交执行');
-  assert.match(nodes.get('console-status').textContent,/仅可查看/);
+  assert.equal(nodes.get('console-status').textContent,permissionMessage);
+  for (const kind of ['app','script','command','subscription']) {
+    await run('requestConsoleAction('+JSON.stringify({...item,kind})+')');
+    await run('runConsoleAction('+JSON.stringify({...item,kind})+')');
+    assert.equal(nodes.get('console-status').textContent,permissionMessage);
+  }
+  assert.equal(calls.filter(call=>call.options.method==='POST').length,postsBefore,'所有只读入口禁止提交');
+  controlAllowed=true;await run('loadConsole()');
+  assert.equal(nodes.get('console-status').textContent,'','授权恢复后不再保留权限提示');
+  await run('requestConsoleAction('+JSON.stringify(item)+')');
+  assert.equal(nodes.get('console-confirm').open,true);
+  controlAllowed=false;await run('loadConsole()');
+  assert.equal(nodes.get('console-confirm').open,false,'撤权后关闭待执行确认框');
+  assert.equal(nodes.get('console-confirm-run').disabled,true);
+  assert.equal(run('consoleSelection'),null);
+  // 请求发出后被服务端拒绝时，全部快捷类型都显示相同指引。
+  for (const kind of ['app','script','command','subscription']) {
+    controlAllowed=true;status=200;await run('loadConsole()');
+    status=403;await run('runConsoleAction('+JSON.stringify({...item,kind})+')');
+    assert.equal(nodes.get('console-status').textContent,permissionMessage);
+    assert.ok(list.querySelectorAll('button').every(button=>button.disabled));
+  }
+  // 权限接口异常无法确定是否获准，不能错误提示用户尚未授权。
+  status=503;requestCount=calls.length;await run('loadConsole()');
+  assert.match(nodes.get('console-status').textContent,/Mac 未连接/);
+  assert.notEqual(nodes.get('console-status').textContent,permissionMessage);
+  assert.equal(calls.length,requestCount+1,'权限接口失败后不继续伪装成可用列表');
   controlAllowed=true;
   status=401;await run('loadConsole()');
   assert.equal(list.children.length,0,'撤销后清除可执行卡片');

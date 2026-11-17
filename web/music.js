@@ -4,6 +4,7 @@ let lyricKey = '', renderedSnapshot = null, lastLyricFrame = null;
 let musicControlBusy = false, musicRevision = 0;
 let musicControlAllowed = false;
 let musicInvalidated = false;
+const musicControlMessage = globalThis.controlRequiredMessage;
 
 function lyricFrame(snapshot, elapsed) {
   if (!snapshot || elapsed > 8 || snapshot.state === 'offline') return {title:'等待音乐连接', artist:'Mac 上的音乐同步暂未连接', state:'未连接', current:'♪'};
@@ -74,6 +75,11 @@ function renderMusic() {
   musicNode('music-progress').value = Number.isFinite(frame.position) ? frame.position : 0;
   const available = musicControlAllowed && Number.isFinite(frame.position) && !!musicSnapshot?.trackId;
   for (const action of ['previous', 'replay', 'toggle', 'next']) musicNode(`music-${action}`).disabled = musicControlBusy || !available;
+  const notice = musicNode('music-control-result');
+  // 仅明确的只读响应显示授权指引；连接失败不能冒充用户未授权。
+  if (musicSnapshot?.controlAllowed === false) {
+    if (notice.textContent !== musicControlMessage) notice.textContent = musicControlMessage;
+  } else if (notice.textContent === musicControlMessage) notice.textContent = '';
   const toggle = musicNode('music-toggle'), playing = musicSnapshot?.playing === true;
   if (toggle.dataset.playing !== String(playing)) {
     toggle.dataset.playing = String(playing);
@@ -84,7 +90,7 @@ function renderMusic() {
 }
 
 async function controlMusic(action) {
-  if (!musicControlAllowed) { musicNode('music-control-result').textContent = '当前网页仅可查看，请在 Mac App 中授权控制'; return; }
+  if (!musicControlAllowed) { musicNode('music-control-result').textContent = musicControlMessage; return; }
   if (musicControlBusy || !musicSnapshot?.trackId || (performance.now() - musicReceived) / 1000 > 8) return;
   const token = localStorage.getItem('pairing-token');
   if (!token) return;
@@ -96,7 +102,11 @@ async function controlMusic(action) {
     const response = await fetch('./api/music/control', {method:'POST',headers:{'Content-Type':'application/json','X-Pairing-Token':token},
       body:JSON.stringify({action,trackId:musicSnapshot.trackId}),signal:controller.signal});
     if (response.status === 401) { globalThis.invalidatePairing?.(); return; }
-    if (response.status === 403) { musicControlAllowed = false; throw new Error('read-only'); }
+    if (response.status === 403) {
+      musicControlAllowed = false; musicRevision++;
+      if (musicSnapshot) musicSnapshot.controlAllowed = false;
+      throw new Error('read-only');
+    }
     if (!response.ok) throw new Error('unconfirmed');
     const result = await response.json();
     if (musicInvalidated) return;
@@ -108,9 +118,9 @@ async function controlMusic(action) {
       musicSnapshot = result.snapshot;
       musicReceived = performance.now();
     } else await refreshMusic();
-  } catch {
+  } catch (error) {
     // 超时不自动重试，避免上一曲/下一曲在回执丢失时执行两次。
-    musicNode('music-control-result').textContent = musicControlAllowed ? '未能确认操作，请检查播放器后重试' : '当前网页仅可查看，请在 Mac App 中授权控制';
+    musicNode('music-control-result').textContent = error.message === 'read-only' || !musicControlAllowed ? musicControlMessage : '未能确认操作，请检查播放器后重试';
   } finally { clearTimeout(timeout); musicControlBusy = false; renderMusic(); }
 }
 for (const action of ['previous', 'replay', 'next']) musicNode(`music-${action}`).onclick = () => controlMusic(action);
