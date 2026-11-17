@@ -50,3 +50,16 @@ beta.3 的[完整持续检查](https://github.com/InTheManXG/ipad-smart-dashboar
 仍未验证：macOS 13 及其他未列出的系统版本、实际 iPad 的触摸与长期常亮、多播放器兼容性、真实中转站 Key 的升级授权、注销后重新登录的自动启动、Gatekeeper 单 App 放行，以及真实 Developer ID 签名和 Apple 公证。Intel Mac 不在本版支持范围内。
 
 已发布的标签、ZIP、校验清单和随包安装说明保持不变。本记录是发行后的补充验收结果，不将未公证测试包改称正式公证包。
+
+
+## 0.2.1 自动更新验收（2026-11-17）
+
+在本机 Apple Silicon Mac、macOS 27.2 上，从固定开发证书签名的更新引导版本（显示 0.1.0、构建 1，已加入本次更新器）实际升级到 GitHub Actions 生成的 0.2.1、构建 9。该引导版本仅用于验收，不是已发布的原始 0.1.0；没有更新器的旧发行包仍需手动安装一次新版。
+
+- [正式发行](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.2.1)、[发行构建](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/44030515123)、[标签持续检查](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/44030515090)及[源码持续检查](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/44030475628)均通过。
+- 在“关于”点击检查后，真实发现 0.2.1，完成 GitHub ZIP 下载、验签、安装及自动重启；新版关于页显示 0.2.1（9）和“当前已是最新版本”。
+- 进程记录确认 App 与后台均更换 PID，最终仅有一个后台服务；心跳恢复到一秒内，本地看板端口重新监听，公网配对仍为有效。
+- `settings.json`、`installation.json`、`console-actions.json` 的 SHA-256 前后一致，云端网页权限稳定字段摘要一致；未输出、导出或修改用户 Key。更新后九个签名组件均通过固定开发证书及严格签名检查。
+- 官方工具验证线上签名更新源；篡改更新源和错误私钥均被拒绝。实际安装文件另与 GitHub ZIP 中的 App 比较。
+
+此验收没有覆盖其他 macOS、无写入权限的安装目录、系统管理员授权、更新过程中断电或断网，也不代表 Apple 公证或 Gatekeeper 首次放行。之前的后台额度采集偶发异常仍未修复。
