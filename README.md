@@ -1,18 +1,74 @@
+<div align="center">
+
+<img src="docs/images/workspace-illustration.png" alt="淡紫色的笔记本、台灯和绿植桌面插画" width="240">
+
 # iPad 控制台
 
-把 iPad 或其他浏览器变成 Mac 的任务看板：查看 Codex 工作状态、额度和音乐，并按需控制已配置的应用与脚本。Mac 端使用 SwiftUI 和 Swift 原生服务，本地核心功能不需要 Docker、Python 或 Homebrew。
+**让 iPad 成为 Mac 的第二块工作看板。**
 
-当前发行版为 **0.2.5**，在 GitHub 作为普通 Release 发布。源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 安装包使用固定的 Apple Development 证书签名，以保持更新时的签名身份；这不是 Developer ID 发行签名，也没有经过 Apple 公证。系统仍可能阻止首次打开，需要用户自行确认信任。
+任务进度、快捷操作、额度与音乐，在一块屏幕上随时可见。
+
+[![Release](https://img.shields.io/github/v/release/InTheManXG/ipad-smart-dashboard?style=flat-square&color=6558d3&label=Release)](https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest)
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-333333?style=flat-square&logo=apple&logoColor=white)](#支持范围)
+[![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-8a76d6?style=flat-square)](#支持范围)
+[![MIT License](https://img.shields.io/badge/License-MIT-739883?style=flat-square)](LICENSE)
+
+[下载最新版](https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest) · [界面预览](#界面预览) · [配对和使用](#配对和使用) · [自托管](#自托管)
+
+</div>
+
+---
+
+## 界面预览
+
+<p align="center">
+  <img src="docs/images/dashboard-preview.png" alt="工作看板：顶部显示订阅额度，中间查看任务状态，底部显示音乐与歌词" width="1000">
+</p>
+
+<p align="center"><sub>工作看板 · 截图来自当前网页界面，任务、额度和音乐均为示例数据。</sub></p>
+
+## 能做什么
+
+| | 功能 | 用途 |
+| :---: | :--- | :--- |
+| ◉ | **任务现场** | 查看 Codex 的运行、待处理和完成未读状态，按授权打开对应对话。 |
+| ⌘ | **快捷控制** | 把常用应用、命令、脚本和订阅更新集中到独立控制页。 |
+| ◷ | **额度信息** | 查看订阅剩余额度、重置时间和已配置中转站 Key 的用量。 |
+| ♫ | **音乐与歌词** | 同步 Mac 的播放信息与歌词，按授权切歌、播放或暂停。 |
+| ⇄ | **多端配对** | 使用一次性配对码连接浏览器，在 Mac 上分别管理控制权限。 |
+| ◇ | **原生 Mac App** | 使用 SwiftUI 和 Swift 原生服务，本地核心功能不需要 Docker、Python 或 Homebrew。 |
+
+<details>
+<summary><strong>查看快捷控制台</strong> · 常用应用和脚本，集中在一处</summary>
+
+<p align="center">
+  <img src="docs/images/shortcuts-preview.png" alt="快捷控制台：按应用、脚本和订阅更新分组展示操作入口" width="1000">
+</p>
+
+截图中的应用、脚本名称和更新记录均为示例；实际内容由你在 Mac 上配置。
+
+</details>
 
 ## 下载发行版
 
-从 [v0.1.0 发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/tag/v0.1.0) 优先下载 `iPad-Control-0.1.0-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。仅支持 Apple Silicon Mac；先按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验，打开 DMG 后将 App 拖入“应用程序”，再从“应用程序”打开。
+当前发行版为 **0.2.5**。前往 [最新发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest)，优先下载 `iPad-Control-0.2.5-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。
+
+1. 按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验下载文件。
+2. 打开 DMG，将 App 拖入“应用程序”。
+3. 从“应用程序”打开，按下方步骤配对 iPad 或其他浏览器。
+
+> 仅支持 Apple Silicon Mac，构建目标为 macOS 13+。安装包未经过 Apple 公证，系统仍可能阻止首次打开，需要用户自行确认信任。后台已知存在额度采集时偶发异常退出的问题，本版未修复，可能出现短暂掉线。
+
+<details>
+<summary>签名、构建与已验证范围</summary>
+
+源码采用 MIT 许可证；媒体适配器单独遵循 BSD 3-Clause。Mac 安装包使用固定的 Apple Development 证书签名，以保持更新时的签名身份；这不是 Developer ID 发行签名，也没有经过 Apple 公证。GitHub 普通 Release 标记不等同 Apple 公证。
 
 发行附件由 GitHub Actions 的 macOS runner 从版本标签编译、打包并直接上传，不使用维护者本机生成的安装包。beta.4 的[打包发布记录](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/43840655193)已通过；后续发布入口见[发行流程](docs/RELEASE.md)。
 
 安装包不需要 Docker、Python 或编译工具。beta.3 已在独立的 M1 Mac mini、macOS 27.0.1 上完成首次安装、配对与控制权限、版本替换保留配置及退出后台验证，详见 [实际验收记录](docs/ACCEPTANCE.md)。旧版 macOS、实际 iPad 和多播放器兼容性仍未验证；测试机原本关闭了 Gatekeeper，本次运行不代表系统安全放行通过。
 
-GitHub 普通 Release 标记不等同 Apple 公证。后台已知存在额度采集时偶发异常退出的问题，本版未修复，可能出现短暂掉线。
+</details>
 
 ## 支持范围
 
