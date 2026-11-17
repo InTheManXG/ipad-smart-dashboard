@@ -7,7 +7,9 @@ function formatPlan(plan) {
   return typeof plan === 'string' && plan.trim() ? names[plan.toLowerCase()] || plan : '未知套餐';
 }
 let token = localStorage.getItem('pairing-token') || '';
-let busy = false, lastSuccess = 0, wakeLock = null, wantWake = true;
+// 产品仅在 HTTPS 看板自动开启常亮；本地 HTTP（含回环地址）默认关闭。
+const wakeUsesHTTPS = globalThis.location?.protocol === 'https:';
+let busy = false, lastSuccess = 0, wakeLock = null, wantWake = wakeUsesHTTPS;
 let controlAllowed = false;
 let pairingInvalidated = false;
 function invalidatePairing() {
@@ -196,6 +198,7 @@ function notifyWakeInterrupted(message = wakeInterrupted) {
 }
 // 点击本身提供系统所需的用户手势，成功后再关闭，失败时留下可重试的提示。
 $('wake-dialog').onclick = async () => {
+  if (!wakeUsesHTTPS) { dismissWakeNotice(); return; }
   if (wakePending) return;
   wakeFailed = false;
   wantWake = true;
@@ -211,11 +214,11 @@ function showWakeState() {
   $('wake').setAttribute('aria-pressed', String(active));
   $('wake').disabled = wakePending;
   $('restore-wake').disabled = wakePending;
-  $('wake-heading').textContent = wakePending ? '正在恢复常亮…' : '点击任意位置恢复常亮';
+  $('wake-heading').textContent = !wakeUsesHTTPS ? '非 HTTPS 链接不支持常亮' : wakePending ? '正在恢复常亮…' : '点击任意位置恢复常亮';
 }
 async function keepAwake() {
   if (wakeLock?.released) wakeLock = null;
-  if (!wantWake || document.hidden || wakeLock || wakePending || wakeFailed) return;
+  if (!wakeUsesHTTPS || !wantWake || document.hidden || wakeLock || wakePending || wakeFailed) return;
   if (!('wakeLock' in navigator)) {
     wakeFailed = true;
     showWakeState();
@@ -242,6 +245,11 @@ async function keepAwake() {
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
+  if (!wakeUsesHTTPS) {
+    $('wake-message').textContent = '请使用 HTTPS 地址访问。点击此处关闭提示。';
+    $('wake-dialog').showModal();
+    return;
+  }
   if (wakePending) return;
   wantWake = !(wakeLock && !wakeLock.released);
   wakeFailed = false;
@@ -251,7 +259,7 @@ $('wake').onclick = async () => {
 };
 // 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
 setInterval(keepAwake, 5000);
-// 默认请求常亮；恢复前台或下一次用户操作时重试，避免后台重复申请。
+// HTTPS 默认请求常亮；恢复前台或下一次用户操作时重试，避免后台重复申请。
 document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake')) return; keepAwake(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); keepAwake(); } });
 function showFullscreenState() {

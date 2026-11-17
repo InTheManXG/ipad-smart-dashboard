@@ -11,7 +11,7 @@ let requests = 0, releases = 0, enter = 0, exit = 0, reloads = 0;
 const notices = [], timeouts = new Map();
 const document = {body:{append(node){notices.push(node);nodes.set(node.id,node);}},createElement(){return {setAttribute(){},remove(){nodes.delete(this.id);}};},hidden:false,getElementById:get,addEventListener(name, fn){events[name]=fn;},fullscreenEnabled:true,documentElement:{async requestFullscreen(){enter++;}},async exitFullscreen(){exit++;}};
 const navigator = {wakeLock:{async request(){requests++;let listener;return {addEventListener(_,fn){listener=fn;},async release(){releases++;listener?.();}};}}};
-const context = vm.createContext({document,navigator,location:{reload(){reloads++;}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},sessionStorage:{getItem(){return '';}},setInterval(fn,ms){timers.set(ms,fn);},setTimeout(fn,ms){timeouts.set(ms,fn);return ms;},clearTimeout(id){timeouts.delete(id);},Date,fetch:async()=>({ok:false,status:401})});
+const context = vm.createContext({document,navigator,location:{protocol:'https:',reload(){reloads++;}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},sessionStorage:{getItem(){return '';}},setInterval(fn,ms){timers.set(ms,fn);},setTimeout(fn,ms){timeouts.set(ms,fn);return ms;},clearTimeout(id){timeouts.delete(id);},Date,fetch:async()=>({ok:false,status:401})});
 vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));
@@ -63,5 +63,36 @@ vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
   assert.equal(get('wake-dialog').open,false);
   assert.equal(get('wake').attrs['aria-pressed'],'true');
   assert.equal(get('wake').textContent,'常亮已开启');
+  // HTTP 回环地址即使被浏览器视为安全上下文，也遵循产品的 HTTPS 常亮规则。
+  for (const hostname of ['192.168.1.10', '127.0.0.1', 'localhost']) {
+    const localNodes = new Map(), localEvents = {}, localTimers = [];
+    const localGet = id => {
+      if (!localNodes.has(id)) localNodes.set(id, {textContent:'',open:false,attrs:{},setAttribute(key,value){this.attrs[key]=value;},addEventListener(){},showModal(){this.open=true;},close(){this.open=false;}});
+      return localNodes.get(id);
+    };
+    let localRequests = 0;
+    const localContext = vm.createContext({
+      document:{hidden:false,getElementById:localGet,addEventListener(name,fn){localEvents[name]=fn;},documentElement:{}},
+      navigator:{wakeLock:{async request(){localRequests++;throw new Error('HTTP 不应申请常亮');}}},
+      location:{protocol:'http:',hostname},isSecureContext:hostname !== '192.168.1.10',
+      localStorage:{getItem(){return '';}},setInterval(fn){localTimers.push(fn);},Date
+    });
+    vm.runInContext(fs.readFileSync('web/app.js','utf8'),localContext);
+    assert.equal(localRequests,0,'HTTP 默认关闭常亮');
+    assert.equal(localGet('wake-dialog').open,false,'HTTP 首次打开不遮挡看板');
+    assert.equal(localGet('wake').attrs['aria-pressed'],'false');
+    assert.equal(localGet('wake').textContent,'开启常亮');
+    assert.equal(localGet('more-settings').attrs['data-wake-warning'],'false');
+    await localGet('wake').onclick();
+    assert.equal(localGet('wake-dialog').open,true,'用户点击后才显示限制原因');
+    assert.equal(localGet('wake-heading').textContent,'非 HTTPS 链接不支持常亮');
+    assert.equal(localRequests,0);
+    await localGet('wake-dialog').onclick();
+    for (const tick of localTimers) await tick();
+    localEvents.pointerup({target:{closest(){return false;}}});
+    localEvents.visibilitychange();
+    assert.equal(localRequests,0,'点击和恢复前台不能绕过连接限制');
+    assert.equal(localGet('wake-dialog').open,false,'关闭后不反复弹出');
+  }
   console.log('默认常亮、关闭与恢复、全屏及回退提示验证通过');
 })().catch(error=>{console.error(error);process.exitCode=1;});

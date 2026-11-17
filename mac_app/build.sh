@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 app="$root/.build/iPad 控制台.app"
-app_version="${APP_VERSION:-0.2.1}"
+app_version="${APP_VERSION:-0.2.2}"
 deployment_target="13.0"
 app_build="${APP_BUILD:-1}"
 configuration="${BUILD_CONFIGURATION:-development}"
