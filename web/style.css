@@ -35,8 +35,8 @@ footer:has(#footer-note:empty){display:none}
 /* 连接状态独立于任务颜色，失败时不能保留上次连接成功的绿色。 */
 #connection.connected{color:var(--done)}#connection.disconnected{color:var(--error)}
 
-/* 顶部集中展示额度，主区域只保留任务；窄屏在页头内换行，避免挤压触摸控件。 */
-header{height:auto;min-height:126px;gap:24px;padding-block:16px}
+/* 页头按内容收紧，保留上下留白；窄屏仍可自然换行，避免挤压触摸控件。 */
+header{height:auto;min-height:90px;gap:24px;padding-block:16px}
 header .brand,header .top{flex-shrink:0}
 main{grid-template-columns:minmax(0,1fr)}
 .header-quota{flex:1;min-width:0;max-width:680px;display:grid;grid-template-columns:max-content minmax(0,400px);justify-content:center;padding-left:24px;gap:6px 20px;align-items:center}
