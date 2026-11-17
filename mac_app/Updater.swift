@@ -68,7 +68,7 @@ import SwiftUI
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
         lastChecked = updater.lastUpdateCheckDate
         if let error = error as NSError?, error.code != SUError.noUpdateError.rawValue {
-            status = "更新失败：\(error.localizedDescription)"
+            status = "更新失败，请稍后重试（错误 \(error.code)）"
         }
     }
 }

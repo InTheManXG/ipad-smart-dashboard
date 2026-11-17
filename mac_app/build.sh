@@ -118,6 +118,7 @@ cat > "$contents/Info.plist" <<PLIST
 <key>CFBundleIdentifier</key><string>com.iamxg.ipad-control</string>
 <key>CFBundleName</key><string>iPad 控制台</string>
 <key>CFBundleDisplayName</key><string>iPad 控制台</string>
+<key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
 <key>CFBundleExecutable</key><string>iPadControl</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>${app_version%%-*}</string>
