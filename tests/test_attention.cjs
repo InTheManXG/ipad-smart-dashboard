@@ -88,14 +88,47 @@ context.document.hidden = false;
   assert.equal(get('connection').className,'connected');
   run("render({controlAllowed:false,conversationsAvailable:true,conversations:[{title:'只读任务',threadId:'a',state:'running'}],quotaAvailable:false})");
   assert.equal(get('task-list').children[0].disabled,true,'只读会话不允许点击任务');
+  assert.match(get('footer-note').textContent,/控制台尚未允许.*允许控制此 Mac/,'禁用任务时直接说明授权入口');
   let openedReadOnly=false;context.fetch=async()=>{openedReadOnly=true;throw Error('must not call');};
   await run("openConversation('a')");
   assert.equal(openedReadOnly,false);
-  assert.match(get('footer-note').textContent,/仅可查看/);
+  assert.match(get('footer-note').textContent,/控制台尚未允许.*允许控制此 Mac/);
   run("updateAttention({threadId:'read-only-attention',title:'只读待处理'})");
   assert.equal(get('attention-dialog').open,true,'只读会话继续显示待处理提醒');
   assert.equal(get('open-codex').disabled,true,'提醒保留展示但禁用控制');
-  assert.match(get('open-result').textContent,/仅可查看/);
+  assert.match(get('open-result').textContent,/控制台尚未允许.*允许控制此 Mac/);
+  await run("openConversation('read-only-attention')");
+  assert.equal(get('open-result').textContent,get('footer-note').textContent,'已知只读时页脚和弹窗提示一致');
+  // 服务端拒绝不能显示成网络故障；恢复授权后清除旧提示并可重新打开。
+  run("render({controlAllowed:true,conversations:[],attention:{threadId:'denied',title:'权限测试'}})");
+  context.fetch = async () => ({ok:false,status:403});
+  await run("openConversation('denied')");
+  assert.match(get('footer-note').textContent,/控制台尚未允许.*连接与配对/);
+  assert.equal(get('open-result').textContent,get('footer-note').textContent);
+  assert.equal(get('attention-dialog').open,true,'拒绝授权仍保留提醒');
+  assert.equal(get('open-codex').disabled,true);
+  run("render({controlAllowed:true,conversations:[],attention:{threadId:'denied',title:'权限测试'}})");
+  assert.equal(get('footer-note').textContent,'','授权恢复后清除旧权限提示');
+  assert.equal(get('open-result').textContent,'');
+  assert.equal(get('open-codex').disabled,false);
+  for (const status of [409,503,504]) {
+    context.fetch = async () => ({ok:false,status});
+    await run("openConversation('denied')");
+    assert.match(get('footer-note').textContent,/未能确认打开/,'其他失败不能误报成未授权');
+    assert.equal(get('open-result').textContent,get('footer-note').textContent);
+  }
+  // 慢请求的拒绝回执不能覆盖另一条新提醒。
+  context.fetch = async () => {
+    run("updateAttention({threadId:'new',title:'新提醒'})");
+    get('open-result').textContent = '新提醒内容';
+    return {ok:false,status:403};
+  };
+  await run("openConversation('denied')");
+  assert.equal(get('open-result').textContent,'新提醒内容');
+  run('controlAllowed=true');
+  context.fetch = async () => ({ok:true,status:200,json:async()=>({ok:true})});
+  await run("openConversation('new')");
+  assert.equal(get('attention-dialog').open,false,'重新授权后仍可打开当前对话');
   // 被踢下线须立即隐藏旧页面并重载，清除各模块缓存；网络失败不走此路径。
   let reloads = 0;
   const pages = {style:{}};

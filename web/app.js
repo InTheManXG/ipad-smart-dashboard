@@ -11,6 +11,7 @@ let token = localStorage.getItem('pairing-token') || '';
 const wakeUsesHTTPS = globalThis.location?.protocol === 'https:';
 let busy = false, lastSuccess = 0, wakeLock = null, wantWake = wakeUsesHTTPS;
 let controlAllowed = false;
+const controlRequiredMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
 let pairingInvalidated = false;
 function invalidatePairing() {
   if (pairingInvalidated) return;
@@ -51,6 +52,9 @@ function taskDuration(seconds) {
 }
 function render(data) {
   controlAllowed = data.controlAllowed === true;
+  // 只读时说明授权入口；恢复后只清除此提示，保留其他操作结果。
+  if (!controlAllowed) $('footer-note').textContent = controlRequiredMessage;
+  else if ($('footer-note').textContent === controlRequiredMessage) $('footer-note').textContent = '';
   updateAttention(data.attention);
   const {tasks, counts} = taskOverview(data);
   const total = data.conversationsTotal ?? tasks.length;
@@ -135,9 +139,10 @@ function updateAttention(next, reset = true) {
   // 【业务逻辑】同一待处理阶段只弹一次；解除后再次等待可重新提醒，连接失败不清除已忽略状态。
   $('attention-title').textContent = attention.title;
   $('open-codex').disabled = !controlAllowed;
-  if (!controlAllowed) $('open-result').textContent = '当前网页仅可查看，请在 Mac App 中授权控制';
+  if (!controlAllowed) $('open-result').textContent = controlRequiredMessage;
+  else if ($('open-result').textContent === controlRequiredMessage) $('open-result').textContent = '';
   if (attention.threadId !== dismissedThread && !$('settings').open && !$('attention-dialog').open) {
-    $('open-result').textContent = controlAllowed ? '' : '当前网页仅可查看，请在 Mac App 中授权控制';
+    $('open-result').textContent = controlAllowed ? '' : controlRequiredMessage;
     $('attention-dialog').showModal();
   }
 }
@@ -150,8 +155,12 @@ $('attention-dialog').onclick = event => {
   if (attention) return openConversation(attention.threadId);
 };
 async function openConversation(threadId) {
-  if (!controlAllowed) { $('footer-note').textContent = '当前网页仅可查看，请在 Mac App 中授权控制'; return; }
   if (!threadId || opening) return;
+  if (!controlAllowed) {
+    $('footer-note').textContent = controlRequiredMessage;
+    if (attention?.threadId === threadId) $('open-result').textContent = controlRequiredMessage;
+    return;
+  }
   opening = true; $('open-codex').disabled = true;
   $('open-result').textContent = '正在请求 Mac 打开对话…';
   $('footer-note').textContent = '正在请求 Mac 打开对话…';
@@ -166,9 +175,11 @@ async function openConversation(threadId) {
     if (attention?.threadId === threadId) {
       dismissedThread = threadId; $('attention-dialog').close();
     }
-  } catch {
-    $('footer-note').textContent = controlAllowed ? '未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试' : '当前网页仅可查看，请在 Mac App 中授权控制';
-    if (attention?.threadId === threadId) $('open-result').textContent = '未能确认打开，请检查 Mac 是否在线或任务是否仍待处理，然后重试。';
+  } catch (error) {
+    // 权限拒绝同时更新页脚与提醒，不能被网络错误覆盖；旧请求不改写新对话的提醒。
+    const message = error.message === 'read-only' || !controlAllowed ? controlRequiredMessage : '未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试';
+    $('footer-note').textContent = message;
+    if (attention?.threadId === threadId) $('open-result').textContent = message;
   } finally { clearTimeout(timeout); opening = false; $('open-codex').disabled = !controlAllowed; }
 }
 $('settings-form').addEventListener('submit', async event => {
