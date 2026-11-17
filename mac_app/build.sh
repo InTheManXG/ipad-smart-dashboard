@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 app="$root/.build/iPad 控制台.app"
-app_version="${APP_VERSION:-0.1.0}"
+app_version="${APP_VERSION:-0.2.0}"
 deployment_target="13.0"
 app_build="${APP_BUILD:-1}"
 configuration="${BUILD_CONFIGURATION:-development}"
@@ -58,17 +58,43 @@ for binary in "$root/mac_app/vendor/MediaAdapter/MediaRemoteAdapter.framework/Ve
     printf '媒体组件的最低系统不支持 macOS %s，拒绝打包。\n' "$deployment_target" >&2; exit 1
   fi
 done
+sparkle="$(bash "$root/mac_app/fetch-sparkle.sh")"
+for binary in "$sparkle/Sparkle.framework/Versions/B/Sparkle" "$sparkle/Sparkle.framework/Versions/B/Autoupdate" \
+  "$sparkle/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater" \
+  "$sparkle/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader" \
+  "$sparkle/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer"; do
+  xcrun lipo -verify_arch arm64 "$binary"
+  if ! xcrun vtool -show-build -arch arm64 "$binary" | awk -v target="$deployment_target" '
+    $1 == "platform" { count++; platform = $2 }
+    $1 == "minos" { minimum = $2 }
+    END {
+      if (count != 1 || platform != "MACOS" || minimum !~ /^[0-9]+(\.[0-9]+)*$/) exit 1
+      split(minimum, actual, "."); split(target, expected, ".")
+      for (i = 1; i <= 3; i++) {
+        if (actual[i] + 0 > expected[i] + 0) exit 1
+        if (actual[i] + 0 < expected[i] + 0) exit 0
+      }
+    }'; then
+    printf 'Sparkle 组件不支持 macOS %s，拒绝打包。\n' "$deployment_target" >&2; exit 1
+  fi
+done
+update_key="$(tr -d '\r\n' < "$root/mac_app/update-public-key.txt")"
+if [[ ! "$update_key" =~ ^[A-Za-z0-9+/]{43}=$ ]] || [[ "$(printf '%s' "$update_key" | base64 --decode | wc -c | tr -d ' ')" != 32 ]]; then
+  printf '%s\n' 'Sparkle 更新公钥必须是 32 字节 Ed25519 公钥的 Base64 编码。' >&2; exit 1
+fi
 printf '构建 %s (%s)，模式：%s，签名：%s\n' "$app_version" "$app_build" "$configuration" "${resolved_identity:-ad-hoc（仅本机开发）}" >&2
 mkdir -p "$root/.build"
 stage="$(mktemp -d "$root/.build/app-stage.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 contents="$stage/iPad 控制台.app/Contents"
-mkdir -p "$contents/MacOS" "$contents/Resources" "$stage/control.iconset"
+mkdir -p "$contents/MacOS" "$contents/Resources" "$contents/Frameworks" "$stage/control.iconset"
 # 在新目录组装，避免旧构建残留资源或本机 .DS_Store 进入发行包。
 rsync -a --exclude '.DS_Store' "$root/mac_app/vendor/MediaAdapter" "$contents/Resources/"
 chmod -R u+w "$contents/Resources/MediaAdapter"
 install_name_tool -id '@rpath/MediaRemoteAdapter.framework/Versions/A/MediaRemoteAdapter' "$contents/Resources/MediaAdapter/MediaRemoteAdapter.framework/MediaRemoteAdapter"
 rsync -a --exclude '.DS_Store' "$root/web" "$contents/Resources/"
+rsync -a "$sparkle/Sparkle.framework" "$contents/Frameworks/"
+cp "$root/mac_app/vendor/Sparkle-LICENSE" "$contents/Resources/Sparkle-LICENSE"
 for notice in LICENSE THIRD_PARTY_NOTICES.md; do
   if [[ -f "$root/$notice" ]]; then cp "$root/$notice" "$contents/Resources/$notice"; fi
 done
@@ -83,7 +109,8 @@ xcrun swiftc -parse-as-library -swift-version 5 -O -module-cache-path "$root/.bu
   "$root/mac_app/ConsoleActions.swift" "$root/mac_app/LocalPairing.swift" "$root/mac_app/NativeCore.swift" "$root/mac_app/CodexCollector.swift" "$root/mac_app/NativeMusic.swift" \
   "$root/mac_app/NativeServer.swift" "$root/mac_app/NativeMain.swift" -o "$contents/MacOS/iPadService"
 xcrun swiftc -parse-as-library -swift-version 5 -O -module-cache-path "$root/.build/swift-cache" -target "arm64-apple-macosx$deployment_target" \
-  "$root/mac_app/UserAgent.swift" "$root/mac_app/ConsoleOrder.swift" "$root/mac_app/ConsoleSettings.swift" "$root/mac_app/App.swift" -o "$contents/MacOS/iPadControl"
+  -F "$contents/Frameworks" -framework Sparkle -Xlinker -rpath -Xlinker '@executable_path/../Frameworks' \
+  "$root/mac_app/UserAgent.swift" "$root/mac_app/ConsoleOrder.swift" "$root/mac_app/ConsoleSettings.swift" "$root/mac_app/Updater.swift" "$root/mac_app/App.swift" -o "$contents/MacOS/iPadControl"
 cat > "$contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -99,6 +126,14 @@ cat > "$contents/Info.plist" <<PLIST
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>LSMinimumSystemVersion</key><string>$deployment_target</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>SUFeedURL</key><string>https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest/download/appcast.xml</string>
+<key>SUPublicEDKey</key><string>$update_key</string>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>SUAutomaticallyUpdate</key><false/>
+<key>SUAllowsAutomaticUpdates</key><false/>
+<key>SUVerifyUpdateBeforeExtraction</key><true/>
+<key>SURequireSignedFeed</key><true/>
+<key>SUScheduledCheckInterval</key><integer>3600</integer>
 </dict></plist>
 PLIST
 sign_options=(--force --sign "$signing_identity")
@@ -106,6 +141,13 @@ if [[ "$configuration" == release ]]; then sign_options+=(--options runtime --ti
 # 从内到外签名，包含媒体子进程；不通过 --deep 掩盖未签名的嵌套代码。
 codesign "${sign_options[@]}" "$contents/Resources/MediaAdapter/MediaRemoteAdapter.framework"
 codesign "${sign_options[@]}" "$contents/Resources/MediaAdapter/MediaRemoteAdapterTestClient"
+# Sparkle 原包使用 ad-hoc 要求；重建证书身份，只有下载服务沿用官方沙盒权限。
+for component in "Versions/B/Autoupdate" "Versions/B/Updater.app" \
+  "Versions/B/XPCServices/Downloader.xpc" "Versions/B/XPCServices/Installer.xpc" ""; do
+  metadata=identifier
+  if [[ "$component" == "Versions/B/XPCServices/Downloader.xpc" ]]; then metadata+=,entitlements; fi
+  codesign "${sign_options[@]}" --preserve-metadata="$metadata" "$contents/Frameworks/Sparkle.framework${component:+/$component}"
+done
 codesign "${sign_options[@]}" --identifier com.iamxg.ipad-control.service "$contents/MacOS/iPadService"
 codesign "${sign_options[@]}" "$stage/iPad 控制台.app"
 codesign --verify --deep --strict "$stage/iPad 控制台.app"

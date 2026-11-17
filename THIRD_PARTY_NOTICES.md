@@ -8,6 +8,12 @@
 - 分发内容：媒体框架、Perl 脚本和兼容测试客户端。现有二进制仅支持 Apple Silicon。
 - 框架与测试客户端从上述源码按 `arm64-apple-macosx13.0` 重建，脚本保持原样；打包按所选身份签名。不宣称苹果官方支持此接口。复现步骤见组件 NOTICE。
 
+## Sparkle
+
+- 来源：https://github.com/sparkle-project/Sparkle ，固定版本 2.10.1。
+- 许可证：MIT 及其所包含组件的许可证，全文见 `mac_app/vendor/Sparkle-LICENSE`；安装包同时包含 `Resources/Sparkle-LICENSE`。
+- 构建时从官方发行包下载并校验固定 SHA-256，更新框架及其辅助程序随 App 内置，不要求用户安装额外工具。
+
 ## 本项目图标
 
 `mac_app/assets/app-icon.png` 与 `web/app-icon.png` 是本项目创作的应用图标，随项目按 MIT 许可提供。`web/music-note.svg` 与 `web/icon.svg` 为项目内图形。

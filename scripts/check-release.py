@@ -1,5 +1,6 @@
 """验证发行脚本在凭据或参数不正确时提前拒绝，不调用签名或提交公证。"""
 from pathlib import Path
+import base64
 import json
 import os
 import shutil
@@ -22,7 +23,7 @@ def rejects(script, expected, values=None, args=()):
     assert expected in result.stderr, f"{script} 未返回预期的拒绝原因"
 
 
-for script in ("mac_app/build.sh", "mac_app/release.sh", "mac_app/package-preview.sh", "mac_app/package-dmg.sh", "mac_app/check-development-signature.sh"):
+for script in ("mac_app/build.sh", "mac_app/release.sh", "mac_app/package-preview.sh", "mac_app/package-dmg.sh", "mac_app/check-development-signature.sh", "mac_app/generate-appcast.sh", "mac_app/fetch-sparkle.sh"):
     subprocess.run(["bash", "-n", str(ROOT / script)], check=True)
 rejects("mac_app/build.sh", "APP_VERSION", {"APP_VERSION": "0.1.0;echo unsafe"})
 rejects("mac_app/build.sh", "APP_BUILD", {"APP_BUILD": "0"})
@@ -33,6 +34,7 @@ rejects("mac_app/release.sh", "不会产出未公证安装包", args=("0.1.0-bet
 rejects("mac_app/package-dmg.sh", "用法")
 rejects("mac_app/package-dmg.sh", "用法", args=("missing.app", "output.dmg"))
 rejects("mac_app/check-development-signature.sh", "用法", args=("missing.app", "-"))
+rejects("mac_app/generate-appcast.sh", "用法", args=("invalid", "missing.app", "missing.zip"))
 # 已有产物及符号链接一律不能覆盖，校验必须先于签名与挂载操作。
 with tempfile.TemporaryDirectory(prefix="ipad-dmg-gate-") as folder:
     source = Path(folder) / "iPad 控制台.app"
@@ -160,3 +162,88 @@ with open(os.environ['GH_ARGUMENT_LOG'], 'a') as output:
                 assert "--latest" in args and "--prerelease" not in args
                 assert ("--prerelease=false" in args) == (exists == "1")
 print("GitHub 普通发行与预发布的新建、更新分类验证通过")
+
+# 摘要失败必须保留现有可用组件，不能继续解压损坏的缓存。
+with tempfile.TemporaryDirectory(prefix="ipad-sparkle-cache-") as folder:
+    fixture = Path(folder)
+    (fixture / "mac_app").mkdir()
+    cache = fixture / ".build/sparkle"
+    (cache / "Sparkle.framework").mkdir(parents=True)
+    existing = cache / "Sparkle.framework/fixture"
+    existing.write_bytes(b"existing-framework")
+    (cache / "Sparkle-2.10.1.tar.xz").write_bytes(b"corrupt-cache")
+    shutil.copy(ROOT / "mac_app/fetch-sparkle.sh", fixture / "mac_app/fetch-sparkle.sh")
+    result = subprocess.run(["bash", "mac_app/fetch-sparkle.sh"], cwd=fixture, capture_output=True, text=True)
+    assert result.returncode != 0 and "摘要不匹配" in result.stderr
+    assert existing.read_bytes() == b"existing-framework"
+print("Sparkle 损坏缓存拒绝与原组件保护验证通过")
+
+# 更新源必须绑定最终 ZIP；用工具夹具检查通道与地址，不读取本机签名钥匙串。
+with tempfile.TemporaryDirectory(prefix="ipad-appcast-gate-") as folder:
+    fixture = Path(folder)
+    (fixture / "mac_app").mkdir()
+    (fixture / ".build/sparkle/bin").mkdir(parents=True)
+    (fixture / "bin").mkdir()
+    app = fixture / "fixture.app"
+    app.mkdir()
+    shutil.copy(ROOT / "mac_app/generate-appcast.sh", fixture / "mac_app/generate-appcast.sh")
+    (fixture / "mac_app/update-public-key.txt").write_text("fixture-public-key\n")
+    commands = {
+        "bin/plutil": '''#!/bin/sh
+case "$2" in
+  SUPublicEDKey) printf '%s\\n' fixture-public-key ;;
+  CFBundleGetInfoString) printf '%s\\n' "$TEST_VERSION" ;;
+  SURequireSignedFeed) printf '%s\\n' true ;;
+esac
+''',
+        ".build/sparkle/bin/generate_keys": "#!/bin/sh\nprintf '%s\\n' fixture-public-key\n",
+        ".build/sparkle/bin/sign_update": "#!/bin/sh\nexit 0\n",
+        ".build/sparkle/bin/generate_appcast": '''#!/usr/bin/env python3
+import os, pathlib, sys, xml.etree.ElementTree as ET
+args = sys.argv[1:]
+folder = pathlib.Path(args[-1])
+archive, = folder.glob('*.zip')
+ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
+root = ET.Element('rss')
+item = ET.SubElement(ET.SubElement(root, 'channel'), 'item')
+if '--channel' in args:
+    ET.SubElement(item, ns + 'channel').text = args[args.index('--channel') + 1]
+prefix = args[args.index('--download-url-prefix') + 1]
+ET.SubElement(item, 'enclosure', {'url':prefix + archive.name,
+    'length':str(archive.stat().st_size), ns + 'edSignature':'fixture'})
+if os.environ.get('TEST_BAD_URL'):
+    item.find('enclosure').set('url', 'https://example.invalid/update.zip')
+ET.ElementTree(root).write(folder / 'appcast.xml')
+'''
+    }
+    for path, body in commands.items():
+        tool = fixture / path
+        tool.write_text(body)
+        tool.chmod(0o700)
+    archive = fixture / "update.zip"
+    archive.write_bytes(b"test-only-update")
+    for version in ("0.1.1", "0.1.1-beta.1"):
+        env = os.environ.copy()
+        env.pop("SPARKLE_PRIVATE_KEY", None)
+        env.update({"PATH":str(fixture / "bin") + os.pathsep + env.get("PATH", os.defpath),
+                    "TEST_VERSION":version, "CI":"false"})
+        command = ["bash", "mac_app/generate-appcast.sh", version, str(app), str(archive)]
+        result = subprocess.run(command, cwd=fixture, env=env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        assert (fixture / "appcast.xml").is_file()
+        blocked = subprocess.run(command, cwd=fixture, env=env, capture_output=True, text=True)
+        assert blocked.returncode != 0 and "拒绝覆盖" in blocked.stderr
+        (fixture / "appcast.xml").unlink()
+        blocked = subprocess.run(command, cwd=fixture, env=env | {"CI":"true"}, capture_output=True, text=True)
+        assert blocked.returncode != 0 and "SPARKLE_PRIVATE_KEY" in blocked.stderr
+        blocked = subprocess.run(command, cwd=fixture, env=env | {"TEST_BAD_URL":"1"}, capture_output=True, text=True)
+        assert blocked.returncode != 0 and not (fixture / "appcast.xml").exists()
+    if shutil.which("xcrun"):
+        # 该种子只用于拒绝路径测试，不是发行密钥；实际 CryptoKit 校验必须在工具执行前失败。
+        wrong_seed = base64.b64encode(bytes(range(32))).decode()
+        blocked = subprocess.run(command, cwd=fixture, env=env | {"CI":"true", "SPARKLE_PRIVATE_KEY":wrong_seed},
+                                 capture_output=True, text=True, timeout=60)
+        assert blocked.returncode != 0 and "与内置公钥不匹配" in blocked.stderr
+        assert wrong_seed not in blocked.stdout + blocked.stderr
+        assert not (fixture / "appcast.xml").exists()
+print("更新源签名入口、固定下载地址、通道与覆盖保护验证通过")

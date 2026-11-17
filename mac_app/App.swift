@@ -183,6 +183,7 @@ struct ControlView: View {
                 Label("快捷控制台", systemImage: "square.grid.2x2").tag("控制台")
                 Label("音乐同步", systemImage: "music.note").tag("音乐")
                 Label("中转站 Key", systemImage: "key.horizontal").tag("Key")
+                Label("关于", systemImage: "info.circle").tag("关于")
             }
             .navigationTitle("iPad 控制台")
             .navigationSplitViewColumnWidth(170)
@@ -191,9 +192,9 @@ struct ControlView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : section == "控制台" ? "快捷控制台" : section == "音乐" ? "音乐同步" : "中转站 Key")
+                        Text(section == "服务" ? "服务管理" : section == "连接" ? "连接与配对" : section == "控制台" ? "快捷控制台" : section == "音乐" ? "音乐同步" : section == "关于" ? "关于" : "中转站 Key")
                             .font(.largeTitle.bold())
-                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : section == "控制台" ? "配置网页左侧的应用和脚本快捷入口" : section == "音乐" ? "控制看板的音乐与歌词显示" : "管理这台 Mac 的中转站 Key")
+                        Text(section == "服务" ? "管理这台 Mac 的后台服务与登录启动" : section == "连接" ? "选择连接方式，在 iPad 上打开对应地址并配对" : section == "控制台" ? "配置网页左侧的应用和脚本快捷入口" : section == "音乐" ? "控制看板的音乐与歌词显示" : section == "关于" ? "版本信息与自动更新" : "管理这台 Mac 的中转站 Key")
                             .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     Spacer()
@@ -207,11 +208,12 @@ struct ControlView: View {
                             if section == "服务" { services }
                             else if section == "连接" { connection }
                             else if section == "音乐" { musicSettings }
+                            else if section == "关于" { AboutView() }
                             else { keySettings }
                         }.padding(2)
                     }
                 }
-                Text(model.message).font(.callout)
+                Text(section == "关于" ? "" : model.message).font(.callout)
                     .foregroundStyle(model.failed ? Color.red : Color.secondary)
                     .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
                     .accessibilityLabel(model.message)
@@ -221,7 +223,7 @@ struct ControlView: View {
         .task { await model.refresh() }
         .onChange(of: section) { value in
             resetEditor()
-            Task { if value == "Key" { await model.loadKeys() } else if value == "连接" { await model.refreshConnections() } else if value != "控制台" { await model.refresh() } }
+            Task { if value == "Key" { await model.loadKeys() } else if value == "连接" { await model.refreshConnections() } else if value != "控制台" && value != "关于" { await model.refresh() } }
         }
         .alert("删除 Key？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("取消", role: .cancel) { deleting = nil }
@@ -627,6 +629,7 @@ struct PublicAddressEditor: View {
 
 @MainActor final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppUpdater.shared.start()
         // 登录时后台启动不抢占窗口，但 Dock 与菜单栏始终提供返回入口。
         if CommandLine.arguments.contains("--background") { NSApp.hide(nil) }
         Task {
@@ -660,9 +663,14 @@ struct PublicAddressEditor: View {
 
 struct ControlMenu: View {
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var updater = AppUpdater.shared
     var body: some View {
         Button("打开 iPad 控制台") {
             openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        Button(updater.availableVersion.map { "发现新版本 \($0)…" } ?? "关于与更新…") {
+            openWindow(id: "about")
             NSApp.activate(ignoringOtherApps: true)
         }
         Divider()
@@ -675,6 +683,22 @@ struct ControlMenu: View {
     var body: some Scene {
         Window("iPad 控制台", id: "main") { ControlView() }
             .defaultSize(width: 900, height: 680)
+            .commands { AboutCommands() }
+        Window("关于 iPad 控制台", id: "about") { AboutView().padding(28).frame(width: 500) }
+            .windowResizability(.contentSize)
         MenuBarExtra("iPad 控制台", systemImage: "ipad.landscape") { ControlMenu() }
+    }
+}
+
+struct AboutCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("关于 iPad 控制台") {
+                openWindow(id: "about")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            Button("检查更新…") { AppUpdater.shared.install() }
+        }
     }
 }

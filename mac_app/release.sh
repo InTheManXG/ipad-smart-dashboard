@@ -77,7 +77,8 @@ codesign --verify --strict "$submission/artifacts/$image"
 hdiutil verify "$submission/artifacts/$image"
 require_gatekeeper
 spctl --assess --type open --context context:primary-signature --verbose=4 "$submission/artifacts/$image"
-(cd "$submission/artifacts" && shasum -a 256 "$image" "$archive" > SHA256SUMS)
+bash "$root/mac_app/generate-appcast.sh" "$version" "$app" "$submission/artifacts/$archive"
+(cd "$submission/artifacts" && shasum -a 256 "$image" "$archive" appcast.xml > SHA256SUMS)
 mkdir -p "$(dirname "$output")"
 mv "$submission/artifacts" "$output"
 printf '已生成公证发行包：%s\n' "$output/$image"

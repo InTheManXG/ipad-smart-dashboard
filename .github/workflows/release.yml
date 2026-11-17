@@ -139,6 +139,8 @@ jobs:
           security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
           rm -f "$RUNNER_TEMP/development-signing.p12"
       - name: Package unnotarized application
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: bash mac_app/package-preview.sh "$RELEASE_TAG"
       - name: Publish unnotarized release
         env:
@@ -233,6 +235,8 @@ jobs:
           echo "NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
           rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP/notary.p8"
       - name: Build, notarize and package
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: bash mac_app/release.sh "$RELEASE_TAG"
       - name: Publish verified artifacts
         env:

@@ -11,7 +11,12 @@ trap 'rm -rf "$work"' EXIT
 index=0
 for item in "$app" "$app/Contents/MacOS/iPadService" \
   "$app/Contents/Resources/MediaAdapter/MediaRemoteAdapter.framework" \
-  "$app/Contents/Resources/MediaAdapter/MediaRemoteAdapterTestClient"; do
+  "$app/Contents/Resources/MediaAdapter/MediaRemoteAdapterTestClient" \
+  "$app/Contents/Frameworks/Sparkle.framework" \
+  "$app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" \
+  "$app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app" \
+  "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc" \
+  "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"; do
   codesign --verify --strict "$item"
   info="$(codesign -dvv "$item" 2>&1)"
   if ! grep -q '^Authority=Apple Development:' <<< "$info"; then
@@ -34,4 +39,4 @@ for item in "$app" "$app/Contents/MacOS/iPadService" \
   index=$((index + 1))
 done
 codesign --verify --deep --strict "$app"
-printf '%s\n' 'App、后台和媒体组件的固定开发证书验证通过。'
+printf '%s\n' 'App、后台、媒体及更新组件的固定开发证书验证通过。'

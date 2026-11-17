@@ -61,7 +61,8 @@ for binary in MacOS/iPadControl MacOS/iPadService Resources/MediaAdapter/MediaRe
 done
 bash "$root/mac_app/check-development-signature.sh" "$unpacked" "$SIGNING_IDENTITY"
 [[ "$(plutil -extract CFBundleGetInfoString raw -o - "$unpacked/Contents/Info.plist")" == "$version" ]]
+bash "$root/mac_app/generate-appcast.sh" "$version" "$unpacked" "$stage/$archive"
 cp "$root/docs/UNNOTARIZED_INSTALL.md" "$stage/UNNOTARIZED_INSTALL.md"
-(cd "$stage" && shasum -a 256 "$image" "$archive" UNNOTARIZED_INSTALL.md > SHA256SUMS)
+(cd "$stage" && shasum -a 256 "$image" "$archive" appcast.xml UNNOTARIZED_INSTALL.md > SHA256SUMS)
 mv "$stage" "$output"
 printf '已生成未公证发行包：%s\n' "$output/$image"

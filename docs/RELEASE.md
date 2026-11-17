@@ -2,7 +2,7 @@
 
 ## 当前发布范围
 
-当前发行版本号为 `0.1.0`，Git 标签为 `v0.1.0`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
+当前发行版本号为 `0.2.0`，Git 标签为 `v0.2.0`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
 
 当前提供明确标注 `unnotarized` 的 Apple Development 签名安装包，固定证书用于保持更新身份。它不是 Developer ID 发行签名，也没有 Apple 公证，不能称为已通过 Gatekeeper 的发行包。用户按 [未公证安装说明](UNNOTARIZED_INSTALL.md) 自行核对来源、校验并决定是否仅允许该 App。GitHub 自动提供的源码归档不代表 Mac 安装包。
 
@@ -17,6 +17,14 @@ GitHub 的普通 Release 标记与 Apple 公证无关。已确认后台曾在额
 3. 等待工作流全部通过，再从对应 Release 下载 DMG、备用 ZIP、安装说明及 `SHA256SUMS`。手动入口同样在 GitHub 构建，不需要本机预先编译或上传文件。
 
 本次清理旧预发布发行页及附件，保留对应 Git 标签与源码历史。已有同名附件时上传会拒绝覆盖。修改源码后应使用新标签和版本，不移动已经发布的标签；未生成附件的失败任务可在修复运行环境后重试。
+
+## 自动更新
+
+0.2.0 起使用固定版本 Sparkle 2.10.1，App 启动时及每小时检查正式发行版；“关于”界面提供版本信息、手动检查和更新入口。下载后由 Sparkle 校验、替换并重启，退出前沿用现有的停止后台流程，重新打开后恢复服务。首次从没有更新器的 0.1.x 升级仍须手动替换 App。
+
+更新源固定为 `https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest/download/appcast.xml`。每个发行版的签名更新源只指向该版本的完整 ZIP；预发布条目标记 `beta`，默认更新器不接收。DMG 继续用于首次安装，ZIP 同时作为自动更新载体。不能删除当前 Latest 的 `appcast.xml` 或其对应 ZIP，否则已安装用户将无法更新。
+
+归档和更新源都采用独立 Ed25519 密钥签名；公钥位于 `mac_app/update-public-key.txt` 并嵌入 App，私钥仅在维护者钥匙串 `com.iamxg.ipad-control.updates` 和 GitHub `SPARKLE_PRIVATE_KEY` Secret 中。不要更换公钥或丢失私钥；密钥轮换需要按 Sparkle 的迁移流程单独发布。构建脚本固定并校验 Sparkle 下载摘要，缺失或不匹配的签名凭据会阻止生成更新源。
 
 ## 未公证发行包
 
@@ -35,6 +43,7 @@ bash mac_app/package-preview.sh 0.1.0
 iPad-Control-0.1.0-unnotarized-macos-arm64.dmg
 iPad-Control-0.1.0-unnotarized-macos-arm64.zip
 SHA256SUMS
+appcast.xml
 UNNOTARIZED_INSTALL.md
 ```
 
@@ -102,6 +111,7 @@ bash mac_app/release.sh 0.1.0
 
 | Secret | 内容 |
 | --- | --- |
+| `SPARKLE_PRIVATE_KEY` | Sparkle Ed25519 私钥种子的 Base64，仅用于签署更新归档和更新源 |
 | `DEVELOPMENT_CERTIFICATE_P12_BASE64` | 固定 Apple Development 证书及私钥的 P12 文件，Base64 编码，仅供未公证发行包 |
 | `DEVELOPMENT_CERTIFICATE_PASSWORD` | 上述 P12 的导出密码 |
 | `DEVELOPMENT_SIGNING_IDENTITY` | 上述证书的 SHA-1 指纹，用于锁定发行包签名身份 |
