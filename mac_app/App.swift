@@ -393,7 +393,14 @@ struct ControlView: View {
             model.failed = !copied
             model.message = copied ? "配对码已复制" : "复制失败，请重试"
         } label: {
-            Text(code).font(.system(size: 28, weight: .bold, design: .monospaced))
+            HStack(spacing: 12) {
+                Text(code).font(.system(size: 28, weight: .bold, design: .monospaced))
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("点击复制配对码")
