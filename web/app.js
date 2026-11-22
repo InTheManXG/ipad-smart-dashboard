@@ -195,6 +195,10 @@ $('settings-form').addEventListener('submit', async event => {
   } catch (error) { $('pairing-error').textContent = error.message; }
 });
 $('cancel').onclick = () => $('settings').close();
+// 菜单项共用收起逻辑，异步申请常亮或刷新数据时也应立即关闭菜单。
+$('display-options').addEventListener('click', event => {
+  if (event.target.closest('button')) $('display-options').hidePopover();
+});
 $('connect').onclick = () => $('settings').showModal();
 $('refresh').onclick = refresh;
 // 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。

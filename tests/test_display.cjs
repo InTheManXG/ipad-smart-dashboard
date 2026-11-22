@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const nodes = new Map(), events = {}, timers = new Map();
 const get = id => {
-  if (!nodes.has(id)) nodes.set(id,{textContent:'',open:false,attrs:{},setAttribute(key,value){this.attrs[key]=value;},addEventListener(){},showModal(){this.open=true;},close(){this.open=false;},remove(){nodes.delete('wake-notice');}});
+  if (!nodes.has(id)) nodes.set(id,{textContent:'',open:false,attrs:{},listeners:{},setAttribute(key,value){this.attrs[key]=value;},addEventListener(name,listener){this.listeners[name]=listener;},hidePopover(){this.popoverOpen=false;},showModal(){this.open=true;},close(){this.open=false;},remove(){nodes.delete('wake-notice');}});
   return nodes.get(id);
 };
 let requests = 0, releases = 0, enter = 0, exit = 0, reloads = 0;
@@ -15,6 +15,15 @@ const context = vm.createContext({document,navigator,location:{protocol:'https:'
 vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));
+  const menu = get('display-options');
+  for (const id of ['connect','fullscreen','wake','refresh','reload']) {
+    menu.popoverOpen = true;
+    menu.listeners.click({target:{closest:() => get(id)}});
+    assert.equal(menu.popoverOpen,false,`${id} 菜单项点击后应立即收起`);
+  }
+  menu.popoverOpen = true;
+  menu.listeners.click({target:{closest:() => null}});
+  assert.equal(menu.popoverOpen,true,'菜单内非按钮区域不触发选项操作');
   get('reload').onclick();assert.equal(reloads,1);
   assert.equal(get('more-settings').attrs['data-wake-warning'],'false');
   assert.equal(requests,0);assert.equal(get('wake').textContent,'开启常亮');
@@ -128,5 +137,5 @@ vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
     assert.equal(localRequests,0,'点击和恢复前台不能绕过连接限制');
     assert.equal(localGet('wake-dialog').open,false,'关闭后不反复弹出');
   }
-  console.log('常亮默认关闭、失败回退、手动重试、关闭与恢复、全屏及回退提示验证通过');
+  console.log('菜单选项自动收起、常亮默认关闭、失败回退、手动重试、关闭与恢复、全屏及回退提示验证通过');
 })().catch(error=>{console.error(error);process.exitCode=1;});
