@@ -14,6 +14,14 @@
 - 许可证：MIT 及其所包含组件的许可证，全文见 `mac_app/vendor/Sparkle-LICENSE`；安装包同时包含 `Resources/Sparkle-LICENSE`。
 - 构建时从官方发行包下载并校验固定 SHA-256，更新框架及其辅助程序随 App 内置，不要求用户安装额外工具。
 
+## Go 服务端组件
+
+- Go 标准库：https://go.dev/ ，按 BSD 3-Clause 许可证分发，全文见 `licenses/Go-LICENSE.txt`。服务端编译版本由 `deploy/Dockerfile` 固定，最低工具链版本见 `go.mod`。
+- go-sqlite3：https://github.com/mattn/go-sqlite3 ，固定版本 v1.14.53，按 MIT 许可证分发，全文见 `licenses/go-sqlite3.txt`。用于直接读写历史服务的 SQLite 数据库。
+- SQLite：https://www.sqlite.org/ ，通过 go-sqlite3 包含的源码构建；SQLite 本身属于公共领域，声明见 https://www.sqlite.org/copyright.html 。
+
+上述组件仅随独立 Go 服务端使用，相关许可证随服务端镜像一起分发；Mac App 的 Swift 服务不依赖它们。
+
 ## 本项目图标
 
 `mac_app/assets/app-icon.png` 与 `web/app-icon.png` 是本项目创作的应用图标，随项目按 MIT 许可提供。`web/music-note.svg` 与 `web/icon.svg` 为项目内图形。

@@ -58,6 +58,9 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -69,7 +72,7 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
           git tag --points-at HEAD | grep -Fx "$RELEASE_TAG"
-          python3 -m unittest discover -s tests -p 'test_*.py'
+          go test -race ./...
           python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Publish source-only preview
@@ -105,6 +108,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -115,7 +121,7 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
           git tag --points-at HEAD | grep -Fx "$RELEASE_TAG"
           bash mac_app/test.sh
-          python3 -m unittest discover -s tests -p 'test_*.py'
+          go test -race ./...
           python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Import fixed Apple Development certificate
@@ -207,13 +213,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Verify release source
         run: |
           bash mac_app/test.sh
-          python3 -m unittest discover -s tests -p 'test_*.py'
+          go test -race ./...
           python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Prepare temporary signing keychain

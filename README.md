@@ -107,7 +107,7 @@ open '.build/iPad 控制台.app'
 
 ## 自托管
 
-服务端使用 Python 标准库，可独立容器化部署，不需要维护者原有的服务、镜像或配置。见 [自托管说明](docs/SELF_HOSTING.md)，包含 Docker Compose、HTTPS 和 1Panel 的设置方式。
+服务端使用 Go，可独立容器化部署，运行镜像无需 Python 或 Go 工具链。现有端口、配对 SQLite 数据库和已授权屏幕保持兼容；升级须沿用原 Compose 项目及数据挂载。见 [自托管说明](docs/SELF_HOSTING.md)，包含 Docker Compose、HTTPS 和 1Panel 的设置方式。
 
 ```sh
 cp deploy/.env.example deploy/.env
@@ -120,11 +120,11 @@ Mac 端不使用 Docker。服务端容器数据卷保存配对记录，升级时
 
 ```sh
 bash mac_app/test.sh
-python3 -m unittest discover -s tests -p 'test_*.py'
+go test -race ./...
 for test in tests/test_*.cjs; do node "$test"; done
 ```
 
-Swift 测试包括隔离的配置和钥匙串条目，使用后清理；不会执行用户配置的快捷项目。CI 在 Linux 运行服务器/网页测试，在 Apple Silicon macOS 运行原生测试与开发构建。
+服务端测试需要 Go 1.25 或更新版本及 C 编译器（SQLite 驱动使用 cgo）。Swift 测试包括隔离的配置和钥匙串条目，使用后清理；不会执行用户配置的快捷项目。CI 在 Linux 运行服务器/网页测试，在 Apple Silicon macOS 运行原生测试与开发构建。
 
 ## 更新与卸载
 

@@ -5,6 +5,8 @@ services:
       dockerfile: deploy/Dockerfile
     image: ipad-smart-dashboard:local
     restart: unless-stopped
+    # 留出服务端结束在途请求和关闭数据库的时间。
+    stop_grace_period: 25s
     ports:
       - "127.0.0.1:${DASHBOARD_PORT:-18086}:18086"
     environment:

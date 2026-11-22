@@ -55,11 +55,11 @@ App、后台服务和媒体组件复用同一证书，后续版本保持 Bundle 
 
 ## 开发构建
 
-在 Apple Silicon Mac 上安装 Apple Command Line Tools，运行：
+在 Apple Silicon Mac 上安装 Apple Command Line Tools；服务端测试另需 Go 1.25 或更新版本，SQLite 驱动使用 cgo。运行：
 
 ```sh
 bash mac_app/test.sh
-python3 -m unittest discover -s tests -p 'test_*.py'
+go test -race ./...
 for test in tests/test_*.cjs; do node "$test" || exit; done
 bash mac_app/build.sh
 ```
@@ -103,7 +103,7 @@ bash mac_app/release.sh 0.1.0
 
 `.github/workflows/checks.yml` 执行完整历史凭据扫描、服务端/网页检查、arm64 原生构建、组包后媒体组件只读加载及 DMG 挂载复制验证。`.github/workflows/release.yml` 提供三条明确的发布路径：
 
-- 推送 `v*` 语义版本标签，或手动选择 `artifact=unnotarized`：运行凭据扫描、原生、Python 和网页检查，生成上述未公证安装包、安装说明和校验清单。无预发布后缀（如 `v0.1.0`）创建普通 Release；有后缀（如 `v0.2.0-beta.1`）才创建 prerelease。这是当前发行版采用的路径。
+- 推送 `v*` 语义版本标签，或手动选择 `artifact=unnotarized`：运行凭据扫描、原生、Go 服务端和网页检查，并使用 Python 执行发行检查脚本，生成上述未公证安装包、安装说明和校验清单。无预发布后缀（如 `v0.1.0`）创建普通 Release；有后缀（如 `v0.2.0-beta.1`）才创建 prerelease。这是当前发行版采用的路径。
 - 手动选择 `artifact=source-only`：运行源码检查并创建源码预览 prerelease，不上传 `.app` 或安装包。GitHub 自动附带该标签的源码归档。
 - 手动选择已有版本标签及 `artifact=notarized`：执行完整测试、签名和公证，成功后向对应发行版添加 DMG、ZIP 与 SHA-256，或在尚无发行版时创建它。该路径使用下表的正式发行与公证 Secret。
 

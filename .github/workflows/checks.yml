@@ -16,6 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -24,7 +27,7 @@ jobs:
           node-version: '22'
       - name: Test server and web
         run: |
-          python3 -m unittest discover -s tests -p 'test_*.py'
+          go test -race ./...
           python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Validate standalone server image
