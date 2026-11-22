@@ -409,7 +409,9 @@ struct ConsoleItemEditor: View {
         if kind == "app" && !subscription { panel.allowedContentTypes = [.applicationBundle]; panel.directoryURL = URL(fileURLWithPath: "/Applications") }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if subscription { subscriptionScript = url.path } else { target = url.path }
-        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { name = url.deletingPathExtension().lastPathComponent }
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            name = kind == "app" ? appDisplayName(url.path) : url.deletingPathExtension().lastPathComponent
+        }
     }
     private func chooseInterpreter() {
         let panel = NSOpenPanel()

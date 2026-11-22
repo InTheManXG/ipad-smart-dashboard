@@ -9,7 +9,10 @@ final class ConsoleActions {
     private let lock = NSLock()
     private var running: String?
     private var results = [String: String]()
-    init(path: URL = NativePaths.data.appendingPathComponent("console-actions.json")) { self.path = path }
+    private let appName: (String) -> String
+    init(path: URL = NativePaths.data.appendingPathComponent("console-actions.json"), appName: @escaping (String) -> String = appDisplayName) {
+        self.path = path; self.appName = appName
+    }
 
     private func access<T>(_ action: (inout [JSONObject]) throws -> T) throws -> T {
         let fd = open(path.appendingPathExtension("lock").path, O_CREAT | O_RDWR, 0o600)
@@ -29,6 +32,14 @@ final class ConsoleActions {
     }
     func list() throws -> [JSONObject] {
         try access { records in
+            // 旧记录未标注名称来源，只迁移与旧默认文件名完全相同的名称，保留自定义名称。
+            for index in records.indices where records[index]["kind"] as? String == "app" {
+                guard let target = records[index]["target"] as? String,
+                      FileManager.default.fileExists(atPath: target),
+                      records[index]["name"] as? String == URL(fileURLWithPath: target).deletingPathExtension().lastPathComponent else { continue }
+                let name = appName(target)
+                if !name.isEmpty && name.count <= 60 { records[index]["name"] = name }
+            }
             // 旧版 32 像素缓存只升级一次，保留配置和顺序；版本标记不随快照上传。
             for index in records.indices where records[index]["kind"] as? String == "app" && (records[index]["icon"] == nil || records[index]["iconPixels"] as? Int != 96) {
                 records[index]["icon"] = Self.icon(records[index]["target"] as? String ?? "")

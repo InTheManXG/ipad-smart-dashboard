@@ -246,6 +246,24 @@ import AppKit
         disabledMusic.setEnabled(true)
         try check(disabledMusic.snapshot()["enabled"] as? Bool == true, "启用但离线仍保留音乐区域")
         try check(disabledMusic.snapshot()["layout"] as? String == "full", "再次启用不重置所选布局")
+        let namesPath = root.appendingPathComponent("app-names.json")
+        let nameCases = [("Legacy", "Legacy"), ("Custom", "我的常用工具"), ("Missing", "Missing"), ("Long", "Long")]
+        let nameRecords: [JSONObject] = try nameCases.map { file, name in
+            let target = root.appendingPathComponent(file + ".app")
+            if file != "Missing" { try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true) }
+            return ["id": UUID().uuidString.lowercased(), "kind": "app", "name": name, "target": target.path,
+                    "shell": "/bin/zsh", "icon": "", "iconPixels": 96]
+        }
+        try writeJSON(nameRecords, namesPath)
+        let namedApps = ConsoleActions(path: namesPath, appName: { path in
+            URL(fileURLWithPath: path).lastPathComponent == "Long.app" ? String(repeating: "长", count: 61) : "系统应用 1.2"
+        })
+        let migratedNames = try namedApps.list()
+        try check(migratedNames.map { $0["name"] as! String } == ["系统应用 1.2", "我的常用工具", "Missing", "Long"], "旧默认名跟随系统显示名，自定义、缺失和超长名称保持原值")
+        try check(migratedNames.map { $0["id"] as! String } == nameRecords.map { $0["id"] as! String }, "名称迁移保留项目身份与顺序")
+        try check(try namedApps.list().map { $0["name"] as! String } == migratedNames.map { $0["name"] as! String }, "名称迁移持久保存且可重复读取")
+        try check(appDisplayName(root.appendingPathComponent("应用 1.2.app").path) == "应用 1.2", "仅去除应用包后缀，保留名称内版本号")
+
         let subscriptions = ConsoleActions(path: root.appendingPathComponent("subscriptions.json"))
         let subscriptionScript = root.appendingPathComponent("subscription test.sh")
         try "printf '%s\\n' \"$@\" > invocation.txt\nsleep 0.05\n".write(to: subscriptionScript, atomically: true, encoding: .utf8)
