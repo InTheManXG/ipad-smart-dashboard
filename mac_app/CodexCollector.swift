@@ -81,11 +81,17 @@ final class CodexCollector {
     func unread() throws -> Set<String> {
         let data = try readJSON(home.appendingPathComponent(".codex-global-state.json"))
         guard let state = data["electron-thread-read-state-v1"] as? JSONObject, state["version"] as? Int == 1,
-              let identities = state["unreadByIdentity"] as? JSONObject, identities.count <= 1,
-              let scopes = (identities.values.first ?? JSONObject()) as? JSONObject else { throw ControlError("桌面未读状态不可用") }
-        let local = scopes.filter { $0.key.hasPrefix("local:") }
-        guard local.count <= 1, let values = (local.first?.value ?? [String]()) as? [String], values.allSatisfy({ !$0.isEmpty }) else { throw ControlError("本地身份不明确") }
-        return Set(values)
+              let identities = state["unreadByIdentity"] as? JSONObject else { throw ControlError("桌面未读状态不可用") }
+        var unread = Set<String>()
+        // 本地任务库由账号共用，合并各账号的本地未读标记，避免切换账号后整表失效。
+        for identity in identities.values {
+            guard let scopes = identity as? JSONObject else { throw ControlError("桌面未读状态不可用") }
+            for (scope, value) in scopes where scope.hasPrefix("local:") {
+                guard let ids = value as? [String], ids.allSatisfy({ !$0.isEmpty }) else { throw ControlError("本地未读状态不可用") }
+                unread.formUnion(ids)
+            }
+        }
+        return unread
     }
     func snapshot() -> JSONObject {
         do {

@@ -145,6 +145,29 @@ import AppKit
         try check((collector.snapshot()["conversations"] as! [JSONObject]).isEmpty, "完成已读移出列表")
         try unread([id]); try check((collector.snapshot()["conversations"] as! [JSONObject]).count == 1, "完成未读保留")
 
+        let otherUnreadID = UUID().uuidString.lowercased(), remoteID = UUID().uuidString.lowercased()
+        try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": [
+            "account-a": ["local:first": [id], "remote:server": [remoteID]],
+            "account-b": ["local:second": [id, otherUnreadID]]
+        ]]], root.appendingPathComponent(".codex-global-state.json"))
+        try check(try collector.unread() == Set([id, otherUnreadID]), "合并多账号本地未读并去重，排除远程范围")
+        let multiAccountSnapshot = collector.snapshot()
+        try check(multiAccountSnapshot["conversationsAvailable"] as? Bool == true &&
+                  (multiAccountSnapshot["conversations"] as? [JSONObject])?.count == 1, "多账号身份不阻塞本地任务读取")
+        try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": [
+            "account-a": ["local:first": [id], "local:second": [otherUnreadID]]
+        ]]], root.appendingPathComponent(".codex-global-state.json"))
+        try check(try collector.unread() == Set([id, otherUnreadID]), "同一账号多个本地范围也可合并")
+        try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": [
+            "account-a": ["local:first": [id]], "account-b": ["local:second": [""]]
+        ]]], root.appendingPathComponent(".codex-global-state.json"))
+        try rejects("多账号合并仍拒绝无效本地未读数据") { _ = try collector.unread() }
+        try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": ["invalid-account": []]]], root.appendingPathComponent(".codex-global-state.json"))
+        try rejects("拒绝格式错误的账号范围") { _ = try collector.unread() }
+        try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": JSONObject()]], root.appendingPathComponent(".codex-global-state.json"))
+        try check(try collector.unread().isEmpty, "空账号集合仍可正常读取")
+        try unread([id])
+
         let local = LocalPairing(secret: "isolated-test")
         let code = local.current(now: 1000)
         let paired = local.complete(code, now: 1001)
