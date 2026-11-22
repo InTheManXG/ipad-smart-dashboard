@@ -2,28 +2,66 @@
 const vm = require('node:vm');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const nodes = new Map(), events = {}, timers = new Map();
+const nodes = new Map(), events = {}, eventOptions = {}, timers = new Map();
 const get = id => {
-  if (!nodes.has(id)) nodes.set(id,{textContent:'',open:false,attrs:{},listeners:{},setAttribute(key,value){this.attrs[key]=value;},addEventListener(name,listener){this.listeners[name]=listener;},hidePopover(){this.popoverOpen=false;},showModal(){this.open=true;},close(){this.open=false;},remove(){nodes.delete('wake-notice');}});
+  if (!nodes.has(id)) nodes.set(id, {
+    textContent:'', open:false, hidden:id === 'display-options',
+    attrs:id === 'more-settings' ? {'aria-expanded':'false'} : {},
+    listeners:{}, listenerOptions:{}, children:[],
+    setAttribute(key,value){this.attrs[key]=value;},
+    addEventListener(name,listener,options){this.listeners[name]=listener;this.listenerOptions[name]=options;},
+    contains(target){return target === this || this.children.includes(target);},
+    focus(){this.focused=true;},
+    showModal(){this.open=true;}, close(){this.open=false;},
+    remove(){nodes.delete('wake-notice');}
+  });
   return nodes.get(id);
 };
 let requests = 0, releases = 0, enter = 0, exit = 0, reloads = 0;
 const notices = [], timeouts = new Map();
-const document = {body:{append(node){notices.push(node);nodes.set(node.id,node);}},createElement(){return {setAttribute(){},remove(){nodes.delete(this.id);}};},hidden:false,getElementById:get,addEventListener(name, fn){events[name]=fn;},fullscreenEnabled:true,documentElement:{async requestFullscreen(){enter++;}},async exitFullscreen(){exit++;}};
+const document = {body:{append(node){notices.push(node);nodes.set(node.id,node);}},createElement(){return {setAttribute(){},remove(){nodes.delete(this.id);}};},hidden:false,getElementById:get,addEventListener(name, fn, options){events[name]=fn;eventOptions[name]=options;},fullscreenEnabled:true,documentElement:{async requestFullscreen(){enter++;}},async exitFullscreen(){exit++;}};
 const navigator = {wakeLock:{async request(){requests++;let listener;return {addEventListener(_,fn){listener=fn;},async release(){releases++;listener?.();}};}}};
 const context = vm.createContext({document,navigator,location:{protocol:'https:',reload(){reloads++;}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},sessionStorage:{getItem(){return '';}},setInterval(fn,ms){timers.set(ms,fn);},setTimeout(fn,ms){timeouts.set(ms,fn);return ms;},clearTimeout(id){timeouts.delete(id);},Date,fetch:async()=>({ok:false,status:401})});
 vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));
-  const menu = get('display-options');
+  // 不提供 Popover API，验证旧版 Safari 也能完整开关菜单。
+  const menu = get('display-options'), trigger = get('more-settings');
+  assert.equal(menu.hidden,true,'菜单初始隐藏');
+  assert.equal(trigger.attrs['aria-expanded'],'false');
+  trigger.onclick();
+  assert.equal(menu.hidden,false,'点击菜单入口展开');
+  assert.equal(trigger.attrs['aria-expanded'],'true');
+  trigger.onclick();
+  assert.equal(menu.hidden,true,'再次点击菜单入口收起');
+  assert.equal(trigger.attrs['aria-expanded'],'false');
+  assert.equal(menu.listenerOptions.click,true,'选项在捕获阶段收起，避免异步操作影响关闭');
   for (const id of ['connect','fullscreen','wake','refresh','reload']) {
-    menu.popoverOpen = true;
+    trigger.onclick();
     menu.listeners.click({target:{closest:() => get(id)}});
-    assert.equal(menu.popoverOpen,false,`${id} 菜单项点击后应立即收起`);
+    assert.equal(menu.hidden,true,`${id} 菜单项点击后应立即收起`);
+    assert.equal(trigger.attrs['aria-expanded'],'false');
   }
-  menu.popoverOpen = true;
+  trigger.onclick();
   menu.listeners.click({target:{closest:() => null}});
-  assert.equal(menu.popoverOpen,true,'菜单内非按钮区域不触发选项操作');
+  assert.equal(menu.hidden,false,'菜单内非按钮区域不触发选项操作');
+  assert.equal(eventOptions.pointerdown,true,'外部点击通过捕获阶段处理');
+  menu.children.push(get('wake'));
+  trigger.children.push({});
+  for (const target of [menu, get('wake'), trigger, trigger.children[0]]) {
+    events.pointerdown({target});
+    assert.equal(menu.hidden,false,'菜单及入口内部按下不提前关闭');
+  }
+  events.pointerdown({target:{}});
+  assert.equal(menu.hidden,true,'菜单外部按下收起');
+  assert.equal(trigger.attrs['aria-expanded'],'false');
+  trigger.onclick();
+  events.keydown({key:'Enter'});
+  assert.equal(menu.hidden,false,'其他按键不关闭菜单');
+  events.keydown({key:'Escape'});
+  assert.equal(menu.hidden,true,'Escape 收起菜单');
+  assert.equal(trigger.attrs['aria-expanded'],'false');
+  assert.equal(trigger.focused,true,'Escape 后焦点返回入口');
   get('reload').onclick();assert.equal(reloads,1);
   assert.equal(get('more-settings').attrs['data-wake-warning'],'false');
   assert.equal(requests,0);assert.equal(get('wake').textContent,'开启常亮');

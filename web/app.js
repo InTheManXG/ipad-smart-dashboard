@@ -195,9 +195,28 @@ $('settings-form').addEventListener('submit', async event => {
   } catch (error) { $('pairing-error').textContent = error.message; }
 });
 $('cancel').onclick = () => $('settings').close();
-// 菜单项共用收起逻辑，异步申请常亮或刷新数据时也应立即关闭菜单。
-$('display-options').addEventListener('click', event => {
-  if (event.target.closest('button')) $('display-options').hidePopover();
+const displayOptions = $('display-options');
+function closeDisplayOptions() {
+  displayOptions.hidden = true;
+  $('more-settings').setAttribute('aria-expanded', 'false');
+}
+// iPadOS 15 没有 Popover API，菜单显式管理开关并同步辅助功能状态。
+$('more-settings').onclick = () => {
+  displayOptions.hidden = !displayOptions.hidden;
+  $('more-settings').setAttribute('aria-expanded', String(!displayOptions.hidden));
+};
+// 在按钮处理前收起，异步操作及同步禁用按钮都不会把菜单留在屏幕上。
+displayOptions.addEventListener('click', event => {
+  if (event.target.closest('button')) closeDisplayOptions();
+}, true);
+document.addEventListener('pointerdown', event => {
+  if (!displayOptions.hidden && !displayOptions.contains(event.target) && !$('more-settings').contains(event.target)) closeDisplayOptions();
+}, true);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !displayOptions.hidden) {
+    closeDisplayOptions();
+    $('more-settings').focus();
+  }
 });
 $('connect').onclick = () => $('settings').showModal();
 $('refresh').onclick = refresh;

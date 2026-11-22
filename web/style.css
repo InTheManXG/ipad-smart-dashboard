@@ -20,9 +20,10 @@ dialog{width:min(460px,90vw);background:var(--panel);color:var(--ink);border:1px
 /* 空提示不占位置；异常反馈仍使用原有可访问状态区域。 */
 #message:empty,#list-note:empty,#open-result:empty,#quota-note:empty{display:none}
 
-/* 使用原生弹出层支持点外部关闭和 Escape，避免菜单被任务卡片遮挡。 */
+/* 显式隐藏和层级兼容旧版 Safari，避免不支持 Popover 的 iPad 菜单常驻。 */
 .more-button{width:44px;padding:0;font-size:26px;line-height:1;border:0}
-#display-options{position:fixed;inset:calc(env(safe-area-inset-top) + 76px) 32px auto auto;margin:0;width:184px;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);box-shadow:0 10px 36px #0002}
+#display-options{position:fixed;z-index:20;inset:calc(env(safe-area-inset-top) + 76px) 32px auto auto;margin:0;width:184px;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);box-shadow:0 10px 36px #0002}
+#display-options[hidden]{display:none}
 #display-options button{display:block;width:100%;text-align:left;border:0;font-size:14px}
 footer:has(#footer-note:empty){display:none}
 @media(min-width:1200px){#display-options{right:44px}}
