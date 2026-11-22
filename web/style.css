@@ -210,8 +210,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 /* 类型分组保留 Mac 配置的组内顺序，整个图标入口可点击。 */
 .console-shortcuts{margin-top:32px}.console-actions{margin-top:20px}.console-group{margin-bottom:28px}.console-group h3{font-size:16px;margin:0 0 14px}.console-group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px}.console-action{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px 12px;background:var(--panel);border:1px solid var(--line);border-radius:18px;min-height:160px}.console-action strong{font-size:15px;overflow-wrap:anywhere;text-align:center}.console-icon{display:flex;align-items:center;justify-content:center;width:54px;height:54px;font:600 26px ui-monospace,monospace;color:var(--ink);background:var(--bg);border-radius:12px}.console-icon img{width:48px;height:48px;object-fit:contain}.console-action-state{font-size:12px;color:var(--muted)}
 
-/* 应用卡片随图标和名称撑开，不为已移除的常驻状态预留底部空间。 */
-.console-action--app{min-height:0;padding:16px 12px;gap:8px;align-self:start}
+/* 同排应用卡片随最长名称等高，图标和首行名称保持顶部对齐。 */
+.console-action--app{min-height:0;padding:16px 12px;gap:8px;align-self:stretch}
 .console-action--app strong{line-height:1.4}
 
 /* 每个订阅的名称与按钮上下成组，组内紧凑、组间留距，避免横排时误认操作目标。 */
