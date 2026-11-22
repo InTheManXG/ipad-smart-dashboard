@@ -7,9 +7,9 @@ function formatPlan(plan) {
   return typeof plan === 'string' && plan.trim() ? names[plan.toLowerCase()] || plan : '未知套餐';
 }
 let token = localStorage.getItem('pairing-token') || '';
-// 产品仅在 HTTPS 看板自动开启常亮；本地 HTTP（含回环地址）默认关闭。
+// 所有看板默认关闭常亮，仅在用户手动开启后申请 HTTPS 屏幕锁。
 const wakeUsesHTTPS = globalThis.location?.protocol === 'https:';
-let busy = false, lastSuccess = 0, wakeLock = null, wantWake = wakeUsesHTTPS;
+let busy = false, lastSuccess = 0, wakeLock = null, wantWake = false;
 let controlAllowed = false;
 const controlRequiredMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
 // 各页面共用同一授权指引；入口脚本先于其他页面模块执行。
@@ -204,12 +204,19 @@ const wakeInterrupted = '常亮已中断';
 function dismissWakeNotice() {
   $('wake-dialog').close();
 }
+function failWakeRequest(message) {
+  // 申请失败撤销开启意图，定时器、触摸和恢复前台都不能再次自动申请。
+  wantWake = false;
+  wakeFailed = false;
+  dismissWakeNotice();
+  $('footer-note').textContent = message;
+}
 function notifyWakeInterrupted(message = wakeInterrupted) {
   if (!wantWake || document.hidden) return;
   $('wake-message').textContent = message;
   if (!$('wake-dialog').open) $('wake-dialog').showModal();
 }
-// 点击本身提供系统所需的用户手势，成功后再关闭，失败时留下可重试的提示。
+// 点击提供系统所需的用户手势，恢复申请失败时也退回关闭状态。
 $('wake-dialog').onclick = async () => {
   if (!wakeUsesHTTPS) { dismissWakeNotice(); return; }
   if (wakePending) return;
@@ -233,9 +240,8 @@ async function keepAwake() {
   if (wakeLock?.released) wakeLock = null;
   if (!wakeUsesHTTPS || !wantWake || document.hidden || wakeLock || wakePending || wakeFailed) return;
   if (!('wakeLock' in navigator)) {
-    wakeFailed = true;
+    failWakeRequest('常亮申请失败，当前浏览器不支持，已关闭。');
     showWakeState();
-    notifyWakeInterrupted('常亮申请失败：浏览器不支持，请在 iPad 设置中关闭自动锁定');
     return;
   }
   wakePending = true;
@@ -246,6 +252,7 @@ async function keepAwake() {
     if (!wantWake || document.hidden) { await lock.release(); return; }
     wakeLock = lock;
     dismissWakeNotice();
+    if ($('footer-note').textContent.startsWith('常亮申请失败，')) $('footer-note').textContent = '';
     lock.addEventListener('release', () => {
       if (wakeLock === lock) wakeLock = null;
       if (wantWake && !document.hidden) wakeFailed = true;
@@ -253,8 +260,7 @@ async function keepAwake() {
       showWakeState();
     });
   } catch {
-    wakeFailed = true;
-    notifyWakeInterrupted('常亮申请失败，请再点一下重试；仍失败时请检查低电量模式。');
+    failWakeRequest('常亮申请失败，已关闭。请检查低电量模式后重新开启。');
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
@@ -272,7 +278,7 @@ $('wake').onclick = async () => {
 };
 // 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
 setInterval(keepAwake, 5000);
-// HTTPS 默认请求常亮；恢复前台或下一次用户操作时重试，避免后台重复申请。
+// 仅为本次已手动开启的常亮恢复锁，关闭或申请失败后不会自动开启。
 document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake')) return; keepAwake(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); keepAwake(); } });
 function showFullscreenState() {
