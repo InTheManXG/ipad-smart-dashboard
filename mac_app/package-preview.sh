@@ -42,7 +42,7 @@ if [[ "$(plutil -extract CFBundleGetInfoString raw -o - "$app/Contents/Info.plis
   printf '%s\n' '发行包版本与标签不一致。' >&2
   exit 1
 fi
-python3 "$root/scripts/check-media.py"
+xcrun swift -module-cache-path "$root/.build/swift-cache" "$root/scripts/check-media.swift"
 mkdir -p "$(dirname "$output")"
 stage="$(mktemp -d "$root/.build/previews/.preview.XXXXXX")"
 verification="$(mktemp -d "$root/.build/previews/.verify.XXXXXX")"

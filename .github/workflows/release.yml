@@ -40,12 +40,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Verify release tools
+        run: go test ./scripts
       - name: Verify native source and package
         run: |
           test "$(uname -m)" = arm64
           bash mac_app/test.sh
           APP_VERSION="${RELEASE_TAG#v}" bash mac_app/build.sh
-          python3 scripts/check-media.py
+          xcrun swift -module-cache-path .build/swift-cache scripts/check-media.swift
 
   source-release:
     needs: [verify-source, secrets]
@@ -61,9 +66,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -73,7 +75,6 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
           git tag --points-at HEAD | grep -Fx "$RELEASE_TAG"
           go test -race ./...
-          python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Publish source-only preview
         env:
@@ -111,9 +112,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Verify unnotarized release source
         run: |
           set -euo pipefail
@@ -122,7 +120,6 @@ jobs:
           git tag --points-at HEAD | grep -Fx "$RELEASE_TAG"
           bash mac_app/test.sh
           go test -race ./...
-          python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Import fixed Apple Development certificate
         env:
@@ -216,14 +213,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Verify release source
         run: |
           bash mac_app/test.sh
           go test -race ./...
-          python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Prepare temporary signing keychain
         shell: bash

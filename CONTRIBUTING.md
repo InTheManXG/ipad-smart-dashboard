@@ -9,7 +9,7 @@
 - 网页测试：Node.js 22，无前端包安装步骤。
 - 公网中继容器：Docker Compose；本地 App 不依赖 Docker。
 
-App、后台和网页分别位于 `mac_app/` 与 `web/`；仓库根目录的 Go 文件用于服务器端中继，不能当作 Mac App 的运行前置条件。Python 仍用于部分发行和媒体检查脚本，不是服务端运行依赖。
+App、后台和网页分别位于 `mac_app/` 与 `web/`；仓库根目录的 Go 文件用于服务器端中继，不能当作 Mac App 的运行前置条件。项目自带的构建、回归与发行工具使用 Shell、Go 和 Swift；用户配置的订阅脚本继续由其指定的解释器执行。
 
 ## 修改与测试
 
@@ -20,10 +20,13 @@ go test -race ./...
 for test in tests/test_*.cjs; do node "$test" || exit; done
 bash mac_app/test.sh
 bash mac_app/build.sh
+xcrun swift -module-cache-path .build/swift-cache scripts/check-media.swift
 git diff --check
 ```
 
 原生检查仅能在合适的 Mac 环境运行，包含临时配置和隔离钥匙串条目测试，系统可能要求授权。不要降低真实钥匙串的访问保护来绕过失败。默认开发构建为 ad-hoc 签名，不是对外分发产物。
+
+`scripts/` 的 Go 测试覆盖发行脚本及 Swift 媒体校验器；完整的媒体校验回归在 macOS 执行，其他平台会跳过依赖系统媒体框架的部分。
 
 安全相关逻辑需要覆盖拒绝路径，例如未认证、只读会话、跨设备请求、过期、撤权、损坏文件和重复指令。脚本测试只使用临时无害文件，不自动执行个人订阅更新、真实业务脚本或发起付费请求。
 

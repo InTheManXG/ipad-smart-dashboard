@@ -19,16 +19,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Test server and web
         run: |
           go test -race ./...
-          python3 scripts/check-release.py
           for test in tests/test_*.cjs; do node "$test"; done
       - name: Validate standalone server image
         run: |
@@ -44,6 +40,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - name: Verify runner architecture
         run: test "$(uname -m)" = arm64
       - name: Native regression tests
@@ -53,6 +52,8 @@ jobs:
       - name: Validate signatures
         run: codesign --verify --deep --strict '.build/iPad 控制台.app'
       - name: Load packaged media adapter
-        run: python3 scripts/check-media.py
+        run: xcrun swift -module-cache-path .build/swift-cache scripts/check-media.swift
+      - name: Release and media regression tests
+        run: go test ./scripts
       - name: Verify disk image and copied application
         run: bash mac_app/package-dmg.sh '.build/iPad 控制台.app' '.build/check-installer.dmg'
