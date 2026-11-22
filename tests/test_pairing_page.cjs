@@ -26,7 +26,7 @@ function page({storage = new Map(), session = new Map(), reject = false, permiss
     navigator:{}, location:{reload(){reloads++;}},
     localStorage:{getItem:key => storage.get(key) || null, setItem:(key, value) => storage.set(key, value), removeItem:key => storage.delete(key)},
     sessionStorage:{getItem:key => session.get(key) || null, removeItem:key => session.delete(key)},
-    Event, Date, AbortController, AbortSignal, setTimeout, clearTimeout, performance:{now(){return 0;}}, requestAnimationFrame(){},
+    Event, Date, AbortController, setTimeout, clearTimeout, performance:{now(){return 0;}}, requestAnimationFrame(){},
     setInterval(callback){intervals.push(callback);},
     fetch:async (path, options) => {
       requests.push({path, options});
@@ -43,6 +43,7 @@ function page({storage = new Map(), session = new Map(), reject = false, permiss
   for (const file of ['web/app.js', 'web/console.js', 'web/music.js']) {
     vm.runInContext(`(function () {\n${fs.readFileSync(file, 'utf8')}\n})()`, context, {filename:file});
   }
+  assert.equal(vm.runInContext('typeof AbortSignal',context),'undefined','联合页面在没有 AbortSignal 静态 API 时正常加载');
   return {get, pages, storage, session, requests, intervals, permissions, reloads:() => reloads};
 }
 const settle = async () => { await new Promise(setImmediate); await new Promise(setImmediate); };

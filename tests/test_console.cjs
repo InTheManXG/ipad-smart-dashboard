@@ -15,8 +15,10 @@ const ctx = vm.createContext({
   controlRequiredMessage:permissionMessage,
   document:{hidden:false,querySelector(){return pages;},getElementById:id => nodes.get(id),createElement:tag => Object.assign(node(),{tag}),addEventListener(){}},
   window:{addEventListener(name, callback){events[name] = callback;}}, location:{hash:'#console'},
-  localStorage:{getItem(){return 'test-only';}},sessionStorage:{getItem(){return null;}}, AbortSignal,
-  setInterval(fn){intervals.push(fn);},setTimeout(fn,delay){timers.push({fn,delay});},
+  localStorage:{getItem(){return 'test-only';}},sessionStorage:{getItem(){return null;}}, AbortController,
+  setInterval(fn){intervals.push(fn);},
+  setTimeout(fn,delay){const timer={fn,delay};timers.push(timer);return timer;},
+  clearTimeout(timer){const index=timers.indexOf(timer);if(index!==-1)timers.splice(index,1);},
   fetch:async (path, options) => {calls.push({path,options}); return {ok:status===200,status,json:async()=>options.method==='POST'?{ok:true}:path.endsWith('/permissions')?{controlAllowed}:items};}
 });
 const run = code => vm.runInContext(code,ctx);
@@ -28,6 +30,8 @@ const takeTimer = delay => {
 vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
 (async () => {
   await new Promise(setImmediate);
+  assert.equal(run('typeof AbortSignal'),'undefined','旧 Safari 环境不依赖静态超时 API');
+  assert.equal(timers.some(timer=>timer.delay===12000),false,'成功加载后释放请求超时计时器');
   const list = nodes.get('console-actions');
   assert.equal(list.querySelectorAll('button')[0].children[1].textContent,item.name,'名称按文本呈现');
   assert.equal(list.querySelectorAll('button')[0].disabled,false);
@@ -197,6 +201,51 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   assert.match(nodes.get('console-status').textContent,/重新配对/);
   status=200;items=[];await run('loadConsole()');
   assert.match(list.children[0].textContent,/Mac App/);
+
+  // 请求和响应体共用超时边界，所有结束路径都应释放计时器。
+  const originalFetch = ctx.fetch;
+  await run("consoleRequest('./api/console')");
+  assert.equal(timers.some(timer=>timer.delay===12000),false,'请求成功后清理超时');
+  status=503;
+  await assert.rejects(run("consoleRequest('./api/console')"),/Mac 未连接/);
+  assert.equal(timers.some(timer=>timer.delay===12000),false,'HTTP 失败后清理超时');
+  status=200;
+  ctx.fetch = async () => {throw new Error('network offline');};
+  await assert.rejects(run("consoleRequest('./api/console')"),/network offline/);
+  assert.equal(timers.some(timer=>timer.delay===12000),false,'网络失败后清理超时');
+  ctx.fetch = async () => ({ok:true,status:200,json:async()=>{throw new SyntaxError('bad json');}});
+  await assert.rejects(run("consoleRequest('./api/console')"),/bad json/);
+  assert.equal(timers.some(timer=>timer.delay===12000),false,'响应解析失败后清理超时');
+  ctx.fetch = async (path,{signal}) => ({ok:true,status:200,json:()=>new Promise((resolve,reject)=>{
+    signal.addEventListener('abort',()=>reject(Object.assign(new Error('aborted'),{name:'AbortError'})),{once:true});
+  })});
+  const pendingBody = run("consoleRequest('./api/console')");
+  await new Promise(setImmediate);
+  assert.equal(timers.filter(timer=>timer.delay===12000).length,1,'读取响应体时保留超时保护');
+  takeTimer(12000)();
+  await assert.rejects(pendingBody,error=>error.name==='TimeoutError');
+  assert.equal(timers.some(timer=>timer.delay===12000),false,'响应体超时后清理计时器');
+  ctx.fetch = originalFetch;
+  items=[item];await run('loadConsole()');
+  const postsBeforeTimeout = calls.filter(call=>call.options.method==='POST').length;
+  ctx.fetch = async (path,options) => {
+    if (options.method !== 'POST') return originalFetch(path,options);
+    calls.push({path,options});
+    return new Promise((resolve,reject)=>{
+      options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('aborted'),{name:'AbortError'})),{once:true});
+    });
+  };
+  const pendingSubmit = run('runConsoleAction('+JSON.stringify(item)+')');
+  await new Promise(setImmediate);
+  takeTimer(12000)();
+  await pendingSubmit;
+  assert.match(nodes.get('console-status').textContent,/请求超时，执行结果未确认/);
+  assert.equal(run('consoleSubmitting'),false,'提交超时后解除提交中状态');
+  assert.equal(timers.some(timer=>timer.delay===12000),false,'提交超时后清理计时器');
+  assert.equal(timers.some(timer=>timer.delay===1200),false,'提交超时不安排成功后的自动刷新');
+  intervals[0]();await new Promise(setImmediate);
+  assert.equal(calls.filter(call=>call.options.method==='POST').length,postsBeforeTimeout+1,'超时后轮询只读状态，不重复提交');
+  ctx.fetch = originalFetch;
   items=[item];await run('loadConsole()');
   await run('requestConsoleAction('+JSON.stringify(item)+')');
   assert.equal(nodes.get('console-confirm').open,true);
@@ -209,5 +258,5 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   resolveLate({ok:true,json:async()=>[item]}); await lateLoad;
   assert.equal(list.children.length,0,'失效前开始的迟到响应不能重绘历史卡片');
   assert.equal(run('consoleSelection'),null,'失效后清除待执行项目');
-  console.log('快捷控制台渲染、确认、仅 ID 执行、重复点击、结果和失效状态通过');
+  console.log('快捷控制台兼容超时、计时器清理、不重复提交、渲染、确认及失效状态通过');
 })().catch(error => {console.error(error);process.exitCode=1;});

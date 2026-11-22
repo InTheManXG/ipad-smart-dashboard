@@ -31,15 +31,26 @@ async function consoleRequest(path, body) {
   const headers = consoleHeaders();
   // 未配对不请求受保护接口，否则 401 会触发整页重载并再次进入未配对状态。
   if (!Object.values(headers).some(Boolean)) throw new Error('请先在工作看板中配对 Mac');
-  const response = await fetch(path, {
-    method: body ? 'POST' : 'GET', cache: 'no-store',
-    headers: {...headers, ...(body ? {'Content-Type': 'application/json'} : {})},
-    ...(body ? {body: JSON.stringify(body)} : {}), signal: AbortSignal.timeout(12000)
-  });
-  if (response.status === 401) globalThis.invalidatePairing?.();
-  if (response.status === 403) setConsoleControl(false);
-  if (!response.ok) throw new Error(response.status === 401 ? '配对已失效，请在首页重新配对' : response.status === 403 ? consoleControlMessage : response.status === 409 ? '项目不可执行或已有任务运行，请刷新后重试' : response.status === 404 ? '项目已删除，请刷新列表' : 'Mac 未连接或控制台暂不可用');
-  return response.json();
+  // 旧版 Safari 支持 AbortController，但没有 AbortSignal.timeout。
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(path, {
+      method: body ? 'POST' : 'GET', cache: 'no-store',
+      headers: {...headers, ...(body ? {'Content-Type': 'application/json'} : {})},
+      ...(body ? {body: JSON.stringify(body)} : {}), signal: controller.signal
+    });
+    if (response.status === 401) globalThis.invalidatePairing?.();
+    if (response.status === 403) setConsoleControl(false);
+    if (!response.ok) throw new Error(response.status === 401 ? '配对已失效，请在首页重新配对' : response.status === 403 ? consoleControlMessage : response.status === 409 ? '项目不可执行或已有任务运行，请刷新后重试' : response.status === 404 ? '项目已删除，请刷新列表' : 'Mac 未连接或控制台暂不可用');
+    return await response.json();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const timeoutError = new Error('请求超时，请稍后刷新');
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  } finally { clearTimeout(timer); }
 }
 function renderConsole(items) {
   const busy = !consoleControlAllowed || consoleSubmitting || items.some(item => item.state === 'running');
