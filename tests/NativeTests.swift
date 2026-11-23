@@ -52,7 +52,7 @@ import Darwin
         let binding = try readJSON(freshInstall.appendingPathComponent("installation.json"))
         try check(Set(binding.keys) == Set(["schema", "hardwareHash", "keychainSuffix"]), "绑定文件仅保存摘要和账户后缀")
         let preservedNames = ["settings.json", "keys.json", "console.json", "station.json"]
-        let isolatedNames = ["local-screens.json", "cloud-permissions.json", "runtime.json"]
+        let isolatedNames = ["local-screens.json", "cloud-permissions.json", "runtime.json", "task-order.json"]
         for name in preservedNames + isolatedNames { try writeJSON(["test": name], freshInstall.appendingPathComponent(name)) }
         let clonedSuffix = try InstallationBinding.prepare(directory: freshInstall, hardwareHash: machineB)
         try check(UUID(uuidString: clonedSuffix) != nil && clonedSuffix != freshSuffix, "异机复制重新生成身份")
@@ -165,7 +165,7 @@ import Darwin
             try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": ["account": ["local:test": ids]]]], root.appendingPathComponent(".codex-global-state.json"))
         }
         try unread([id])
-        let collector = CodexCollector(home: root)
+        let collector = CodexCollector(home: root, orderFile: root.appendingPathComponent("task-order.json"))
         var items = collector.snapshot()["conversations"] as! [JSONObject]
         try check(items.count == 1 && items[0]["unread"] as? Bool == true && items[0]["state"] as? String == "running", "运行与未读并存")
         try unread([]); items = collector.snapshot()["conversations"] as! [JSONObject]
@@ -200,6 +200,91 @@ import Darwin
         try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": JSONObject()]], root.appendingPathComponent(".codex-global-state.json"))
         try check(try collector.unread().isEmpty, "空账号集合仍可正常读取")
         try unread([id])
+
+        // 独立数据库覆盖队列、显示截取与重启，不读取或改写用户的真实排序缓存。
+        do {
+            let orderingRoot = root.appendingPathComponent("ordering", isDirectory: true)
+            try FileManager.default.createDirectory(at: orderingRoot, withIntermediateDirectories: true)
+            let orderPath = orderingRoot.appendingPathComponent("task-order.json")
+            let unreadPath = orderingRoot.appendingPathComponent(".codex-global-state.json")
+            func emptyUnread() throws {
+                try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": JSONObject()]], unreadPath)
+            }
+            try emptyUnread()
+            var orderingDB: OpaquePointer?
+            try check(sqlite3_open(orderingRoot.appendingPathComponent("state_5.sqlite").path, &orderingDB) == SQLITE_OK, "创建排序测试数据库")
+            defer { sqlite3_close(orderingDB) }
+            func query(_ sql: String) throws {
+                try check(sqlite3_exec(orderingDB, sql, nil, nil, nil) == SQLITE_OK, "更新排序夹具")
+            }
+            try query("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, name TEXT, title TEXT, archived INTEGER, source TEXT, updated_at INTEGER)")
+            func taskID(_ index: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", index) }
+            func event(_ index: Int, type: String, name: String) throws {
+                let file = orderingRoot.appendingPathComponent("\(index).jsonl")
+                if !FileManager.default.fileExists(atPath: file.path) { try Data().write(to: file) }
+                let handle = try FileHandle(forWritingTo: file); defer { try? handle.close() }
+                try handle.seekToEnd()
+                var data = try jsonData(["type": type, "payload": ["type": name, "name": "request_user_input_async", "call_id": "ask"]])
+                data.append(10); try handle.write(contentsOf: data)
+            }
+            let now = Int(Date().timeIntervalSince1970)
+            func addTask(_ index: Int) throws {
+                try event(index, type: "event_msg", name: "task_started")
+                try query("INSERT INTO threads VALUES ('\(taskID(index))','\(orderingRoot.appendingPathComponent("\(index).jsonl").path)','任务\(index)','',0,'appServer',\(now + index))")
+            }
+            func ids(_ snapshot: JSONObject) -> [String] { (snapshot["conversations"] as? [JSONObject] ?? []).compactMap { $0["threadId"] as? String } }
+            let first = CodexCollector(home: orderingRoot, orderFile: orderPath)
+            for index in 0..<10 { try addTask(index); _ = first.snapshot() }
+            let firstEight = (0..<8).map(taskID)
+            try check(ids(first.snapshot()) == firstEight, "新任务追加队尾，前八项不被较新任务替换")
+            try query("UPDATE threads SET updated_at=\(now + 100) WHERE id='\(taskID(0))'")
+            try event(3, type: "response_item", name: "function_call")
+            try event(9, type: "response_item", name: "function_call")
+            let changed = first.snapshot()
+            try check(ids(changed) == firstEight, "输出及状态变化不改变队位")
+            try check((changed["attention"] as? JSONObject)?["threadId"] as? String == taskID(9), "八项之外的最新待处理任务仍保留提醒")
+            try check(changed["conversationsTotal"] as? Int == 10, "显示截取不丢失任务总数")
+            try event(0, type: "event_msg", name: "task_complete")
+            let remainingEight = (1..<9).map(taskID)
+            try check(ids(first.snapshot()) == remainingEight, "任务退出后按排队顺序补位")
+            try event(0, type: "event_msg", name: "task_started")
+            try check(ids(first.snapshot()) == remainingEight, "退出后重新进入的任务追加队尾")
+            let resumed = CodexCollector(home: orderingRoot, orderFile: orderPath)
+            try check(ids(resumed.snapshot()) == remainingEight, "采集器重启后恢复已保存顺序")
+            try Data("invalid-json".utf8).write(to: unreadPath)
+            let savedOrder = try Data(contentsOf: orderPath)
+            try check(resumed.snapshot()["conversationsAvailable"] as? Bool == false, "上游读取失败仍明确标为不可用")
+            try check(try Data(contentsOf: orderPath) == savedOrder, "读取失败不清空持久队列")
+            try emptyUnread()
+            let missing = orderingRoot.appendingPathComponent("1.jsonl"), held = orderingRoot.appendingPathComponent("1-held.jsonl")
+            try FileManager.default.moveItem(at: missing, to: held)
+            _ = resumed.snapshot()
+            try check(try Data(contentsOf: orderPath) == savedOrder, "单个日志暂时不可读仍保留队位")
+            try FileManager.default.moveItem(at: held, to: missing)
+            try check(ids(resumed.snapshot()) == remainingEight, "日志恢复后回到原队位")
+            let originalLog = try Data(contentsOf: missing)
+            var longLog = Data(repeating: 120, count: 4_194_305)
+            longLog.append(10); longLog.append(originalLog)
+            try longLog.write(to: missing)
+            let replaying = CodexCollector(home: orderingRoot, orderFile: orderPath)
+            _ = replaying.snapshot()
+            try check(try Data(contentsOf: orderPath) == savedOrder, "重启后大日志未回放完不丢失队位")
+            try check(ids(replaying.snapshot()) == remainingEight, "大日志回放完成后恢复原序")
+            try originalLog.write(to: missing)
+            try query("UPDATE threads SET updated_at=\(now - 172800) WHERE id='\(taskID(1))'")
+            for index in 10..<80 { try addTask(index) }
+            try check(ids(resumed.snapshot()) == remainingEight, "已有任务不被二十四小时及六十四候选上限挤出")
+            let retained = try readJSON(orderPath)["threadIds"] as! [String]
+            try check(retained.count == 64, "候选队列保持有界，避免缓存无限增长")
+            let delayedFolder = orderingRoot.appendingPathComponent("delayed")
+            let delayedOrder = delayedFolder.appendingPathComponent("task-order.json")
+            let retrying = CodexCollector(home: orderingRoot, orderFile: delayedOrder)
+            _ = retrying.snapshot()
+            try check(!FileManager.default.fileExists(atPath: delayedOrder.path), "排序保存失败不阻止任务采集")
+            try FileManager.default.createDirectory(at: delayedFolder, withIntermediateDirectories: true)
+            _ = retrying.snapshot()
+            try check(FileManager.default.fileExists(atPath: delayedOrder.path), "保存失败后即使队列未变也会重试")
+        }
 
         let local = LocalPairing(secret: "isolated-test")
         let code = local.current(now: 1000)
@@ -488,6 +573,12 @@ import Darwin
         try check(try iconStore.snapshot()[0]["iconPixels"] == nil, "缓存元数据不上传")
         let httpScreens = LocalScreens()
         let backend = try NativeBackend(token: "test-only", console: console, screens: httpScreens)
+        let visibleTask = UUID().uuidString.lowercased(), attentionTask = UUID().uuidString.lowercased()
+        backend.conversations = ["conversations": [["threadId": visibleTask]], "attention": ["threadId": attentionTask]]
+        try check(backend.canOpenConversation(visibleTask), "列表中的任务可打开")
+        try check(backend.canOpenConversation(attentionTask), "可见八项之外的当前提醒也可打开")
+        try check(!backend.canOpenConversation(UUID().uuidString.lowercased()), "不允许打开列表和提醒之外的任务")
+        backend.conversations = ["conversationsAvailable": false, "conversations": [JSONObject]()]
         let server = try LocalHTTPServer(port: 0, handler: backend.handle); server.start(); defer { server.stop() }
         let deadline = Date().addingTimeInterval(5)
         while !server.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }

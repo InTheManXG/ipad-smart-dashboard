@@ -77,8 +77,19 @@ final class TurnReader {
 
 final class CodexCollector {
     let home: URL
+    let orderFile: URL?
+    private var orderNeedsSave = false
+    private lazy var order: [String] = {
+        // 顺序缓存只保存 ID；损坏时重建，不让展示偏好阻断任务采集。
+        guard let orderFile, let saved = try? readJSON(orderFile), let ids = saved["threadIds"] as? [String],
+              ids.count <= 64, Set(ids).count == ids.count,
+              ids.allSatisfy({ UUID(uuidString: $0)?.uuidString.lowercased() == $0 }) else { return [] }
+        return ids
+    }()
     var readers: [String: (String, TurnReader)] = [:]
-    init(home: URL = NativePaths.home.appendingPathComponent(".codex")) { self.home = home }
+    init(home: URL = NativePaths.home.appendingPathComponent(".codex"), orderFile: URL? = NativePaths.data.appendingPathComponent("task-order.json")) {
+        self.home = home; self.orderFile = orderFile
+    }
     func unread() throws -> Set<String> {
         let data = try readJSON(home.appendingPathComponent(".codex-global-state.json"))
         guard let state = data["electron-thread-read-state-v1"] as? JSONObject, state["version"] as? Int == 1,
@@ -103,14 +114,18 @@ final class CodexCollector {
             }
             defer { sqlite3_finalize(statement); sqlite3_close(database) }
             sqlite3_busy_timeout(database, 1000)
-            let placeholders = unseen.isEmpty ? "NULL" : Array(repeating: "?", count: unseen.count).joined(separator: ",")
-            let sql = "SELECT id, rollout_path, COALESCE(NULLIF(name, ''), title) FROM threads WHERE archived = 0 AND source IN ('cli','vscode','exec','appServer') AND (updated_at >= ? OR id IN (\(placeholders))) ORDER BY updated_at DESC LIMIT 64"
+            let included = Array(unseen.union(order))
+            let placeholders = included.isEmpty ? "NULL" : Array(repeating: "?", count: included.count).joined(separator: ",")
+            let queued = order.isEmpty ? "NULL" : Array(repeating: "?", count: order.count).joined(separator: ",")
+            // 已排队任务优先进入候选集，避免新消息把它挤出 64 项上限或 24 小时窗口。
+            let sql = "SELECT id, rollout_path, COALESCE(NULLIF(name, ''), title), updated_at FROM threads WHERE archived = 0 AND source IN ('cli','vscode','exec','appServer') AND (updated_at >= ? OR id IN (\(placeholders))) ORDER BY CASE WHEN id IN (\(queued)) THEN 0 ELSE 1 END, updated_at DESC, id ASC LIMIT 64"
             guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw ControlError("Codex 数据结构已变化") }
             sqlite3_bind_int64(statement, 1, Int64(Date().timeIntervalSince1970) - 86400)
-            for (index, id) in unseen.enumerated() {
+            for (index, id) in (included + order).enumerated() {
                 sqlite3_bind_text(statement, Int32(index + 2), id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             }
-            var items = [JSONObject](), attention: JSONObject?, keep = Set<String>()
+            var items = [JSONObject](), keep = Set<String>(), unresolved = Set<String>()
+            var attention: JSONObject?, attentionUpdatedAt: Int64 = .min
             var result = sqlite3_step(statement)
             while result == SQLITE_ROW {
                 let id = String(cString: sqlite3_column_text(statement, 0))
@@ -119,7 +134,11 @@ final class CodexCollector {
                 keep.insert(id)
                 if readers[id]?.0 != path { readers[id] = (path, TurnReader()) }
                 let reader = readers[id]!.1
-                let state = (try? reader.read(path)) ?? "unknown"
+                let state: String
+                do {
+                    state = try reader.read(path)
+                    if !reader.caughtUp { unresolved.insert(id) }
+                } catch { state = "unknown"; unresolved.insert(id) }
                 if ["running", "waiting", "error", "done"].contains(state) && (state != "done" || unseen.contains(id)) {
                     var titleBytes = Array(title.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ").utf8.prefix(80))
                     while String(bytes: titleBytes, encoding: .utf8) == nil && !titleBytes.isEmpty { titleBytes.removeLast() }
@@ -127,13 +146,29 @@ final class CodexCollector {
                     if UUID(uuidString: id)?.uuidString.lowercased() == id { item["threadId"] = id }
                     if unseen.contains(id) { item["unread"] = true }
                     if state == "running", reader.active, let start = reader.started { item["elapsedSeconds"] = max(0, Int(Date().timeIntervalSince1970 - start)) }
-                    if state == "waiting", attention == nil, item["threadId"] != nil { attention = ["threadId": id, "title": item["title"]!] }
+                    // 固定列表顺序不改变提醒规则，仍优先展示最近更新的待处理对话。
+                    let updatedAt = sqlite3_column_int64(statement, 3)
+                    if state == "waiting", item["threadId"] != nil, updatedAt > attentionUpdatedAt {
+                        attention = ["threadId": id, "title": item["title"]!]; attentionUpdatedAt = updatedAt
+                    }
                     items.append(item)
                 }
                 result = sqlite3_step(statement)
             }
             guard result == SQLITE_DONE else { throw ControlError("读取 Codex 任务失败") }
             readers = readers.filter { keep.contains($0.key) }
+            let activeIDs = items.compactMap { $0["threadId"] as? String }
+            var nextOrder = order.filter { activeIDs.contains($0) || unresolved.contains($0) }
+            for id in activeIDs where !nextOrder.contains(id) { nextOrder.append(id) }
+            if nextOrder != order {
+                order = nextOrder; orderNeedsSave = true
+            }
+            // 仅队列改变或上次保存失败时写盘；暂时读不到日志不清除位置。
+            if orderNeedsSave, let orderFile, (try? writeJSON(["threadIds": order], orderFile)) != nil {
+                orderNeedsSave = false
+            }
+            let byID = Dictionary(uniqueKeysWithValues: items.compactMap { item in (item["threadId"] as? String).map { ($0, item) } })
+            items = order.compactMap { byID[$0] } + items.filter { $0["threadId"] == nil }
             return ["conversationsAvailable": true, "conversationsTotal": items.count, "conversations": Array(items.prefix(8)), "attention": attention as Any? ?? NSNull()]
         } catch { return ["conversationsAvailable": false, "conversationsTotal": 0, "conversations": [JSONObject]()] }
     }

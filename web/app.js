@@ -86,7 +86,7 @@ function render(data) {
   }));
   if (!tasks.length) $('task-list').append(element('p','empty',data.conversationsAvailable ? '暂时没有活跃任务，新的工作会出现在这里。' : '暂时无法读取任务列表。'));
   $('summary').textContent = data.conversationsAvailable ? `${counts.running} 个进行中 · ${counts.waiting} 个待处理 · ${counts.error} 个错误 · ${counts.done} 个完成未读` : '计数暂不可用';
-  $('list-note').textContent = data.conversationsTotal > tasks.length ? `展示最近 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '';
+  $('list-note').textContent = data.conversationsTotal > tasks.length ? `当前展示 ${tasks.length} 个任务，共 ${data.conversationsTotal} 个。` : '';
   $('plan').textContent = formatPlan(data.plan);
   $('open-codex').disabled = !controlAllowed;
   $('quota-note').textContent = !data.quotaAvailable ? '额度暂不可用' : data.cached ? '额度为上次缓存' : '';

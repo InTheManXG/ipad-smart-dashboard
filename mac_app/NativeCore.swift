@@ -91,7 +91,7 @@ enum InstallationBinding {
                 try fm.createDirectory(at: destination, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
                 archive = destination
                 // 只隔离配对会话和运行快照，站点、Key、控制台和设置继续由用户保留。
-                for name in ["local-screens.json", "cloud-permissions.json", "runtime.json"] {
+                for name in ["local-screens.json", "cloud-permissions.json", "runtime.json", "task-order.json"] {
                     let source = directory.appendingPathComponent(name), target = destination.appendingPathComponent(name)
                     if fm.fileExists(atPath: source.path) { try fm.moveItem(at: source, to: target); moved.append((source, target)) }
                 }

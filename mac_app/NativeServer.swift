@@ -234,6 +234,11 @@ final class NativeBackend {
             return ["id": id, "name": name, "usage": JSONObject()]
         } ?? []
     }
+    func canOpenConversation(_ thread: String) -> Bool {
+        let current = status(), items = current["conversations"] as? [JSONObject] ?? []
+        // 提醒可能属于可见八项之外的任务，公网和局域网使用同一目标校验。
+        return items.contains { $0["threadId"] as? String == thread } || (current["attention"] as? JSONObject)?["threadId"] as? String == thread
+    }
     func executeOpen(_ thread: String) throws -> Bool {
         let result = try execute("/usr/bin/open", ["-b", "com.openai.codex", "codex://threads/\(thread)?hostId=local"], timeout: 5)
         return result.0 == 0
@@ -290,8 +295,7 @@ final class NativeBackend {
                 return json(result, result["ok"] as? Bool == true ? 200 : 409)
             case "/api/open":
                 guard let id = value["threadId"] as? String, UUID(uuidString: id)?.uuidString.lowercased() == id else { return json([:], 400) }
-                let current = status(), items = current["conversations"] as? [JSONObject] ?? []
-                guard items.contains(where: { $0["threadId"] as? String == id }) || (current["attention"] as? JSONObject)?["threadId"] as? String == id else { return json(["ok": false], 409) }
+                guard canOpenConversation(id) else { return json(["ok": false], 409) }
                 let result = try execute("/usr/bin/open", ["-b", "com.openai.codex", "codex://threads/\(id)?hostId=local"], timeout: 5)
                 return json(["ok": result.0 == 0], result.0 == 0 ? 200 : 503)
             default: return json([:], 404)
@@ -330,7 +334,7 @@ final class NativeBackend {
                         let ok: Bool
                         let allowed = cloudCommandAllowed(command)
                         if allowed, command["kind"] as? String == "open", let thread = command["threadId"] as? String,
-                           (self.status()["conversations"] as? [JSONObject] ?? []).contains(where: { $0["threadId"] as? String == thread }) {
+                           self.canOpenConversation(thread) {
                             ok = (try? self.executeOpen(thread)) == true
                         } else if allowed, command["kind"] as? String == "console", let target = command["id"] as? String {
                             ok = (try? self.console.start(["id": target])) != nil
