@@ -82,15 +82,13 @@ function renderConsole(items) {
         const info = document.createElement('div'); info.className = 'console-subscription-info';
         const name = document.createElement('strong'); name.textContent = item.name;
         info.append(name);
-        if (item.state === 'failed') {
-          const state = document.createElement('span'); state.className = 'console-action-state';
-          state.textContent = '更新失败'; state.className += ' console-action-state--failed';
-          info.append(state);
-        }
         const update = document.createElement('button'); update.type = 'button'; update.className = 'console-subscription-update';
         update.disabled = busy; update.textContent = item.state === 'running' ? '更新中…' : subscriptionFeedback.get(item.id).active ? '已更新' : '更新';
         update.setAttribute('aria-label', `${update.textContent}：${item.name}`);
         update.onclick = () => requestConsoleAction(item);
+        // 反馈放在按钮下方；空状态仍预留同一行，避免同排按钮与更新时间跳位。
+        const state = document.createElement('span'); state.className = 'console-action-state console-subscription-feedback';
+        state.textContent = item.state === 'failed' ? '更新失败' : '';
         const updated = document.createElement('span'); updated.className = 'console-subscription-updated';
         if (Number.isFinite(item.lastUpdatedAt) && item.lastUpdatedAt > 0 && item.lastUpdatedAt <= 253402300799) {
           const date = new Date(item.lastUpdatedAt * 1000);
@@ -98,7 +96,7 @@ function renderConsole(items) {
           time.textContent = date.toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
           updated.textContent = '上次更新'; updated.append(time);
         } else { updated.textContent = '暂无更新记录'; }
-        row.append(info, update, updated); grid.append(row);
+        row.append(info, update, state, updated); grid.append(row);
         continue;
       }
       const card = document.createElement('button'); card.type = 'button'; card.className = kind === 'app' ? 'console-action console-action--app' : 'console-action'; card.disabled = busy;

@@ -73,7 +73,7 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   items = [{...item,kind:'subscription',name:'更新全部订阅'}]; await run('loadConsole()');
   assert.equal(list.children[0].children[0].textContent,'订阅更新');
   assert.match(list.children[0].className, /console-group--subscriptions/);
-  assert.equal(list.children[0].children[1].children[0].children[2].textContent,'暂无更新记录','旧版或无历史快照不虚构时间');
+  assert.equal(list.children[0].children[1].children[0].children[3].textContent,'暂无更新记录','旧版或无历史快照不虚构时间');
   for (const [state,label] of [['idle','更新'],['running','更新中…'],['succeeded','已更新'],['failed','更新失败']]) {
     items = [{...item,kind:'subscription',name:'更新全部订阅',state}]; await run('loadConsole()');
     const row = list.children[0].children[1].children[0];
@@ -83,7 +83,10 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
     assert.equal(row.children[0].children[0].textContent,'更新全部订阅');
     assert.equal(button.textContent,state === 'running' ? '更新中…' : state === 'succeeded' ? '已更新' : '更新');
     assert.equal(button['aria-label'],`${button.textContent}：更新全部订阅`,'读屏能区分订阅与当前按钮状态');
-    assert.equal(row.children[0].children[1]?.textContent,state === 'failed' ? label : undefined);
+    assert.equal(row.children[0].children.length,1,'名称区不再放失败提示');
+    assert.equal(row.children[1],button,'按钮位于名称下方');
+    assert.equal(row.children[2].textContent,state === 'failed' ? label : '','失败提示位于按钮之后、更新时间之前');
+    assert.match(row.children[2].className,/console-subscription-feedback/,'所有状态保留相同的反馈位置');
     assert.equal(button.disabled,state === 'running');
   }
   list.querySelectorAll('button')[0].onclick();
@@ -141,7 +144,7 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   assert.equal(list.querySelectorAll('button')[0].textContent,'已更新','上一轮计时器不能清除新成功反馈');
   latestReset(); await new Promise(setImmediate);
   assert.equal(list.querySelectorAll('button')[0].textContent,'更新');
-  assert.equal(subscriptionRow().children[2].children[0].dateTime,new Date(1800000010000).toISOString(),'恢复按钮不清除上次更新时间');
+  assert.equal(subscriptionRow().children[3].children[0].dateTime,new Date(1800000010000).toISOString(),'恢复按钮不清除上次更新时间');
   items = [{...items[0],id:'historical'}]; await run('loadConsole()');
   assert.equal(list.querySelectorAll('button')[0].textContent,'更新','首次读到历史成功不会当成新完成');
 
@@ -155,7 +158,7 @@ vm.runInContext(fs.readFileSync('web/console.js','utf8'), ctx);
   const updatedAt = Date.parse('2026-11-12T10:30:00Z') / 1000;
   for (const state of ['idle','running','succeeded','failed']) {
     items = [{...item,kind:'subscription',state,lastUpdatedAt:updatedAt}]; await run('loadConsole()');
-    const updated = subscriptionRow().children[2];
+    const updated = subscriptionRow().children[3];
     assert.equal(updated.textContent,'上次更新');
     assert.equal(updated.children[0].tag,'time');
     assert.equal(updated.children[0].dateTime,'2026-11-12T10:30:00.000Z','时间来自真实快照，刷新和失败不覆盖');
