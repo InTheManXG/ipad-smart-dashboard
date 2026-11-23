@@ -1,4 +1,4 @@
-// 验证默认关闭、申请失败回退、用户开启后恢复及全屏回退，不依赖真实屏幕锁。
+// 验证支持时默认开启、不支持时关闭、申请失败回退及全屏回退，不依赖真实屏幕锁。
 const vm = require('node:vm');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
@@ -64,15 +64,13 @@ vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
   assert.equal(trigger.focused,true,'Escape 后焦点返回入口');
   get('reload').onclick();assert.equal(reloads,1);
   assert.equal(get('more-settings').attrs['data-wake-warning'],'false');
-  assert.equal(requests,0);assert.equal(get('wake').textContent,'开启常亮');
-  assert.equal(get('wake').attrs['aria-pressed'],'false');
+  assert.equal(requests,1);assert.equal(get('wake').textContent,'常亮已开启');
+  assert.equal(get('wake').attrs['aria-pressed'],'true');
   assert.equal(get('wake-dialog').open,false);
   await timers.get(5000)();
   events.pointerup({target:{closest(){return false;}}});
   events.visibilitychange();
-  assert.equal(requests,0,'首次打开、触摸、定时器和恢复前台均不自动开启');
-  await get('wake').onclick();assert.equal(requests,1);
-  assert.equal(get('wake').textContent,'常亮已开启');
+  assert.equal(requests,1,'支持时首次打开自动开启，触摸、定时器和恢复前台不重复申请');
   await get('wake').onclick();assert.equal(releases,1);
   events.pointerup({target:{closest(){return false;}}});assert.equal(requests,1);
   await get('wake').onclick();assert.equal(requests,2);
@@ -144,6 +142,34 @@ vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
   navigator.wakeLock = {request:granted};
   await get('wake').onclick();assert.equal(requests,6);
   assert.equal(get('footer-note').textContent,'');
+  // 缺少可调用 API 时静默关闭；有 API 但申请被拒绝时只尝试一次。
+  for (const mode of ['missing', 'non-callable', 'denied']) {
+    const initialNodes = new Map(), initialEvents = {}, initialTimers = [];
+    const initialGet = id => {
+      if (!initialNodes.has(id)) initialNodes.set(id, {textContent:'',open:false,attrs:{},setAttribute(key,value){this.attrs[key]=value;},addEventListener(){},showModal(){this.open=true;},close(){this.open=false;}});
+      return initialNodes.get(id);
+    };
+    let initialRequests = 0;
+    const initialNavigator = mode === 'missing' ? {} : {wakeLock:{request:mode === 'non-callable' ? null : async () => {initialRequests++;throw new Error('denied');}}};
+    const initialContext = vm.createContext({
+      document:{hidden:false,getElementById:initialGet,addEventListener(name,fn){initialEvents[name]=fn;},documentElement:{}},
+      navigator:initialNavigator,location:{protocol:'https:'},
+      localStorage:{getItem(){return '';}},setInterval(fn){initialTimers.push(fn);},Date
+    });
+    vm.runInContext(fs.readFileSync('web/app.js','utf8'),initialContext);
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(vm.runInContext('wantWake',initialContext),false,`${mode} 首次打开保持关闭`);
+    assert.equal(initialGet('wake').attrs['aria-pressed'],'false');
+    assert.equal(initialGet('wake').textContent,'开启常亮');
+    assert.equal(initialGet('more-settings').attrs['data-wake-warning'],'false');
+    assert.equal(initialGet('wake-dialog').open,false,'默认申请不可用时不显示恢复遮罩');
+    if (mode === 'denied') assert.match(initialGet('footer-note').textContent,/申请失败，已关闭/);
+    else assert.equal(initialGet('footer-note').textContent,'','不支持时静默关闭');
+    for (const tick of initialTimers) await tick();
+    initialEvents.pointerup({target:{closest(){return false;}}});
+    initialEvents.visibilitychange();
+    assert.equal(initialRequests,mode === 'denied' ? 1 : 0,'不支持或申请失败后不自动重试');
+  }
   // HTTP 回环地址即使被浏览器视为安全上下文，也遵循产品的 HTTPS 常亮规则。
   for (const hostname of ['192.168.1.10', '127.0.0.1', 'localhost']) {
     const localNodes = new Map(), localEvents = {}, localTimers = [];
@@ -175,5 +201,5 @@ vm.runInContext(fs.readFileSync('web/app.js','utf8'),context);
     assert.equal(localRequests,0,'点击和恢复前台不能绕过连接限制');
     assert.equal(localGet('wake-dialog').open,false,'关闭后不反复弹出');
   }
-  console.log('菜单选项自动收起、常亮默认关闭、失败回退、手动重试、关闭与恢复、全屏及回退提示验证通过');
+  console.log('菜单选项自动收起、常亮支持时默认开启、不支持时关闭、失败回退、手动重试、关闭与恢复、全屏及回退提示验证通过');
 })().catch(error=>{console.error(error);process.exitCode=1;});

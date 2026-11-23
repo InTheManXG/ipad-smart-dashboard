@@ -7,9 +7,9 @@ function formatPlan(plan) {
   return typeof plan === 'string' && plan.trim() ? names[plan.toLowerCase()] || plan : '未知套餐';
 }
 let token = localStorage.getItem('pairing-token') || '';
-// 所有看板默认关闭常亮，仅在用户手动开启后申请 HTTPS 屏幕锁。
+// 支持屏幕常亮的 HTTPS 浏览器默认开启，不支持时保持关闭。
 const wakeUsesHTTPS = globalThis.location?.protocol === 'https:';
-let busy = false, lastSuccess = 0, wakeLock = null, wantWake = false;
+let busy = false, lastSuccess = 0, wakeLock = null, wantWake = wakeUsesHTTPS && typeof navigator.wakeLock?.request === 'function';
 let controlAllowed = false;
 const controlRequiredMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
 // 各页面共用同一授权指引；入口脚本先于其他页面模块执行。
@@ -301,7 +301,7 @@ $('wake').onclick = async () => {
 };
 // 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
 setInterval(keepAwake, 5000);
-// 仅为本次已手动开启的常亮恢复锁，关闭或申请失败后不会自动开启。
+// 仅恢复当前仍开启的常亮，手动关闭或申请失败后不会自动重开。
 document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake')) return; keepAwake(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); keepAwake(); } });
 function showFullscreenState() {
