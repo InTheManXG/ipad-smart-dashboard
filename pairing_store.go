@@ -68,6 +68,20 @@ func cleanStatus(value any) (Object, error) {
 	result["attention"] = nil
 	if attention, ok := input["attention"].(Object); ok {
 		result["attention"] = selectFields(attention, "threadId", "title")
+		if raw, exists := attention["requestIds"]; exists {
+			ids, valid := raw.([]any)
+			if !valid || len(ids) > 64 {
+				return nil, fail(400, "invalid_attention")
+			}
+			for _, value := range ids {
+				id, valid := value.(string)
+				if !valid || len(id) == 0 || len(id) > 200 {
+					return nil, fail(400, "invalid_attention")
+				}
+			}
+			// 只透传问题标识，供各网页独立记忆已关闭的提醒。
+			result["attention"].(Object)["requestIds"] = ids
+		}
 	}
 	result["schema"] = 1
 	return result, nil

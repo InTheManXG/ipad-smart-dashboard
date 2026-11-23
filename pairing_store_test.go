@@ -12,6 +12,25 @@ import (
 	"time"
 )
 
+func TestAttentionRequestIDs(t *testing.T) {
+	// 问题标识可供网页去重，快照白名单仍排除其他字段。
+	status, err := cleanStatus(Object{"attention": Object{"threadId": "thread", "title": "任务", "requestIds": []any{"first", "second"}, "private": "omit"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attention := status["attention"].(Object)
+	if ids := attention["requestIds"].([]any); len(ids) != 2 || ids[0] != "first" || attention["private"] != nil {
+		t.Fatal("reminder identity was not preserved safely")
+	}
+	for _, invalid := range []any{"wrong type", []any{""}, []any{12}, []any{strings.Repeat("x", 201)}, make([]any, 65)} {
+		_, err := cleanStatus(Object{"attention": Object{"requestIds": invalid}})
+		pairingError(t, err, 400)
+	}
+	if _, err := cleanStatus(Object{"attention": Object{"threadId": "legacy", "title": "旧版"}}); err != nil {
+		t.Fatal("legacy snapshots must remain compatible", err)
+	}
+}
+
 func newPairingStore(t *testing.T) *Store {
 	t.Helper()
 	store, err := NewStore(filepath.Join(t.TempDir(), "pairing.sqlite"))

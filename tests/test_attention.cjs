@@ -2,14 +2,32 @@
 const vm = require('node:vm');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const nodes = new Map();
-const get = id => {
-  if (!nodes.has(id)) nodes.set(id, {setAttribute(){},open:false, textContent:'', addEventListener(){}, showModal(){this.open=true; this.shown=(this.shown||0)+1;}, close(){this.open=false;}});
-  return nodes.get(id);
-};
-const context = vm.createContext({document:{getElementById:get,hidden:true,addEventListener(){}}, navigator:{},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},sessionStorage:{getItem(){return '';}}, setInterval(){}, Date,fetch:async()=>({ok:false,status:401})});
-vm.runInContext(fs.readFileSync('web/app.js','utf8'), context);
-const run = code => vm.runInContext(code, context);
+const source = fs.readFileSync('web/app.js','utf8');
+function page({storage = new Map(), failAttentionStorage = false} = {}) {
+  const nodes = new Map();
+  const get = id => {
+    if (!nodes.has(id)) nodes.set(id, {
+      style:{}, children:[], listeners:{}, setAttribute(){}, open:false, textContent:'',
+      addEventListener(name, callback){this.listeners[name] = callback;},
+      showModal(){this.open=true; this.shown=(this.shown||0)+1;}, close(){this.open=false;},
+      replaceChildren(...items){this.children=items;}, append(...items){this.children.push(...items);}
+    });
+    return nodes.get(id);
+  };
+  const guardStorage = key => { if (failAttentionStorage && key === 'dismissed-attention-v1') throw new Error('storage unavailable'); };
+  const context = vm.createContext({
+    document:{getElementById:get, hidden:true, addEventListener(){},createElement(){return {style:{},children:[],setAttribute(){},append(...items){this.children.push(...items);}};}},
+    navigator:{}, localStorage:{
+      getItem(key){guardStorage(key);return storage.get(key) || null;},
+      setItem(key,value){guardStorage(key);storage.set(key,value);},
+      removeItem(key){guardStorage(key);storage.delete(key);}
+    }, sessionStorage:{getItem(){return '';}}, window:{dispatchEvent(){}}, Event,
+    AbortController, setTimeout, clearTimeout, setInterval(){}, Date,fetch:async()=>({ok:false,status:401})
+  });
+  vm.runInContext(source, context);
+  return {nodes, get, context, storage, run:code => vm.runInContext(code, context)};
+}
+const {get, context, run} = page();
 run('controlAllowed=true; updateAttention({threadId:"a",title:"任务 A"})');
 assert.equal(get('attention-dialog').shown,1);
 run('dismissAttention(); updateAttention({threadId:"a",title:"任务 A"})');
@@ -20,7 +38,50 @@ run('updateAttention(null); updateAttention({threadId:"a",title:"任务 A"})');
 assert.equal(get('attention-dialog').shown,2);
 run('updateAttention(null,false)');
 assert.equal(get('attention-dialog').open,false);
-console.log('提醒首次弹出、关闭去重、断线和再次等待验证通过');
+
+// 使用新页面上下文读取相同浏览器存储，真实模拟刷新后的提醒恢复。
+const storage = new Map(), firstPage = page({storage});
+const prompt = (target, threadId, requestIds) => target.run(`controlAllowed=true; updateAttention(${JSON.stringify({threadId, title:'待处理', requestIds})})`);
+prompt(firstPage,'persisted',['question-1','question-2']);
+firstPage.get('attention-dismiss').onclick();
+prompt(firstPage,'persisted',['question-1','question-2']);
+assert.equal(firstPage.get('attention-dialog').shown,1,'同一问题关闭后轮询不再弹出');
+const reloaded = page({storage});
+prompt(reloaded,'persisted',['question-1','question-2']);
+assert.equal(reloaded.get('attention-dialog').open,false,'刷新页面仍记住已关闭的问题');
+prompt(reloaded,'persisted',['question-2']);
+assert.equal(reloaded.get('attention-dialog').open,false,'已回答部分问题不会重新提醒其余已关闭问题');
+prompt(reloaded,'persisted',['question-2','question-3']);
+assert.equal(reloaded.get('attention-dialog').shown,1,'同一任务出现新问题仍提醒');
+reloaded.get('attention-dialog').listeners.cancel();
+prompt(reloaded,'persisted',['question-3']);
+assert.equal(reloaded.get('attention-dialog').open,false,'Escape 与稍后处理共用去重');
+prompt(reloaded,'another',['another-question']);
+reloaded.get('attention-dismiss').onclick();
+prompt(reloaded,'persisted',['question-1']);
+assert.equal(reloaded.get('attention-dialog').open,false,'任务 A/B 轮换不会覆盖关闭记录');
+prompt(reloaded,'another',['another-question']);
+assert.equal(reloaded.get('attention-dialog').open,false,'多个已关闭任务分别去重');
+reloaded.run('updateAttention(null); updateAttention(null,false)');
+prompt(reloaded,'persisted',['question-1']);
+assert.equal(reloaded.get('attention-dialog').open,false,'空快照与断线不清除真实问题记录');
+reloaded.run("render({conversationsAvailable:false,conversations:[],quotaAvailable:false})");
+prompt(reloaded,'persisted',['question-1']);
+assert.equal(reloaded.get('attention-dialog').open,false,'采集暂不可用不清除已关闭的问题');
+
+for (const corrupt of ['not json','{}','[null,{},7]']) {
+  const corrupted = page({storage:new Map([['dismissed-attention-v1',corrupt]])});
+  prompt(corrupted,'corrupt',['question']);
+  assert.equal(corrupted.get('attention-dialog').open,true,'存储损坏不阻止新提醒');
+  corrupted.get('attention-dismiss').onclick();
+  prompt(corrupted,'corrupt',['question']);
+  assert.equal(corrupted.get('attention-dialog').open,false,'存储损坏后仍可关闭提醒');
+}
+const noStorage = page({failAttentionStorage:true});
+prompt(noStorage,'private',['question']);
+noStorage.get('attention-dismiss').onclick();
+prompt(noStorage,'private',['question']);
+assert.equal(noStorage.get('attention-dialog').open,false,'存储不可用时本页仍可去重');
 
 // 点击内容、按钮与内边距均跳转；遮罩和稍后处理必须排除。
 run('var originalOpen = openConversation; var opened = []; openConversation = id => opened.push(id); updateAttention({threadId:"click-target",title:"点击测试"})');
@@ -75,6 +136,32 @@ assert.equal(get('task-list').children[0].children.at(-1).textContent,'正在进
 Object.assign(context, {AbortController, setTimeout, clearTimeout});
 context.document.hidden = false;
 (async () => {
+  reloaded.context.document.hidden = false;
+  reloaded.context.fetch = async () => {throw new Error('offline');};
+  reloaded.run("token='test'");
+  await reloaded.run('refresh()');
+  prompt(reloaded,'persisted',['question-1']);
+  assert.equal(reloaded.get('attention-dialog').open,false,'真实网络失败后恢复不重弹已关闭问题');
+
+  // 新配对不能继承上一台 Mac 的关闭记录。
+  const pairedAgain = page({storage});
+  pairedAgain.context.fetch = async () => ({ok:true,json:async()=>({token:'new-pairing'})});
+  pairedAgain.get('token').value = 'PAIRCODE';
+  await pairedAgain.get('settings-form').listeners.submit({preventDefault(){}});
+  assert.equal(pairedAgain.run('dismissedAttention.size'),0,'重新配对清除提醒关闭记录');
+  prompt(pairedAgain,'persisted',['question-1']);
+  assert.equal(pairedAgain.get('attention-dialog').open,true,'新配对收到同标识问题仍提醒');
+  pairedAgain.get('attention-dismiss').onclick();
+  pairedAgain.context.document.hidden = false;
+  pairedAgain.context.document.querySelector = () => ({style:{}});
+  pairedAgain.context.location = {reload(){}};
+  pairedAgain.context.sessionStorage.removeItem = () => {};
+  pairedAgain.context.fetch = async () => ({ok:false,status:401});
+  await pairedAgain.run('refresh()');
+  assert.equal(pairedAgain.run('dismissedAttention.size'),0,'配对失效清除内存提醒关闭记录');
+  const retained = JSON.parse(storage.get('dismissed-attention-v1') || '[]');
+  assert.equal(retained.length,0,'配对失效不保留上一会话的持久记录');
+
   run("token = 'test'");
   context.fetch = async () => ({ok:true,json:async()=>({servedAt:Date.now()/1000,conversations:[],conversationsAvailable:true})});
   await run('refresh()');
@@ -129,6 +216,75 @@ context.document.hidden = false;
   context.fetch = async () => ({ok:true,status:200,json:async()=>({ok:true})});
   await run("openConversation('new')");
   assert.equal(get('attention-dialog').open,false,'重新授权后仍可打开当前对话');
+  // 打开旧问题的迟到成功回执，不能关闭同一对话刚出现的新问题。
+  run("updateAttention({threadId:'late',title:'旧问题',requestIds:['old-question']})");
+  let finishOpen;
+  context.fetch = () => new Promise(resolve => { finishOpen = resolve; });
+  const pendingOpen = run("openConversation('late')");
+  run("updateAttention({threadId:'late',title:'新问题',requestIds:['new-question']})");
+  finishOpen({ok:true,status:200,json:async()=>({ok:true})});
+  await pendingOpen;
+  assert.equal(get('attention-dialog').open,true,'旧问题打开成功不能关闭新问题');
+  assert.equal(get('attention-title').textContent,'新问题');
+  run("updateAttention({threadId:'late',title:'旧问题',requestIds:['old-question']})");
+  assert.equal(get('attention-dialog').open,false,'打开成功只记忆请求发出时的问题');
+  run("updateAttention({threadId:'late',title:'新问题',requestIds:['new-question']})");
+  assert.equal(get('attention-dialog').open,true,'同一对话的新问题未被迟到回执忽略');
+  run("updateAttention({threadId:'late-a',title:'任务 A',requestIds:['a-question']})");
+  context.fetch = () => new Promise(resolve => { finishOpen = resolve; });
+  const openingA = run("openConversation('late-a')");
+  run("updateAttention({threadId:'late-b',title:'任务 B',requestIds:['b-question']})");
+  finishOpen({ok:true,status:200,json:async()=>({ok:true})});
+  await openingA;
+  assert.equal(get('attention-dialog').open,true,'任务 A 的回执不关闭任务 B');
+  assert.equal(get('attention-title').textContent,'任务 B');
+  run("updateAttention({threadId:'late-a',title:'任务 A',requestIds:['a-question']})");
+  assert.equal(get('attention-dialog').open,false,'切换任务后仍记住任务 A 已成功打开');
+
+  // 旧会话在途回执不能影响重新配对后的提醒，也不能恢复已失效会话的记录。
+  for (const boundary of ['token-change','invalidated']) {
+    for (const status of [200,401]) {
+      const stale = page();
+      stale.run("token='old-session'");
+      prompt(stale,'old-session-task',['old-session-question']);
+      let finishStale;
+      stale.context.fetch = () => new Promise(resolve => { finishStale = resolve; });
+      const opening = stale.run("openConversation('old-session-task')");
+      stale.run(boundary === 'token-change' ? "token='new-session'; clearAttentionDismissals()" : 'pairingInvalidated=true; clearAttentionDismissals()');
+      prompt(stale,'new-session-task',['new-session-question']);
+      stale.get('footer-note').textContent='新会话内容';
+      stale.get('open-result').textContent='新提醒内容';
+      finishStale({ok:status === 200,status,json:async()=>({ok:true})});
+      await opening;
+      assert.equal(stale.get('attention-dialog').open,true,`${boundary}/${status} 迟到回执不关闭新提醒`);
+      assert.equal(stale.get('footer-note').textContent,'新会话内容');
+      assert.equal(stale.get('open-result').textContent,'新提醒内容');
+      assert.equal(stale.run('dismissedAttention.size'),0,`${boundary}/${status} 不写回旧会话记录`);
+      if (boundary === 'token-change') {
+        assert.equal(stale.run('token'),'new-session','旧 401 不能使新会话失效');
+        assert.equal(stale.run('pairingInvalidated'),false);
+      }
+    }
+  }
+  for (const phase of ['response-body','network-error']) {
+    const stale = page();
+    stale.run("token='old-session'");
+    prompt(stale,'old',['old-question']);
+    let finishLate;
+    stale.context.fetch = phase === 'response-body'
+      ? async () => ({ok:true,status:200,json:() => new Promise(resolve => { finishLate = () => resolve({ok:true}); })})
+      : () => new Promise((_,reject) => { finishLate = () => reject(new Error('offline')); });
+    const opening = stale.run("openConversation('old')");
+    await new Promise(setImmediate);
+    stale.run("token='new-session'; clearAttentionDismissals()");
+    prompt(stale,'new',['new-question']);
+    stale.get('footer-note').textContent='新会话内容';
+    finishLate();
+    await opening;
+    assert.equal(stale.get('attention-dialog').open,true,`${phase} 不关闭新会话提醒`);
+    assert.equal(stale.get('footer-note').textContent,'新会话内容',`${phase} 不改写新会话内容`);
+    assert.equal(stale.run('dismissedAttention.size'),0,`${phase} 不恢复旧关闭记录`);
+  }
   // 被踢下线须立即隐藏旧页面并重载，清除各模块缓存；网络失败不走此路径。
   let reloads = 0;
   const pages = {style:{}};
@@ -155,6 +311,7 @@ context.document.hidden = false;
   run("token = ''");
   await run('refresh()');
   assert.equal(get('connection').className,'disconnected');
+  console.log('提醒关闭跨刷新、多个任务、新问题、断线、迟到回执、存储异常及配对清理验证通过');
 })().catch(error => {console.error(error);process.exitCode=1;});
 
 assert.equal(run('taskDuration(125)'), '02:05');

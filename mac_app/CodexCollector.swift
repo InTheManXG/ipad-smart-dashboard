@@ -149,7 +149,8 @@ final class CodexCollector {
                     // 固定列表顺序不改变提醒规则，仍优先展示最近更新的待处理对话。
                     let updatedAt = sqlite3_column_int64(statement, 3)
                     if state == "waiting", item["threadId"] != nil, updatedAt > attentionUpdatedAt {
-                        attention = ["threadId": id, "title": item["title"]!]; attentionUpdatedAt = updatedAt
+                        // 使用真实问题 ID 去重；任务标题或剩余问题减少不能触发已关闭的提醒。
+                        attention = ["threadId": id, "title": item["title"]!, "requestIds": Array(reader.pending.filter { !$0.isEmpty }.sorted().prefix(64))]; attentionUpdatedAt = updatedAt
                     }
                     items.append(item)
                 }

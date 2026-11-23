@@ -22,6 +22,7 @@ let pairingInvalidated = false;
 function invalidatePairing() {
   if (pairingInvalidated) return;
   pairingInvalidated = true; token = ''; controlAllowed = false;
+  clearAttentionDismissals();
   localStorage.removeItem('pairing-token');
   // 旧版管理口令也必须清除，避免重载后继续携带失效凭据。
   sessionStorage.removeItem('display-token');
@@ -61,7 +62,7 @@ function render(data) {
   // 只读时说明授权入口；恢复后只清除此提示，保留其他操作结果。
   if (!controlAllowed) $('footer-note').textContent = controlRequiredMessage;
   else if ($('footer-note').textContent === controlRequiredMessage) $('footer-note').textContent = '';
-  updateAttention(data.attention);
+  updateAttention(data.attention, data.conversationsAvailable === true);
   const {tasks, counts} = taskOverview(data);
   const total = data.conversationsTotal ?? tasks.length;
   $('task-count').textContent = data.conversationsAvailable ? (total > tasks.length ? `共 ${total} 个 · 显示 ${tasks.length} 个` : `${tasks.length} 个任务`) : '状态不可用';
@@ -134,27 +135,63 @@ async function refresh() {
     $('summary').textContent = lastSuccess ? '下方保留上次数据，并非当前状态' : '请检查 Mac 和网络连接';
   } finally { clearTimeout(timer); busy = false; }
 }
-let attention = null, dismissedThread = null, opening = false;
+const attentionDismissalKey = 'dismissed-attention-v1';
+let attention = null, opening = false;
+let dismissedAttention = new Set();
+try {
+  const stored = JSON.parse(localStorage.getItem(attentionDismissalKey) || '[]');
+  if (Array.isArray(stored)) dismissedAttention = new Set(stored.filter(key => typeof key === 'string' && key.length <= 500).slice(-256));
+} catch { }
+function saveAttentionDismissals() {
+  // 只保存问题标识，不保存标题和口令；限制记录数，浏览器禁用存储时仍可在本页去重。
+  dismissedAttention = new Set(Array.from(dismissedAttention).slice(-256));
+  try { localStorage.setItem(attentionDismissalKey, JSON.stringify(Array.from(dismissedAttention))); } catch { }
+}
+function clearAttentionDismissals() {
+  dismissedAttention.clear();
+  try { localStorage.removeItem(attentionDismissalKey); } catch { }
+}
+function attentionKeys(value) {
+  const ids = Array.isArray(value.requestIds) ? value.requestIds.filter(id => typeof id === 'string' && id.length > 0 && id.length <= 200).slice(0, 64) : [];
+  // 旧版 App 没有问题标识，只能按对话去重，确认已离开等待后再解除。
+  return ids.length ? ids.map(id => JSON.stringify([value.threadId, id])) : [JSON.stringify([value.threadId])];
+}
+function rememberAttention(value) {
+  if (!value) return;
+  for (const key of attentionKeys(value)) dismissedAttention.add(key);
+  saveAttentionDismissals();
+}
 function updateAttention(next, reset = true) {
   attention = next && typeof next.threadId === 'string' && typeof next.title === 'string' ? next : null;
   if (!attention) {
-    if (reset) dismissedThread = null;
+    if (reset) {
+      // 无问题标识的兼容记录仅在确认不再等待时清除；断线与采集失败不能解除去重。
+      let changed = false;
+      for (const key of dismissedAttention) {
+        try { if (JSON.parse(key).length === 1) changed = dismissedAttention.delete(key) || changed; } catch { changed = dismissedAttention.delete(key) || changed; }
+      }
+      if (changed) saveAttentionDismissals();
+    }
     $('attention-dialog').close();
     return;
   }
-  // 【业务逻辑】同一待处理阶段只弹一次；解除后再次等待可重新提醒，连接失败不清除已忽略状态。
+  if (attentionKeys(attention).every(key => dismissedAttention.has(key))) {
+    $('attention-dialog').close();
+    return;
+  }
+  // 同一问题关闭后不再弹出，新问题使用独立标识，多个任务轮流出现也不会覆盖记录。
   $('attention-title').textContent = attention.title;
   $('open-codex').disabled = !controlAllowed;
   if (!controlAllowed) $('open-result').textContent = controlRequiredMessage;
   else if ($('open-result').textContent === controlRequiredMessage) $('open-result').textContent = '';
-  if (attention.threadId !== dismissedThread && !$('settings').open && !$('attention-dialog').open) {
+  if (!$('settings').open && !$('attention-dialog').open) {
     $('open-result').textContent = controlAllowed ? '' : controlRequiredMessage;
     $('attention-dialog').showModal();
   }
 }
-function dismissAttention() { dismissedThread = attention?.threadId; $('attention-dialog').close(); }
+function dismissAttention() { rememberAttention(attention); $('attention-dialog').close(); }
 $('attention-dismiss').onclick = dismissAttention;
-$('attention-dialog').addEventListener('cancel', () => { dismissedThread = attention?.threadId; });
+$('attention-dialog').addEventListener('cancel', dismissAttention);
 // 整张提醒都可打开对话；稍后处理和弹窗外遮罩不触发跳转。
 $('attention-dialog').onclick = event => {
   if (!event.target.closest('.attention-card')) return;
@@ -168,20 +205,27 @@ async function openConversation(threadId) {
     return;
   }
   opening = true; $('open-codex').disabled = true;
+  const requestedToken = token;
+  const requestedAttention = attention?.threadId === threadId ? attention : null;
   $('open-result').textContent = '正在请求 Mac 打开对话…';
   $('footer-note').textContent = '正在请求 Mac 打开对话…';
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 18000);
   try {
     const response = await fetch('./api/open', {method:'POST', headers:{'Content-Type':'application/json','X-Pairing-Token':token}, body:JSON.stringify({threadId}), signal:controller.signal});
+    if (pairingInvalidated || token !== requestedToken) return;
     if (response.status === 401) { invalidatePairing(); return; }
     if (response.status === 403) { controlAllowed = false; throw new Error('read-only'); }
     if (!response.ok || (await response.json()).ok !== true) throw new Error('open failed');
+    if (pairingInvalidated || token !== requestedToken) return;
     // 状态可能已切换到另一对话，旧请求的回执不能关闭新提醒。
     $('footer-note').textContent = '';
+    rememberAttention(requestedAttention);
     if (attention?.threadId === threadId) {
-      dismissedThread = threadId; $('attention-dialog').close();
+      // 打开请求期间若出现了新问题，不替用户关闭或忽略那个新问题。
+      if (attentionKeys(attention).every(key => dismissedAttention.has(key))) $('attention-dialog').close();
     }
   } catch (error) {
+    if (pairingInvalidated || token !== requestedToken) return;
     // 权限拒绝同时更新页脚与提醒，不能被网络错误覆盖；旧请求不改写新对话的提醒。
     const message = error.message === 'read-only' || !controlAllowed ? controlRequiredMessage : '未能确认打开：请检查 Mac 是否在线、任务是否仍在列表，然后重试';
     $('footer-note').textContent = message;
@@ -194,6 +238,7 @@ $('settings-form').addEventListener('submit', async event => {
     const response = await fetch('./api/pairing/complete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code:$('token').value.trim().toUpperCase()})});
     if (!response.ok) throw new Error('配对码无效或已过期，请查看 Mac App');
     const result = await response.json(); token = result.token;
+    clearAttentionDismissals();
     localStorage.setItem('pairing-token', token); $('token').value = ''; $('settings').close();
     window.dispatchEvent(new Event('paired')); refresh();
   } catch (error) { $('pairing-error').textContent = error.message; }
