@@ -7,10 +7,13 @@ function formatPlan(plan) {
   return typeof plan === 'string' && plan.trim() ? names[plan.toLowerCase()] || plan : '未知套餐';
 }
 let token = localStorage.getItem('pairing-token') || '';
-// 支持屏幕常亮的 HTTPS 浏览器默认开启，不支持时保持关闭。
+// 未设置时默认开启；刷新后恢复用户选择，不把系统锁释放当成用户关闭。
 const wakeUsesHTTPS = globalThis.location?.protocol === 'https:';
 function supportsWakeLock() { return wakeUsesHTTPS && typeof navigator.wakeLock?.request === 'function'; }
-let busy = false, lastSuccess = 0, wakeLock = null, wantWake = supportsWakeLock();
+function readWakePreference() {
+  try { return localStorage.getItem('keep-awake-enabled') !== 'false'; } catch { return true; }
+}
+let busy = false, lastSuccess = 0, wakeLock = null, wantWake = supportsWakeLock() && readWakePreference();
 let controlAllowed = false;
 const controlRequiredMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
 // 各页面共用同一授权指引；入口脚本先于其他页面模块执行。
@@ -223,15 +226,22 @@ $('connect').onclick = () => $('settings').showModal();
 $('refresh').onclick = refresh;
 // 主屏幕独立模式没有地址栏，提供页面重载入口以获取最新界面。
 $('reload').onclick = () => location.reload();
-let wakePending = false, wakeFailed = false;
+let wakePending = false, wakeFailed = false, wakeRestoring = wantWake;
 const wakeInterrupted = '常亮已中断';
+const wakeRestoreMessage = '设置已保留，浏览器尚未恢复常亮';
+function saveWakePreference(enabled) {
+  // 存储受限不能阻断当前开关操作，但必须告知下次可能无法恢复。
+  try { localStorage.setItem('keep-awake-enabled', String(enabled)); }
+  catch { $('footer-note').textContent = '无法保存常亮设置，本次操作仍会生效。'; }
+}
 function dismissWakeNotice() {
   $('wake-dialog').close();
 }
 function failWakeRequest(message) {
-  // 申请失败撤销开启意图，定时器、触摸和恢复前台都不能再次自动申请。
+  // 本页申请失败后停止自动重试，已保存的选择留待重新加载时恢复。
   wantWake = false;
   wakeFailed = false;
+  wakeRestoring = false;
   dismissWakeNotice();
   $('footer-note').textContent = message;
 }
@@ -245,19 +255,21 @@ $('wake-dialog').onclick = async () => {
   if (!supportsWakeLock()) { showWakeState(); return; }
   if (wakePending) return;
   wakeFailed = false;
+  wakeRestoring = false;
   wantWake = true;
+  saveWakePreference(true);
   await keepAwake();
 };
 function showWakeState() {
   const supported = supportsWakeLock();
   // 不支持与暂时申请失败分开：前者禁用入口，后者仍允许手动重试。
-  if (!supported) { wantWake = false; wakeFailed = false; dismissWakeNotice(); }
+  if (!supported) { wantWake = false; wakeFailed = false; wakeRestoring = false; dismissWakeNotice(); }
   // 高亮代表已持有有效锁，不代表用户曾请求开启。
   const active = supported && !!(wakeLock && !wakeLock.released);
   const unavailable = wantWake && !active && !wakePending;
   $('more-settings').setAttribute('data-wake-warning', String(unavailable));
   $('more-settings').setAttribute('aria-label', unavailable ? '更多设置，常亮未生效' : '更多设置');
-  $('wake').textContent = !wakeUsesHTTPS ? '需 HTTPS 才能常亮' : !supported ? '浏览器不支持常亮' : active ? '常亮已开启' : wakePending ? '正在申请常亮…' : wakeFailed ? '申请失败，点击重试' : '开启常亮';
+  $('wake').textContent = !wakeUsesHTTPS ? '需 HTTPS 才能常亮' : !supported ? '浏览器不支持常亮' : active ? '常亮已开启' : wakePending ? '正在申请常亮…' : wakeFailed ? '点击恢复常亮' : '开启常亮';
   $('wake').setAttribute('aria-pressed', String(active));
   $('wake').disabled = !supported || wakePending;
   $('restore-wake').disabled = !supported || wakePending;
@@ -274,6 +286,7 @@ async function keepAwake() {
     // 请求期间用户可能关闭常亮或切入后台，不能让迟到回执重新开启。
     if (!wantWake || document.hidden) { await lock.release(); return; }
     wakeLock = lock;
+    wakeRestoring = false;
     dismissWakeNotice();
     if ($('footer-note').textContent.startsWith('常亮申请失败，')) $('footer-note').textContent = '';
     lock.addEventListener('release', () => {
@@ -283,7 +296,9 @@ async function keepAwake() {
       showWakeState();
     });
   } catch {
-    failWakeRequest('常亮申请失败，已关闭。请检查低电量模式后重新开启。');
+    // 自动恢复失败只暂停申请，保留开关选择，等待用户点击提供手势。
+    if (wakeRestoring && wantWake) { wakeFailed = true; notifyWakeInterrupted(wakeRestoreMessage); }
+    else failWakeRequest('常亮申请失败，已关闭。请检查低电量模式后重新开启。');
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
@@ -291,15 +306,23 @@ $('wake').onclick = async () => {
   if (wakePending) return;
   wantWake = !(wakeLock && !wakeLock.released);
   wakeFailed = false;
+  wakeRestoring = false;
+  saveWakePreference(wantWake);
   if (wantWake) await keepAwake(); else await wakeLock?.release();
   if (!wantWake) dismissWakeNotice();
   showWakeState();
 };
 // 系统可在前台释放锁；限频重试，避免依赖用户触摸，也避免拒绝后忙循环。
 setInterval(keepAwake, 5000);
-// 仅恢复当前仍开启的常亮，手动关闭或申请失败后不会自动重开。
+// 本页仅恢复仍开启的常亮，手动关闭或申请失败后不会自动重开。
 document.addEventListener('pointerup', event => { if (event.target.closest?.('#wake')) return; keepAwake(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); keepAwake(); } });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    refresh();
+    if (wakeRestoring && wakeFailed) notifyWakeInterrupted(wakeRestoreMessage);
+    keepAwake();
+  }
+});
 function showFullscreenState() {
   $('fullscreen').textContent = document.fullscreenElement ? '退出全屏' : navigator.standalone ? '已全屏显示' : '全屏显示';
 }
