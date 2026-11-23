@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import AppKit
+import Darwin
 
 @main struct NativeTests {
     static var checks = 0
@@ -13,6 +14,18 @@ import AppKit
         try check(rejected, message)
     }
     static func main() throws {
+        // 重复执行真实子进程，验证常驻线程不会每次遗留一个管道描述符。
+        func openDescriptorCount() -> Int { (0..<4096).filter { fcntl(Int32($0), F_GETFD) >= 0 }.count }
+        _ = try execute("/usr/bin/true", [])
+        let descriptorsBefore = openDescriptorCount()
+        for _ in 0..<100 { _ = try execute("/usr/bin/true", []) }
+        try check(openDescriptorCount() <= descriptorsBefore + 2, "连续子进程调用不累积文件描述符")
+        let echoed = try execute("/bin/cat", [], input: Data("pipe-test".utf8))
+        try check(echoed.0 == 0 && echoed.1 == Data("pipe-test".utf8), "关闭管道仍保留标准输入输出")
+        try rejects("启动失败正常返回错误") { _ = try execute("/nonexistent/ipad-pipe-test", []) }
+        try rejects("输出超限正常返回错误") { _ = try execute("/usr/bin/printf", ["too-long"], limit: 1) }
+        try check(try execute("/bin/sleep", ["1"], timeout: 0.05).0 != 0, "超时停止子进程")
+        try check(openDescriptorCount() <= descriptorsBefore + 2, "成功和错误路径均释放管道")
         // UA 只做展示，覆盖重叠标识、桌面模式与未知客户端，不能用作设备认证。
         for (ua, expected) in [
             ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0", "Windows · Edge 156"),

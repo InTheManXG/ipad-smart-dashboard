@@ -235,12 +235,21 @@ func cloudCommandAllowed(_ command: JSONObject) -> Bool {
 // 每个子进程都有超时和输出上限，退出异常不会把原始输出中的私人数据带到界面。
 func execute(_ executable: String, _ args: [String], input: Data? = nil, timeout: Double = 10, limit: Int = 2_000_000) throws -> (Int32, Data) {
     let process = Process(), output = Pipe(), stdin = Pipe()
+    // 音乐轮询会频繁启动子进程，管道必须在本次调用结束时关闭，不能等待 Foundation 释放。
+    defer {
+        try? stdin.fileHandleForReading.close(); try? stdin.fileHandleForWriting.close()
+        try? output.fileHandleForReading.close(); try? output.fileHandleForWriting.close()
+    }
     process.executableURL = URL(fileURLWithPath: executable); process.arguments = args
     process.standardOutput = output; process.standardError = FileHandle.nullDevice; process.standardInput = stdin
     try process.run()
     let timer = DispatchWorkItem { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
-    defer { timer.cancel() }
+    defer {
+        timer.cancel()
+        // 管道读写异常也要回收子进程，不能只取消超时保护后留下后台进程。
+        if process.isRunning { kill(process.processIdentifier, SIGKILL); process.waitUntilExit() }
+    }
     if let input { try stdin.fileHandleForWriting.write(contentsOf: input) }
     try stdin.fileHandleForWriting.close()
     var bytes = Data()

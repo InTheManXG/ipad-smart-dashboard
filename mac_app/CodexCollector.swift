@@ -149,6 +149,11 @@ func codexBinary() throws -> URL {
 
 func readQuota() throws -> JSONObject {
     let process = Process(), input = Pipe(), output = Pipe()
+    // 额度查询也运行在常驻线程；成功、启动失败和超时都要释放管道。
+    defer {
+        try? input.fileHandleForReading.close(); try? input.fileHandleForWriting.close()
+        try? output.fileHandleForReading.close(); try? output.fileHandleForWriting.close()
+    }
     process.executableURL = try codexBinary(); process.arguments = ["app-server", "--listen", "stdio://"]
     process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
     try process.run()
