@@ -21,10 +21,11 @@ final class TurnReader {
                 started = formatter.date(from: stamp)?.timeIntervalSince1970
                 if started == nil { formatter.formatOptions = [.withInternetDateTime]; started = formatter.date(from: stamp)?.timeIntervalSince1970 }
             case "task_complete":
-                active = false
+                // 回合终止后，旧异步提问不再需要用户处理，不能覆盖完成或错误状态。
+                active = false; pending.removeAll()
                 state = payload["is_error"] as? Bool == true || (payload["error"] != nil && !(payload["error"] is NSNull)) ? "error" : "done"
             case "turn_aborted": active = false; state = "unknown"; pending.removeAll()
-            case "error": active = false; state = "error"
+            case "error": active = false; pending.removeAll(); state = "error"
             case "item_completed": if (payload["item"] as? JSONObject)?["type"] as? String == "UserMessage" { pending.removeAll() }
             default: break
             }

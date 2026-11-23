@@ -134,6 +134,22 @@ import Darwin
         try check(try reader.read(path.path) == "error", "显式错误")
         try append("event_msg", ["type": "turn_aborted"])
         try check(try reader.read(path.path) == "unknown" && reader.pending.isEmpty, "取消清除待处理")
+        // 异步提问可能未收到回答就结束回合，终态必须清除等待标记。
+        for (ending, expected) in [
+            (["type": "task_complete"] as JSONObject, "done"),
+            (["type": "task_complete", "is_error": true], "error"),
+            (["type": "task_complete", "error": "test failure"], "error"),
+            (["type": "error"], "error")
+        ] {
+            try append("event_msg", ["type": "task_started"])
+            try append("response_item", ["type": "function_call", "name": "request_user_input_async", "call_id": "unanswered"])
+            try append("response_item", ["type": "function_call_output", "call_id": "unanswered", "output": "accepted"])
+            try check(try reader.read(path.path) == "waiting", "尚未回答且未结束时继续等待")
+            try append("event_msg", ending)
+            try check(try reader.read(path.path) == expected && reader.pending.isEmpty && !reader.active, "终态清除旧提问：" + expected)
+            let replay = TurnReader()
+            try check(try replay.read(path.path) == expected && replay.pending.isEmpty, "完整回放与增量终态一致")
+        }
         try Data("{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}".utf8).write(to: path)
         try check(try reader.read(path.path) == "unknown", "半行不提前消费")
         let tail = try FileHandle(forWritingTo: path); try tail.seekToEnd(); try tail.write(contentsOf: Data([10])); try tail.close()
@@ -154,9 +170,13 @@ import Darwin
         try check(items.count == 1 && items[0]["unread"] as? Bool == true && items[0]["state"] as? String == "running", "运行与未读并存")
         try unread([]); items = collector.snapshot()["conversations"] as! [JSONObject]
         try check(items.count == 1 && items[0]["unread"] == nil, "已读不终止运行")
+        try append("response_item", ["type": "function_call", "name": "request_user_input_async", "call_id": "collector-unanswered"])
+        try check(collector.snapshot()["attention"] is JSONObject, "未结束的提问触发待处理提醒")
         try append("event_msg", ["type": "task_complete"])
         try check((collector.snapshot()["conversations"] as! [JSONObject]).isEmpty, "完成已读移出列表")
-        try unread([id]); try check((collector.snapshot()["conversations"] as! [JSONObject]).count == 1, "完成未读保留")
+        try check(collector.snapshot()["attention"] is NSNull, "完成回合不残留待处理提醒")
+        try unread([id]); items = collector.snapshot()["conversations"] as! [JSONObject]
+        try check(items.count == 1 && items[0]["state"] as? String == "done", "完成未读保留但不再等待处理")
 
         let otherUnreadID = UUID().uuidString.lowercased(), remoteID = UUID().uuidString.lowercased()
         try writeJSON(["electron-thread-read-state-v1": ["version": 1, "unreadByIdentity": [
