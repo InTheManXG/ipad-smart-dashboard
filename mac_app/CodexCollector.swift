@@ -82,7 +82,7 @@ final class CodexCollector {
     private lazy var order: [String] = {
         // 顺序缓存只保存 ID；损坏时重建，不让展示偏好阻断任务采集。
         guard let orderFile, let saved = try? readJSON(orderFile), let ids = saved["threadIds"] as? [String],
-              ids.count <= 64, Set(ids).count == ids.count,
+              Set(ids).count == ids.count,
               ids.allSatisfy({ UUID(uuidString: $0)?.uuidString.lowercased() == $0 }) else { return [] }
         return ids
     }()
@@ -117,8 +117,8 @@ final class CodexCollector {
             let included = Array(unseen.union(order))
             let placeholders = included.isEmpty ? "NULL" : Array(repeating: "?", count: included.count).joined(separator: ",")
             let queued = order.isEmpty ? "NULL" : Array(repeating: "?", count: order.count).joined(separator: ",")
-            // 已排队任务优先进入候选集，避免新消息把它挤出 64 项上限或 24 小时窗口。
-            let sql = "SELECT id, rollout_path, COALESCE(NULLIF(name, ''), title), updated_at FROM threads WHERE archived = 0 AND source IN ('cli','vscode','exec','appServer') AND (updated_at >= ? OR id IN (\(placeholders))) ORDER BY CASE WHEN id IN (\(queued)) THEN 0 ELSE 1 END, updated_at DESC, id ASC LIMIT 64"
+            // 保留已有队列并为新任务预留候选名额，避免满队列后发现不了新任务。
+            let sql = "SELECT id, rollout_path, COALESCE(NULLIF(name, ''), title), updated_at FROM threads WHERE archived = 0 AND source IN ('cli','vscode','exec','appServer') AND (updated_at >= ? OR id IN (\(placeholders))) ORDER BY CASE WHEN id IN (\(queued)) THEN 0 ELSE 1 END, updated_at DESC, id ASC LIMIT \(order.count + 64)"
             guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw ControlError("Codex 数据结构已变化") }
             sqlite3_bind_int64(statement, 1, Int64(Date().timeIntervalSince1970) - 86400)
             for (index, id) in (included + order).enumerated() {
@@ -158,8 +158,9 @@ final class CodexCollector {
             guard result == SQLITE_DONE else { throw ControlError("读取 Codex 任务失败") }
             readers = readers.filter { keep.contains($0.key) }
             let activeIDs = items.compactMap { $0["threadId"] as? String }
-            var nextOrder = order.filter { activeIDs.contains($0) || unresolved.contains($0) }
-            for id in activeIDs where !nextOrder.contains(id) { nextOrder.append(id) }
+            let retainedOrder = order.filter { activeIDs.contains($0) || unresolved.contains($0) }
+            // 新任务按发现时的新旧顺序置顶；保留其他活跃任务的位置，状态更新不重排。
+            let nextOrder = activeIDs.filter { !retainedOrder.contains($0) } + retainedOrder
             if nextOrder != order {
                 order = nextOrder; orderNeedsSave = true
             }
