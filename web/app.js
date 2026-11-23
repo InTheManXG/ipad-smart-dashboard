@@ -9,7 +9,8 @@ function formatPlan(plan) {
 let token = localStorage.getItem('pairing-token') || '';
 // 支持屏幕常亮的 HTTPS 浏览器默认开启，不支持时保持关闭。
 const wakeUsesHTTPS = globalThis.location?.protocol === 'https:';
-let busy = false, lastSuccess = 0, wakeLock = null, wantWake = wakeUsesHTTPS && typeof navigator.wakeLock?.request === 'function';
+function supportsWakeLock() { return wakeUsesHTTPS && typeof navigator.wakeLock?.request === 'function'; }
+let busy = false, lastSuccess = 0, wakeLock = null, wantWake = supportsWakeLock();
 let controlAllowed = false;
 const controlRequiredMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
 // 各页面共用同一授权指引；入口脚本先于其他页面模块执行。
@@ -241,32 +242,31 @@ function notifyWakeInterrupted(message = wakeInterrupted) {
 }
 // 点击提供系统所需的用户手势，恢复申请失败时也退回关闭状态。
 $('wake-dialog').onclick = async () => {
-  if (!wakeUsesHTTPS) { dismissWakeNotice(); return; }
+  if (!supportsWakeLock()) { showWakeState(); return; }
   if (wakePending) return;
   wakeFailed = false;
   wantWake = true;
   await keepAwake();
 };
 function showWakeState() {
+  const supported = supportsWakeLock();
+  // 不支持与暂时申请失败分开：前者禁用入口，后者仍允许手动重试。
+  if (!supported) { wantWake = false; wakeFailed = false; dismissWakeNotice(); }
   // 高亮代表已持有有效锁，不代表用户曾请求开启。
-  const active = !!(wakeLock && !wakeLock.released);
+  const active = supported && !!(wakeLock && !wakeLock.released);
   const unavailable = wantWake && !active && !wakePending;
   $('more-settings').setAttribute('data-wake-warning', String(unavailable));
   $('more-settings').setAttribute('aria-label', unavailable ? '更多设置，常亮未生效' : '更多设置');
-  $('wake').textContent = active ? '常亮已开启' : wakePending ? '正在申请常亮…' : wakeFailed ? '申请失败，点击重试' : '开启常亮';
+  $('wake').textContent = !wakeUsesHTTPS ? '需 HTTPS 才能常亮' : !supported ? '浏览器不支持常亮' : active ? '常亮已开启' : wakePending ? '正在申请常亮…' : wakeFailed ? '申请失败，点击重试' : '开启常亮';
   $('wake').setAttribute('aria-pressed', String(active));
-  $('wake').disabled = wakePending;
-  $('restore-wake').disabled = wakePending;
+  $('wake').disabled = !supported || wakePending;
+  $('restore-wake').disabled = !supported || wakePending;
   $('wake-heading').textContent = !wakeUsesHTTPS ? '非 HTTPS 链接不支持常亮' : wakePending ? '正在恢复常亮…' : '点击任意位置恢复常亮';
 }
 async function keepAwake() {
   if (wakeLock?.released) wakeLock = null;
-  if (!wakeUsesHTTPS || !wantWake || document.hidden || wakeLock || wakePending || wakeFailed) return;
-  if (!('wakeLock' in navigator)) {
-    failWakeRequest('常亮申请失败，当前浏览器不支持，已关闭。');
-    showWakeState();
-    return;
-  }
+  if (!supportsWakeLock()) { showWakeState(); return; }
+  if (!wantWake || document.hidden || wakeLock || wakePending || wakeFailed) return;
   wakePending = true;
   showWakeState();
   try {
@@ -287,11 +287,7 @@ async function keepAwake() {
   } finally { wakePending = false; showWakeState(); }
 }
 $('wake').onclick = async () => {
-  if (!wakeUsesHTTPS) {
-    $('wake-message').textContent = '请使用 HTTPS 地址访问。点击此处关闭提示。';
-    $('wake-dialog').showModal();
-    return;
-  }
+  if (!supportsWakeLock()) { showWakeState(); return; }
   if (wakePending) return;
   wantWake = !(wakeLock && !wakeLock.released);
   wakeFailed = false;

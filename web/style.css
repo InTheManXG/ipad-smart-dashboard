@@ -166,6 +166,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 @media(max-width:540px){.music-panel{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto auto minmax(0,1fr) 44px;min-height:250px}.music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:1/-1}.music-control{grid-row:4}#music-toggle{grid-column:3}#music-next{grid-column:4}#music-control-result{bottom:50px}}
 
 
+/* 常亮开启时显示勾选；不可用入口置灰，不显示可点击的悬停反馈。 */
+#wake[aria-pressed="true"]::before{content:"✓";margin-right:6px}#wake:disabled{background:#f2f3f5;border-color:#e7e8ec;color:var(--muted);opacity:1;cursor:not-allowed}
 /* 常亮未生效的红点持续到恢复或主动关闭，与短暂浮动提醒互补。 */
 .more-button{position:relative}.more-button[data-wake-warning="true"]::after{content:"";position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--error);box-shadow:0 0 0 2px var(--bg)}
 
