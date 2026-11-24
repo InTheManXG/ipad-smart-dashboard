@@ -36,7 +36,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     let action = value["action"] as? String ?? ""
     if action == "service-start" { try installService(start: true); return ["ok": true] }
     if action == "service-stop" {
-        if serviceLoaded() { _ = try launch(["bootout", NativePaths.domain + "/" + NativePaths.label]) }
+        try stopService()
         return ["ok": true]
     }
     if action == "status" {
@@ -112,7 +112,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
             return ["ok": true]
         }
         // 先停旧服务再切换地址，避免在途指令的回执和旧配对状态跨服务器串用。
-        if loaded { _ = try launch(["bootout", NativePaths.domain + "/" + NativePaths.label]) }
+        if loaded { try stopService() }
         do {
             try writeJSON(config, NativePaths.config)
             if loaded { try installService(start: true) }
@@ -166,7 +166,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
         let previous = config, loaded = serviceLoaded()
         config["musicLogin"] = enabled; try writeJSON(config, NativePaths.config)
         do {
-            _ = try launch(["bootout", NativePaths.domain + "/" + NativePaths.label], check: false)
+            try stopService()
             try installService(start: loaded)
         } catch {
             try writeJSON(previous, NativePaths.config); try? installService(start: loaded); throw error

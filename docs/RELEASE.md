@@ -2,11 +2,11 @@
 
 ## 当前发布范围
 
-当前发行版本号为 `0.3.12`，Git 标签为 `v0.3.12`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
+当前发行版本号为 `0.3.13`，Git 标签为 `v0.3.13`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
 
 当前提供明确标注 `unnotarized` 的 Apple Development 签名安装包，固定证书用于保持更新身份。它不是 Developer ID 发行签名，也没有 Apple 公证，不能称为已通过 Gatekeeper 的发行包。用户按 [未公证安装说明](UNNOTARIZED_INSTALL.md) 自行核对来源、校验并决定是否仅允许该 App。GitHub 自动提供的源码归档不代表 Mac 安装包。
 
-GitHub 的普通 Release 标记与 Apple 公证无关。已确认后台曾在额度采集时崩溃，另有原因尚未定位的异常退出；这些问题本版未修复，仍可能短暂掉线。
+GitHub 的普通 Release 标记与 Apple 公证无关。0.3.13 修复更新时旧后台尚未卸载完成、新 App 就误判启动成功而掉线的问题；启动成功现在以新的运行心跳为准。
 
 ## 通过 GitHub 打包发布
 

@@ -320,13 +320,49 @@ func managedKeys(_ body: Any? = nil, localStore: LocalKeys = LocalKeys()) throws
     return try localStore.list()
 }
 
-func launch(_ args: [String], check: Bool = true) throws -> Data {
-    let result = try execute("/bin/launchctl", args)
-    if check && result.0 != 0 { throw ControlError("后台服务操作失败，请检查登录项权限") }
-    return result.1
+func serviceInfo(target: String) throws -> String? {
+    let result = try execute("/bin/launchctl", ["print", target])
+    if result.0 == 113 { return nil } // launchd 的“找不到服务”，其他错误不能当成已停止。
+    guard result.0 == 0 else { throw ControlError("无法读取后台服务状态，请检查登录项权限") }
+    return String(decoding: result.1, as: UTF8.self)
 }
 func serviceLoaded() -> Bool {
-    (try? execute("/bin/launchctl", ["print", NativePaths.domain + "/" + NativePaths.label]).0) == 0
+    (try? serviceInfo(target: NativePaths.domain + "/" + NativePaths.label)) != nil
+}
+func stopService(target: String = NativePaths.domain + "/" + NativePaths.label, timeout: TimeInterval = 30) throws {
+    guard let info = try serviceInfo(target: target) else { return }
+    if !info.components(separatedBy: .newlines).map(trimmed).contains("state = SIGTERMed") {
+        let result = try execute("/bin/launchctl", ["bootout", target])
+        if result.0 != 0, try serviceInfo(target: target) != nil { throw ControlError("后台服务停止失败，请稍后重试") }
+    }
+    let deadline = ProcessInfo.processInfo.systemUptime + timeout
+    // bootout 返回只表示开始卸载；旧 App 必须等 job 消失，才能让更新后的 App 接管。
+    while try serviceInfo(target: target) != nil {
+        guard ProcessInfo.processInfo.systemUptime < deadline else { throw ControlError("后台服务仍在退出，请稍后重试") }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+}
+func startService(target: String, plist: URL, runtime: URL, timeout: TimeInterval = 30) throws {
+    var requestedAt = Date().timeIntervalSince1970
+    let deadline = ProcessInfo.processInfo.systemUptime + timeout
+    while ProcessInfo.processInfo.systemUptime < deadline {
+        if let info = try serviceInfo(target: target) {
+            let lines = info.components(separatedBy: .newlines).map(trimmed)
+            if lines.contains("state = running") {
+                if let heartbeat = try? readJSON(runtime), (number(heartbeat["updatedAt"]) ?? 0) >= requestedAt { return }
+            } else if !lines.contains("state = SIGTERMed") {
+                // 不带 -k，已运行的服务不能因打开 App 或保存设置被强制重启。
+                _ = try execute("/bin/launchctl", ["kickstart", target])
+            }
+        } else {
+            // 兼容从旧版更新：新 App 可能先启动，须等正在卸载的旧 job 消失再注册。
+            // 旧进程退出前还可能写心跳，注册新 job 后不能接受这份尾部快照。
+            requestedAt = Date().timeIntervalSince1970
+            _ = try execute("/bin/launchctl", ["bootstrap", NativePaths.domain, plist.path])
+        }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+    throw ControlError("后台服务未恢复运行心跳，请检查登录项或钥匙串授权后重试")
 }
 func installService(start: Bool) throws {
     let config = try configuration(), auto = config["musicLogin"] as? Bool ?? true
@@ -339,17 +375,8 @@ func installService(start: Bool) throws {
                              "StandardOutPath": NativePaths.data.appendingPathComponent("service.log").path]
     try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: path, options: .atomic)
     if start {
-        if !serviceLoaded() {
-            // bootout 返回后旧进程可能仍在退出，给 launchd 有界的清理时间。
-            var loaded = false
-            for _ in 0..<20 {
-                if try execute("/bin/launchctl", ["bootstrap", NativePaths.domain, path.path]).0 == 0 { loaded = true; break }
-                Thread.sleep(forTimeInterval: 0.25)
-            }
-            guard loaded else { throw ControlError("后台服务启动失败，请稍后重试") }
-        }
-        // 已加载但已退出的服务也须启动；不带 -k，避免中断正在运行的音乐指令。
-        _ = try launch(["kickstart", NativePaths.domain + "/" + NativePaths.label])
+        try startService(target: NativePaths.domain + "/" + NativePaths.label, plist: path,
+                         runtime: NativePaths.data.appendingPathComponent("runtime.json"))
     }
 }
 

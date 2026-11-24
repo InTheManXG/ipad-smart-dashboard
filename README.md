@@ -51,7 +51,7 @@
 
 ## 下载发行版
 
-当前发行版为 **0.3.12**。前往 [最新发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest)，优先下载 `iPad-Control-0.3.12-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。
+当前发行版为 **0.3.13**。前往 [最新发行页](https://github.com/InTheManXG/ipad-smart-dashboard/releases/latest)，优先下载 `iPad-Control-0.3.13-unnotarized-macos-arm64.dmg`，同时下载 `SHA256SUMS` 和 `UNNOTARIZED_INSTALL.md`；ZIP 作为备用，无需同时下载。
 
 1. 按 [安装说明](docs/UNNOTARIZED_INSTALL.md) 校验下载文件。
 2. 打开 DMG，将 App 拖入“应用程序”。
