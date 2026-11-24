@@ -204,6 +204,33 @@ import Darwin
         try check(try collector.unread().isEmpty, "空账号集合仍可正常读取")
         try unread([id])
 
+        // 新版 Codex 改在 SQLite 保存未读；同一对话的已读记录必须覆盖旧 JSON 的残留标记。
+        func receiptSQL(_ sql: String) throws {
+            try check(sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK, "更新未读测试记录")
+        }
+        try receiptSQL("CREATE TABLE thread_read_receipts (thread_id TEXT PRIMARY KEY NOT NULL, first_unread_turn TEXT, revision TEXT NOT NULL, last_published_turn TEXT)")
+        try receiptSQL("INSERT INTO thread_read_receipts VALUES ('\(id)','new-turn','revision',NULL)")
+        try unread([])
+        items = collector.snapshot()["conversations"] as! [JSONObject]
+        try check(items.count == 1 && items[0]["state"] as? String == "done" && items[0]["unread"] as? Bool == true, "新数据库的完成未读任务不被旧 JSON 漏掉")
+        try unread([id, otherUnreadID])
+        try receiptSQL("UPDATE thread_read_receipts SET first_unread_turn=NULL WHERE thread_id='\(id)'")
+        try check(try collector.unread() == Set([otherUnreadID]), "新版已读覆盖旧标记，尚未迁移的对话保留兼容")
+        try check((collector.snapshot()["conversations"] as! [JSONObject]).isEmpty, "新版确认已读后完成任务移出列表")
+        try receiptSQL("UPDATE thread_read_receipts SET first_unread_turn='next-turn' WHERE thread_id='\(id)'")
+        try receiptSQL("UPDATE threads SET updated_at=0 WHERE id='\(id)'")
+        let modernState = root.appendingPathComponent(".codex-global-state.json")
+        try FileManager.default.removeItem(at: modernState)
+        try check(try collector.unread() == Set([id]), "新版未读读取不依赖旧 JSON 文件存在")
+        try check((collector.snapshot()["conversations"] as! [JSONObject]).count == 1, "超过二十四小时的完成未读任务仍进入列表")
+        try Data("invalid-json".utf8).write(to: modernState)
+        try check(try collector.unread() == Set([id]), "旧 JSON 损坏不阻断有效的新未读记录")
+        try receiptSQL("ALTER TABLE thread_read_receipts RENAME COLUMN first_unread_turn TO incompatible_column")
+        try rejects("新版数据结构异常不能静默当作全部已读") { _ = try collector.unread() }
+        try receiptSQL("DROP TABLE thread_read_receipts")
+        try unread([id])
+        try check(try collector.unread() == Set([id]), "没有新版表时仍按旧版未读格式读取")
+
         // 独立数据库覆盖队列、显示截取与重启，不读取或改写用户的真实排序缓存。
         do {
             let orderingRoot = root.appendingPathComponent("ordering", isDirectory: true)

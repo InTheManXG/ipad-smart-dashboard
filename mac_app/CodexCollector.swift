@@ -91,6 +91,36 @@ final class CodexCollector {
         self.home = home; self.orderFile = orderFile
     }
     func unread() throws -> Set<String> {
+        var database: OpaquePointer?, statement: OpaquePointer?
+        guard sqlite3_open_v2(home.appendingPathComponent("state_5.sqlite").path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            if database != nil { sqlite3_close(database) }; throw ControlError("无法读取 Codex 数据库")
+        }
+        defer { sqlite3_finalize(statement); sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 1000)
+        guard sqlite3_prepare_v2(database, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'thread_read_receipts'", -1, &statement, nil) == SQLITE_OK else {
+            throw ControlError("无法检查 Codex 未读记录")
+        }
+        let result = sqlite3_step(statement)
+        guard result == SQLITE_ROW || result == SQLITE_DONE else { throw ControlError("无法检查 Codex 未读记录") }
+        if result == SQLITE_DONE { return try legacyUnread() }
+        sqlite3_finalize(statement); statement = nil
+        guard sqlite3_prepare_v2(database, "SELECT thread_id, first_unread_turn FROM thread_read_receipts", -1, &statement, nil) == SQLITE_OK else {
+            throw ControlError("Codex 未读数据结构已变化")
+        }
+        // 新版数据库记录覆盖旧 JSON；未迁移的对话仍使用旧记录，已读不能被旧标记重新点亮。
+        var unseen = (try? legacyUnread()) ?? []
+        var row = sqlite3_step(statement)
+        while row == SQLITE_ROW {
+            guard let value = sqlite3_column_text(statement, 0) else { throw ControlError("Codex 未读记录缺少对话标识") }
+            let id = String(cString: value)
+            if sqlite3_column_type(statement, 1) == SQLITE_NULL { unseen.remove(id) }
+            else { unseen.insert(id) }
+            row = sqlite3_step(statement)
+        }
+        guard row == SQLITE_DONE else { throw ControlError("无法读取 Codex 未读记录") }
+        return unseen
+    }
+    func legacyUnread() throws -> Set<String> {
         let data = try readJSON(home.appendingPathComponent(".codex-global-state.json"))
         guard let state = data["electron-thread-read-state-v1"] as? JSONObject, state["version"] as? Int == 1,
               let identities = state["unreadByIdentity"] as? JSONObject else { throw ControlError("桌面未读状态不可用") }
