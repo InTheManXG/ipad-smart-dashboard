@@ -91,6 +91,8 @@ final class CodexCollector {
         self.home = home; self.orderFile = orderFile
     }
     func unread() throws -> Set<String> {
+        // 桌面会先保存本地已读，再同步回执；同步被运行中回合延后时，以界面状态为准。
+        if let current = try? desktopUnread() { return current }
         var database: OpaquePointer?, statement: OpaquePointer?
         guard sqlite3_open_v2(home.appendingPathComponent("state_5.sqlite").path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             if database != nil { sqlite3_close(database) }; throw ControlError("无法读取 Codex 数据库")
@@ -120,20 +122,45 @@ final class CodexCollector {
         guard row == SQLITE_DONE else { throw ControlError("无法读取 Codex 未读记录") }
         return unseen
     }
+    func desktopUnread() throws -> Set<String>? {
+        let path = home.appendingPathComponent(".codex-global-state.sqlite")
+        guard FileManager.default.fileExists(atPath: path.path) else { return nil }
+        var database: OpaquePointer?, statement: OpaquePointer?
+        guard sqlite3_open_v2(path.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            if database != nil { sqlite3_close(database) }; throw ControlError("无法读取桌面已读状态")
+        }
+        defer { sqlite3_finalize(statement); sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 1000)
+        guard sqlite3_prepare_v2(database, "SELECT value FROM settings WHERE scope = 'global' AND key = 'electron-thread-read-state-v1'", -1, &statement, nil) == SQLITE_OK else {
+            throw ControlError("桌面已读数据结构已变化")
+        }
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE { return nil }
+        guard result == SQLITE_ROW, let value = sqlite3_column_text(statement, 0) else { throw ControlError("无法读取桌面已读状态") }
+        let state = try jsonObject(Data(String(cString: value).utf8))
+        let parsed = try parseUnreadState(state)
+        // 尚未迁移本机范围时继续兼容；存在空数组则明确表示本机已读完，不能回退旧标记。
+        return parsed.hasLocalScope ? parsed.ids : nil
+    }
     func legacyUnread() throws -> Set<String> {
         let data = try readJSON(home.appendingPathComponent(".codex-global-state.json"))
-        guard let state = data["electron-thread-read-state-v1"] as? JSONObject, state["version"] as? Int == 1,
+        guard let state = data["electron-thread-read-state-v1"] as? JSONObject else { throw ControlError("桌面未读状态不可用") }
+        return try parseUnreadState(state).ids
+    }
+    func parseUnreadState(_ state: JSONObject) throws -> (ids: Set<String>, hasLocalScope: Bool) {
+        guard state["version"] as? Int == 1,
               let identities = state["unreadByIdentity"] as? JSONObject else { throw ControlError("桌面未读状态不可用") }
-        var unread = Set<String>()
+        var unread = Set<String>(), hasLocalScope = false
         // 本地任务库由账号共用，合并各账号的本地未读标记，避免切换账号后整表失效。
         for identity in identities.values {
             guard let scopes = identity as? JSONObject else { throw ControlError("桌面未读状态不可用") }
             for (scope, value) in scopes where scope.hasPrefix("local:") {
+                hasLocalScope = true
                 guard let ids = value as? [String], ids.allSatisfy({ !$0.isEmpty }) else { throw ControlError("本地未读状态不可用") }
                 unread.formUnion(ids)
             }
         }
-        return unread
+        return (unread, hasLocalScope)
     }
     func snapshot() -> JSONObject {
         do {

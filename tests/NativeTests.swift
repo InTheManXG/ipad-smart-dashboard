@@ -225,6 +225,55 @@ import Darwin
         try check((collector.snapshot()["conversations"] as! [JSONObject]).count == 1, "超过二十四小时的完成未读任务仍进入列表")
         try Data("invalid-json".utf8).write(to: modernState)
         try check(try collector.unread() == Set([id]), "旧 JSON 损坏不阻断有效的新未读记录")
+
+        // 桌面持久状态可能先于回执更新；读取必须随状态变化，不能永久忽略曾经已读的对话。
+        do {
+            let desktopPath = root.appendingPathComponent(".codex-global-state.sqlite")
+            var desktopDB: OpaquePointer?
+            try check(sqlite3_open(desktopPath.path, &desktopDB) == SQLITE_OK, "创建隔离桌面状态数据库")
+            defer { sqlite3_close(desktopDB); try? FileManager.default.removeItem(at: desktopPath) }
+            try check(sqlite3_exec(desktopDB, "CREATE TABLE settings (scope TEXT, key TEXT, value TEXT, PRIMARY KEY(scope,key)) WITHOUT ROWID", nil, nil, nil) == SQLITE_OK, "创建桌面状态表")
+            func writeDesktop(_ value: String, scope: String = "global") throws {
+                var statement: OpaquePointer?
+                defer { sqlite3_finalize(statement) }
+                try check(sqlite3_prepare_v2(desktopDB, "INSERT OR REPLACE INTO settings VALUES (?, 'electron-thread-read-state-v1', ?)", -1, &statement, nil) == SQLITE_OK, "准备桌面状态夹具")
+                sqlite3_bind_text(statement, 1, scope, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_bind_text(statement, 2, value, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                try check(sqlite3_step(statement) == SQLITE_DONE, "写入桌面状态夹具")
+            }
+            func desktopState(_ ids: [String], version: Int = 1) throws -> String {
+                String(decoding: try jsonData(["version": version, "unreadByIdentity": ["account": ["local:test": ids]]]), as: UTF8.self)
+            }
+            try check(try collector.unread() == Set([id]), "桌面尚无状态行时回退回执")
+            try writeDesktop(try desktopState([]), scope: "atom")
+            try check(try collector.unread() == Set([id]), "其他作用域不能冒充桌面全局状态")
+            try unread([id, otherUnreadID])
+            try writeDesktop(try desktopState([]))
+            let beforeRead = try Data(contentsOf: desktopPath)
+            try check(try collector.unread().isEmpty, "桌面已读覆盖过期未读回执及旧 JSON")
+            try check((collector.snapshot()["conversations"] as! [JSONObject]).isEmpty, "桌面确认已读后完成任务移出列表")
+            try check(try Data(contentsOf: desktopPath) == beforeRead, "采集不改写桌面状态数据库")
+            try receiptSQL("UPDATE thread_read_receipts SET first_unread_turn=NULL WHERE thread_id='\(id)'")
+            try writeDesktop(try desktopState([id]))
+            try check(try collector.unread() == Set([id]), "桌面新未读覆盖尚未更新的已读回执，不合并旧 JSON")
+            let desktopItems = collector.snapshot()["conversations"] as! [JSONObject]
+            try check(desktopItems.count == 1 && desktopItems[0]["unread"] as? Bool == true, "新完成未读重新显示")
+            try writeDesktop(try desktopState([]))
+            try check(try collector.unread().isEmpty, "同一对话再次已读会及时清除")
+            try writeDesktop(String(decoding: try jsonData(["version": 1, "unreadByIdentity": [
+                "first": ["local:first": [id], "remote:server": [remoteID]],
+                "second": ["local:second": [id, otherUnreadID], "durable:remote": [remoteID]]
+            ]]), as: UTF8.self))
+            try check(try collector.unread() == Set([id, otherUnreadID]), "桌面多账号本地范围合并去重，排除远程范围")
+            try unread([])
+            try receiptSQL("UPDATE thread_read_receipts SET first_unread_turn='next-turn' WHERE thread_id='\(id)'")
+            try writeDesktop(try desktopState([], version: 2))
+            try check(try collector.unread() == Set([id]), "未知桌面状态版本回退回执")
+            try writeDesktop(String(decoding: try jsonData(["version": 1, "unreadByIdentity": ["account": ["remote:server": [remoteID]]]]), as: UTF8.self))
+            try check(try collector.unread() == Set([id]), "未建立本地范围时回退回执")
+            try writeDesktop("not-json")
+            try check(try collector.unread() == Set([id]), "桌面状态损坏时保留回执未读结果")
+        }
         try receiptSQL("ALTER TABLE thread_read_receipts RENAME COLUMN first_unread_turn TO incompatible_column")
         try rejects("新版数据结构异常不能静默当作全部已读") { _ = try collector.unread() }
         try receiptSQL("DROP TABLE thread_read_receipts")
