@@ -121,7 +121,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .relay-key-hint{font-family:ui-monospace,monospace;font-size:14px;font-weight:400;color:var(--muted);white-space:nowrap}
 
 /* 歌词区预留更多高度；任务独立滚动，避免把歌词推到屏外。 */
-.home-page{height:100dvh;display:flex;flex-direction:column;overflow:hidden;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+.home-page{height:100dvh;display:flex;flex-direction:column;overflow:hidden;padding-bottom:max(8px,env(safe-area-inset-bottom))}
 .home-page header,.home-page footer{flex-shrink:0}
 .home-page main{flex:1;min-height:0;display:flex;align-items:stretch;padding-bottom:8px}
 .home-page .tasks{width:100%;min-height:0;display:flex;flex-direction:column;padding:20px 24px}
