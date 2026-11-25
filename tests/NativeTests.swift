@@ -118,6 +118,137 @@ import Darwin
         let lines = parseLyrics("[offset:1000]\n[00:02.50][00:04.000]你好\n[00:05.00]\n[00:04.0]世界")
         try check(lines.count == 3 && number(lines[0]["time"]) == 1.5 && lines[1]["text"] as? String == "你好 / 世界" && lines[2]["text"] as? String == "", "歌词多时间标签与间奏、偏移")
         try check(normalizeSong("Ａ B_Ｃ！") == "abc", "兼容字符规范化")
+        do {
+            // 播放历史只是候选来源，必须用当前媒体信息复核，不能把最近一首直接当作正在播放。
+            let musicPath = root.appendingPathComponent("netease.sqlite")
+            var musicDB: OpaquePointer?
+            try check(sqlite3_open(musicPath.path, &musicDB) == SQLITE_OK, "创建隔离网易云数据库")
+            defer { sqlite3_close(musicDB) }
+            try check(sqlite3_exec(musicDB, "CREATE TABLE historyTracks (playtime INTEGER, id TEXT, jsonStr TEXT)", nil, nil, nil) == SQLITE_OK, "创建播放历史夹具")
+            let musicTrack: JSONObject = ["source": "网易云音乐", "title": "You Are My Sunshine (Version 1)", "artist": "Elizabeth Mitchell", "album": "You Are My Sunshine", "duration": 168.833]
+            let musicSong: JSONObject = ["id": "2533578", "name": "You Are My Sunshine (Version 1)", "artists": [["name": "Elizabeth Mitchell"]], "album": ["name": "You Are My Sunshine"], "duration": 168826]
+            func songText(_ value: JSONObject) throws -> String { String(decoding: try jsonData(value), as: UTF8.self) }
+            func musicRecords(_ records: [(Int, String, String)]) throws {
+                try check(sqlite3_exec(musicDB, "DELETE FROM historyTracks", nil, nil, nil) == SQLITE_OK, "清理隔离播放历史")
+                var statement: OpaquePointer?
+                try check(sqlite3_prepare_v2(musicDB, "INSERT INTO historyTracks VALUES (?, ?, ?)", -1, &statement, nil) == SQLITE_OK, "准备播放历史夹具")
+                defer { sqlite3_finalize(statement) }
+                for (time, id, json) in records {
+                    sqlite3_reset(statement); sqlite3_clear_bindings(statement)
+                    sqlite3_bind_int64(statement, 1, Int64(time))
+                    sqlite3_bind_text(statement, 2, id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                    sqlite3_bind_text(statement, 3, json, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                    try check(sqlite3_step(statement) == SQLITE_DONE, "写入播放历史夹具")
+                }
+            }
+            let validSongText = try songText(musicSong)
+            var wrongVersion = musicSong
+            wrongVersion["id"] = "573844205"; wrongVersion["name"] = "You Are My Sunshine (Version 2)"; wrongVersion["duration"] = 179866
+            try musicRecords([(1, "2533578", validSongText), (2, "573844205", try songText(wrongVersion)), (3, "broken", "{")])
+            let musicBefore = try Data(contentsOf: musicPath)
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == 2533578, "跳过坏记录和最近的其他版本，匹配真实歌曲 ID")
+            try check(try Data(contentsOf: musicPath) == musicBefore, "歌曲查询不修改网易云数据库")
+            for (field, mismatch) in [("title", "You Are My Sunshine (Version 2)"), ("artist", "其他歌手"), ("album", "其他专辑")] {
+                var track = musicTrack; track[field] = mismatch
+                try check(neteaseSongID(track, databaseURL: musicPath) == nil, "拒绝歌曲字段错配：" + field)
+            }
+            var roundedTrack = musicTrack; roundedTrack["duration"] = 169.826
+            try check(neteaseSongID(roundedTrack, databaseURL: musicPath) == 2533578, "允许系统媒体时长的一秒精度差")
+            for duration in [0.0, -1.0, 170.0, Double.infinity] {
+                var track = musicTrack; track["duration"] = duration
+                try check(neteaseSongID(track, databaseURL: musicPath) == nil, "拒绝无效或错配的播放时长")
+            }
+            for field in ["title", "artist", "album"] {
+                var track = musicTrack; track[field] = " "
+                try check(neteaseSongID(track, databaseURL: musicPath) == nil, "不使用缺少歌曲信息的本地记录：" + field)
+            }
+            var otherSource = musicTrack; otherSource["source"] = "Apple Music"
+            try check(neteaseSongID(otherSource, databaseURL: musicPath) == nil, "其他播放器不读取网易云历史")
+            var numericID = musicSong; numericID["id"] = 2533578
+            try musicRecords([(1, "2533578", try songText(numericID))])
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == 2533578, "兼容 JSON 中的数字歌曲 ID")
+            numericID["id"] = 9007199254740992
+            try musicRecords([(1, "9007199254740993", try songText(numericID))])
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == nil, "大整数 ID 不因浮点舍入而误匹配")
+            var duet = musicSong; duet["artists"] = [["name": "Elizabeth Mitchell"], ["name": "Lisa Loeb"]]
+            var duetTrack = musicTrack; duetTrack["artist"] = "Elizabeth Mitchell / Lisa Loeb"
+            try musicRecords([(1, "2533578", try songText(duet))])
+            try check(neteaseSongID(duetTrack, databaseURL: musicPath) == 2533578, "合唱歌手按媒体顺序匹配")
+            for id in ["0", "-1", "invalid", "2533578x", "999999999999999999999999"] {
+                var invalidSong = musicSong; invalidSong["id"] = id
+                try musicRecords([(1, id, try songText(invalidSong))])
+                try check(neteaseSongID(musicTrack, databaseURL: musicPath) == nil, "拒绝无效歌曲 ID：" + id)
+            }
+            try musicRecords([(1, "1", validSongText)])
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == nil, "数据库 ID 与歌曲 JSON 不一致时拒绝使用")
+            for invalidID in [true, 2533578.5] as [Any] {
+                var invalidSong = musicSong; invalidSong["id"] = invalidID
+                try musicRecords([(1, "2533578", try songText(invalidSong))])
+                try check(neteaseSongID(musicTrack, databaseURL: musicPath) == nil, "歌曲 JSON 不接受布尔值或小数 ID")
+            }
+            try musicRecords([(1, "2533578", validSongText)])
+            try check(sqlite3_exec(musicDB, "WITH RECURSIVE n(x) AS (SELECT 2 UNION ALL SELECT x+1 FROM n WHERE x<101) INSERT INTO historyTracks SELECT x, 'other-' || x, '{}' FROM n", nil, nil, nil) == SQLITE_OK, "创建较长的隔离播放历史")
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == nil, "只查最近一百条，避免每首歌全量扫描历史")
+            try check(sqlite3_exec(musicDB, "UPDATE historyTracks SET playtime=102 WHERE id='2533578'", nil, nil, nil) == SQLITE_OK, "将目标歌曲移到最新历史")
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == 2533578, "按播放时间而非存储顺序读取最近历史")
+            try musicRecords([(1, "2533578", validSongText)])
+            try check(sqlite3_exec(musicDB, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK, "锁定隔离网易云数据库")
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == nil, "数据库被独占时可回退搜索")
+            try check(sqlite3_exec(musicDB, "ROLLBACK", nil, nil, nil) == SQLITE_OK, "释放隔离数据库锁")
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == 2533578, "数据库解锁后可再次读取")
+            try check(sqlite3_exec(musicDB, "DROP TABLE historyTracks", nil, nil, nil) == SQLITE_OK, "模拟网易云结构变化")
+            try check(neteaseSongID(musicTrack, databaseURL: musicPath) == nil, "缺少历史表时回退搜索")
+            let missingMusicPath = root.appendingPathComponent("missing-netease.sqlite")
+            try check(neteaseSongID(musicTrack, databaseURL: missingMusicPath) == nil && !FileManager.default.fileExists(atPath: missingMusicPath.path), "缺少网易云数据库时不创建文件")
+            let corruptMusicPath = root.appendingPathComponent("corrupt-netease.sqlite")
+            try Data("not a SQLite database".utf8).write(to: corruptMusicPath)
+            try check(neteaseSongID(musicTrack, databaseURL: corruptMusicPath) == nil, "损坏数据库时回退搜索")
+        }
+        for initialState in ["missing", "error", "ready"] {
+            let lookupLock = NSLock(), lookupFinished = DispatchSemaphore(value: 0)
+            var lookupCalls = 0
+            let expectedLines: [JSONObject] = [["time": 0.0, "text": "恢复歌词"]]
+            let cachedMusic = NativeMusic { _ in
+                lookupLock.lock(); lookupCalls += 1; let call = lookupCalls; lookupLock.unlock()
+                defer { lookupFinished.signal() }
+                if call == 1 && initialState == "error" { throw ControlError("隔离歌词请求失败") }
+                return call == 1 && initialState == "missing" ? [] : expectedLines
+            }
+            func lyricCallCount() -> Int {
+                lookupLock.lock(); defer { lookupLock.unlock() }; return lookupCalls
+            }
+            let track: JSONObject = ["state": "ready", "trackId": "isolated-lyrics", "playing": false, "duration": 100.0, "position": 0.0]
+            let started = Date(timeIntervalSince1970: 1000)
+            func waitForLyrics(_ state: String, now: Date) throws {
+                let deadline = Date().addingTimeInterval(2)
+                repeat {
+                    // 查询回调之后还需一次采集更新，才能把缓存结果放进对外快照。
+                    cachedMusic.update(track, now: now)
+                    if cachedMusic.snapshot()["lyricsState"] as? String == state { return }
+                    Thread.sleep(forTimeInterval: 0.001)
+                } while Date() < deadline
+                try check(false, "等待异步歌词缓存：" + state)
+            }
+            cachedMusic.update(track, now: started)
+            try check(lookupFinished.wait(timeout: .now() + 2) == .success, "完成首次隔离歌词查询：" + initialState)
+            try waitForLyrics(initialState, now: started)
+            try check(lyricCallCount() == 1, "首次查询只调用一次：" + initialState)
+            cachedMusic.update(track, now: started.addingTimeInterval(59))
+            try check(lookupFinished.wait(timeout: .now() + 0.05) == .timedOut && lyricCallCount() == 1, "满六十秒之前不重复查询：" + initialState)
+            try check(cachedMusic.snapshot()["lyricsState"] as? String == initialState, "未过期时保留原歌词状态：" + initialState)
+            let recoveredAt = started.addingTimeInterval(60)
+            cachedMusic.update(track, now: recoveredAt)
+            if initialState == "ready" {
+                try check(lookupFinished.wait(timeout: .now() + 0.05) == .timedOut && lyricCallCount() == 1, "已有歌词满六十秒仍复用缓存")
+            } else {
+                try check(lookupFinished.wait(timeout: .now() + 2) == .success, "失败或未找到歌词满六十秒后重试：" + initialState)
+                try waitForLyrics("ready", now: recoveredAt)
+                try check(lyricCallCount() == 2, "恢复歌词只补查一次：" + initialState)
+            }
+            cachedMusic.update(track, now: started.addingTimeInterval(3600))
+            try check(lookupFinished.wait(timeout: .now() + 0.05) == .timedOut, "成功缓存长期保留：" + initialState)
+            try check(cachedMusic.snapshot()["lyricsState"] as? String == "ready" && (cachedMusic.snapshot()["lines"] as? [JSONObject])?.first?["text"] as? String == "恢复歌词", "查询成功后快照使用恢复的歌词：" + initialState)
+        }
         for text in ["GET / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\nx", "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", "POST / HTTP/1.1\r\nContent-Length: 999999\r\n\r\n", "GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n"] {
             try rejects("拒绝歧义 HTTP 请求") { _ = try HTTPMessage.parse(Data(text.utf8)) }
         }

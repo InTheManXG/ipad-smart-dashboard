@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import SQLite3
 
 func matches(_ pattern: String, _ value: String) -> [[String]] {
     guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
@@ -32,12 +33,44 @@ func lyricFetch(_ path: String, _ values: [String: String]) throws -> JSONObject
     guard let result = try HTTPFetch.request(url.url!, timeout: 6) as? JSONObject, result["code"] as? Int == 200 else { throw ControlError("歌词服务暂不可用") }
     return result
 }
+func neteaseSongID(_ track: JSONObject, databaseURL: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/com.netease.163music/Documents/storage/sqlite_storage.sqlite3")) -> Int? {
+    guard track["source"] as? String == "网易云音乐" else { return nil }
+    let title = normalizeSong(track["title"] as? String ?? ""), artist = normalizeSong(track["artist"] as? String ?? "")
+    let album = normalizeSong(track["album"] as? String ?? "")
+    guard !title.isEmpty, !artist.isEmpty, !album.isEmpty, let duration = number(track["duration"]), duration > 0 else { return nil }
+    var database: OpaquePointer?, statement: OpaquePointer?
+    guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        if database != nil { sqlite3_close(database) }; return nil
+    }
+    defer { sqlite3_finalize(statement); sqlite3_close(database) }
+    // 播放记录可能正在写入；短暂等锁后回退搜索，不占住音乐采集线程。
+    sqlite3_busy_timeout(database, 200)
+    // shortcut: 仅兼容当前网易云的最近 100 条播放记录；结构变化时回退搜索，再按新版结构适配。
+    guard sqlite3_prepare_v2(database, "SELECT id, jsonStr FROM historyTracks ORDER BY playtime DESC LIMIT 100", -1, &statement, nil) == SQLITE_OK else { return nil }
+    while sqlite3_step(statement) == SQLITE_ROW {
+        guard let rawID = sqlite3_column_text(statement, 0), let id = Int(String(cString: rawID)), id > 0,
+              let bytes = sqlite3_column_blob(statement, 1), (1...262144).contains(Int(sqlite3_column_bytes(statement, 1))),
+              let song = try? jsonObject(Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 1)))) else { continue }
+        let embeddedID: Int?
+        if let value = song["id"] as? String { embeddedID = Int(value) }
+        else if number(song["id"]) != nil { embeddedID = song["id"] as? Int }
+        else { embeddedID = nil }
+        let artists = (song["artists"] as? [JSONObject] ?? []).map { normalizeSong($0["name"] as? String ?? "") }
+        // 历史首项不一定是当前歌曲，必须核对版本信息，避免套用同名翻唱的歌词。
+        guard embeddedID == id, normalizeSong(song["name"] as? String ?? "") == title,
+              artists.contains(artist) || artists.joined() == artist,
+              normalizeSong((song["album"] as? JSONObject)?["name"] as? String ?? "") == album,
+              let milliseconds = number(song["duration"]), milliseconds > 0, abs(milliseconds / 1000 - duration) <= 1 else { continue }
+        return id
+    }
+    return nil
+}
 func findLyrics(_ track: JSONObject) throws -> [JSONObject] {
     let title = normalizeSong(track["title"] as? String ?? ""), artist = normalizeSong(track["artist"] as? String ?? "")
     let album = normalizeSong(track["album"] as? String ?? ""), duration = number(track["duration"]) ?? 0
-    var songID: Int?
+    var songID = neteaseSongID(track)
     // 保留已核实的旧版补录，不能用其他同名版本的时间轴代替。
-    if title == "梦醒时分" && artist == "周冰倩" && album == "梦醒时分" && abs(duration - 244.333) <= 1 { songID = 334909 }
+    if songID == nil && title == "梦醒时分" && artist == "周冰倩" && album == "梦醒时分" && abs(duration - 244.333) <= 1 { songID = 334909 }
     if songID == nil {
         let result = try lyricFetch("search/get", ["s": (track["title"] as? String ?? "") + " " + (track["artist"] as? String ?? ""), "type": "1", "limit": "30"])
         let songs = (result["result"] as? JSONObject)?["songs"] as? [JSONObject] ?? []
@@ -80,10 +113,12 @@ func readPlayer() throws -> JSONObject {
 
 final class NativeMusic {
     private let lock = NSLock(), commandLock = NSLock()
+    private let lookupLyrics: (JSONObject) throws -> [JSONObject]
     private var value: JSONObject = ["state": "offline"], received = 0.0, enabled = true
     private var layout = "standard"
     private var cache: [String: (Date, String, [JSONObject])] = [:], loading = Set<String>()
     private var completed = [String: Bool](), order = [String]()
+    init(lookupLyrics: @escaping (JSONObject) throws -> [JSONObject] = findLyrics) { self.lookupLyrics = lookupLyrics }
     func setEnabled(_ next: Bool) { lock.lock(); enabled = next; if !next { value = ["state": "offline"] }; lock.unlock() }
     func setLayout(_ next: String) { lock.lock(); layout = (try? validatedMusicLayout(next)) ?? "standard"; lock.unlock() }
     func isEnabled() -> Bool { lock.lock(); defer { lock.unlock() }; return enabled }
@@ -98,20 +133,21 @@ final class NativeMusic {
         }
         return result
     }
-    func update(_ track: JSONObject) {
+    func update(_ track: JSONObject, now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
         guard enabled else { return }
         var next = track
         if let id = track["trackId"] as? String {
             if let cached = cache[id] { next["lyricsState"] = cached.1; next["lines"] = cached.2 }
-            if !loading.contains(id) && (cache[id] == nil || (cache[id]!.1 == "error" && Date().timeIntervalSince(cache[id]!.0) >= 60)) {
+            // 切歌时播放记录可能尚未落盘，未匹配与请求失败都须重试，不能永久缓存无歌词。
+            if !loading.contains(id) && (cache[id] == nil || (cache[id]!.1 != "ready" && now.timeIntervalSince(cache[id]!.0) >= 60)) {
                 loading.insert(id)
                 DispatchQueue.global().async {
-                    let result = Result { try findLyrics(track) }
+                    let result = Result { try self.lookupLyrics(track) }
                     self.lock.lock(); defer { self.lock.unlock() }
                     switch result {
-                    case .success(let lines): self.cache[id] = (Date(), lines.isEmpty ? "missing" : "ready", lines)
-                    case .failure: self.cache[id] = (Date(), "error", [])
+                    case .success(let lines): self.cache[id] = (now, lines.isEmpty ? "missing" : "ready", lines)
+                    case .failure: self.cache[id] = (now, "error", [])
                     }
                     self.loading.remove(id)
                     if self.cache.count > 32, let oldest = self.cache.min(by: { $0.value.0 < $1.value.0 })?.key { self.cache.removeValue(forKey: oldest) }
