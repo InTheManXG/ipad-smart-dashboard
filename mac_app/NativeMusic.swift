@@ -156,21 +156,26 @@ final class NativeMusic {
     func run() {
         while true {
             let start = ProcessInfo.processInfo.systemUptime
-            if isEnabled() { update((try? readPlayer()) ?? ["state": "unavailable"]) }
+            // 常驻线程不会自动逐轮排空，媒体查询的临时对象必须在本轮结束时释放。
+            autoreleasepool {
+                if isEnabled() { update((try? readPlayer()) ?? ["state": "unavailable"]) }
+            }
             Thread.sleep(forTimeInterval: max(0, 0.25 - (ProcessInfo.processInfo.systemUptime - start)))
         }
     }
     func publish() {
         while true {
             let started = ProcessInfo.processInfo.systemUptime
-            do {
-                let response = try publishDevice("api/device/exchange", ["music": snapshot()])
-                if let command = (response["commands"] as? [JSONObject])?.first, let id = command["requestId"] as? String {
-                    let result = cloudCommandAllowed(command) ? control(command, started: started) : ["ok": false, "error": "read_only"]
-                    let next = snapshot()
-                    _ = try publishDevice("api/device/exchange", ["music": next, "acks": [["requestId": id, "ok": result["ok"] as? Bool == true]]])
-                }
-            } catch { }
+            autoreleasepool {
+                do {
+                    let response = try publishDevice("api/device/exchange", ["music": snapshot()])
+                    if let command = (response["commands"] as? [JSONObject])?.first, let id = command["requestId"] as? String {
+                        let result = cloudCommandAllowed(command) ? control(command, started: started) : ["ok": false, "error": "read_only"]
+                        let next = snapshot()
+                        _ = try publishDevice("api/device/exchange", ["music": next, "acks": [["requestId": id, "ok": result["ok"] as? Bool == true]]])
+                    }
+                } catch { }
+            }
             // 停用后仍同步开关，避免公网保留最后一份启用状态。
             Thread.sleep(forTimeInterval: max(0, (isEnabled() ? 0.25 : 1) - (ProcessInfo.processInfo.systemUptime - started)))
         }

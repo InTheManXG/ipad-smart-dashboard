@@ -311,15 +311,18 @@ final class NativeBackend {
         Thread.detachNewThread {
             var pairing: JSONObject = ["paired": false]
             while true {
-                do {
-                    if pairing["paired"] as? Bool == true { pairing = try pairingStatus() }
-                    else if (number(pairing["expiresAt"]) ?? 0) <= Date().timeIntervalSince1970 { pairing = try pairingStart() }
-                    else {
-                        let current = try pairingStatus()
-                        if current["paired"] as? Bool == true { pairing = current }
-                    }
-                } catch { }
-                self.lock.lock(); self.cloudPairing = pairing; self.lock.unlock()
+                // 自建常驻线程按轮排空临时对象，避免 JSON、网络及管道对象累积到线程退出。
+                autoreleasepool {
+                    do {
+                        if pairing["paired"] as? Bool == true { pairing = try pairingStatus() }
+                        else if (number(pairing["expiresAt"]) ?? 0) <= Date().timeIntervalSince1970 { pairing = try pairingStart() }
+                        else {
+                            let current = try pairingStatus()
+                            if current["paired"] as? Bool == true { pairing = current }
+                        }
+                    } catch { }
+                    self.lock.lock(); self.cloudPairing = pairing; self.lock.unlock()
+                }
                 Thread.sleep(forTimeInterval: 10)
             }
         }
@@ -327,29 +330,30 @@ final class NativeBackend {
         Thread.detachNewThread { self.music.publish() }
         Thread.detachNewThread {
             while true {
-                do {
-                    let response = try publishDevice("api/device/exchange", ["waitForCommand": true, "status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject]()])
-                    if let command = (response["commands"] as? [JSONObject])?.first,
-                       let id = command["requestId"] as? String {
-                        let ok: Bool
-                        let allowed = cloudCommandAllowed(command)
-                        if allowed, command["kind"] as? String == "open", let thread = command["threadId"] as? String,
-                           self.canOpenConversation(thread) {
-                            ok = (try? self.executeOpen(thread)) == true
-                        } else if allowed, command["kind"] as? String == "console", let target = command["id"] as? String {
-                            ok = (try? self.console.start(["id": target])) != nil
-                        } else if command["kind"] as? String == "usage", let key = command["id"] as? String {
-                            let usage = try? self.keys.usage(key, force: true)
-                            ok = usage != nil
-                            _ = try publishDevice("api/device/exchange", ["acks": [["requestId": id, "ok": ok, "usage": usage ?? JSONObject()] ]])
-                            Thread.sleep(forTimeInterval: 0.05)
-                            continue
-                        } else { ok = false }
-                        _ = try publishDevice("api/device/exchange", ["acks": [["requestId": id, "ok": ok]]])
+                autoreleasepool {
+                    do {
+                        let response = try publishDevice("api/device/exchange", ["waitForCommand": true, "status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject]()])
+                        if let command = (response["commands"] as? [JSONObject])?.first,
+                           let id = command["requestId"] as? String {
+                            let ok: Bool
+                            let allowed = cloudCommandAllowed(command)
+                            if allowed, command["kind"] as? String == "open", let thread = command["threadId"] as? String,
+                               self.canOpenConversation(thread) {
+                                ok = (try? self.executeOpen(thread)) == true
+                            } else if allowed, command["kind"] as? String == "console", let target = command["id"] as? String {
+                                ok = (try? self.console.start(["id": target])) != nil
+                            } else if command["kind"] as? String == "usage", let key = command["id"] as? String {
+                                let usage = try? self.keys.usage(key, force: true)
+                                ok = usage != nil
+                                _ = try publishDevice("api/device/exchange", ["acks": [["requestId": id, "ok": ok, "usage": usage ?? JSONObject()] ]])
+                                return
+                            } else { ok = false }
+                            _ = try publishDevice("api/device/exchange", ["acks": [["requestId": id, "ok": ok]]])
+                        }
+                    } catch {
+                        // 失败时退避，避免离线时空转；已下发的控制指令不自动重试。
+                        Thread.sleep(forTimeInterval: 1)
                     }
-                } catch {
-                    // 失败时退避，避免离线时空转；已下发的控制指令不自动重试。
-                    Thread.sleep(forTimeInterval: 1)
                 }
                 // 服务端等待指令时立即唤醒，不再在每次成功交换后固定睡一秒。
                 Thread.sleep(forTimeInterval: 0.05)
@@ -357,13 +361,16 @@ final class NativeBackend {
         }
         Thread.detachNewThread {
             while true {
-                let result = Result { try readQuota() }
-                self.lock.lock()
-                switch result {
-                case .success(var value): value["quotaAvailable"] = true; value["cached"] = false; value["updatedAt"] = Date().timeIntervalSince1970; self.quota = value
-                case .failure: self.quota["cached"] = self.quota["quotaAvailable"] as? Bool == true
+                autoreleasepool {
+                    let result = Result { try readQuota() }
+                    self.lock.lock()
+                    switch result {
+                    case .success(var value): value["quotaAvailable"] = true; value["cached"] = false; value["updatedAt"] = Date().timeIntervalSince1970; self.quota = value
+                    case .failure: self.quota["cached"] = self.quota["quotaAvailable"] as? Bool == true
+                    }
+                    self.lock.unlock()
                 }
-                self.lock.unlock(); Thread.sleep(forTimeInterval: 60)
+                Thread.sleep(forTimeInterval: 60)
             }
         }
         // 历史日志首次回放可能较慢，不能阻塞端口就绪与 App 状态心跳。
@@ -375,22 +382,24 @@ final class NativeBackend {
             }
         }
         while true {
-            let config = try configuration()
-            music.setEnabled(config["musicEnabled"] as? Bool ?? true)
-            music.setLayout(configuredMusicLayout(config))
-            if server?.failed == true { listenerError = server?.errorDescription ?? ""; server?.stop(); server = nil }
-            if config["dashboardEnabled"] as? Bool != false && server == nil {
-                server = try LocalHTTPServer(port: 18088, host: "0.0.0.0", handler: handle); server?.start()
-            } else if config["dashboardEnabled"] as? Bool == false && server != nil { server?.stop(); server = nil }
-            if server?.isRunning == true { listenerError = "" }
-            lock.lock(); let pairing = cloudPairing; lock.unlock()
-            var runtime: JSONObject = ["dashboard": server?.isRunning == true ? "运行中" : "已停止或端口被占用", "listenerError": listenerError, "music": music.isEnabled() ? "运行中" : "已停止", "updatedAt": Date().timeIntervalSince1970]
-            runtime["publicURL"] = publicAddress(config)
-            runtime["localPairingCode"] = localPairing.current()
-            runtime["paired"] = pairing["paired"] as? Bool ?? false
-            runtime["pairingCode"] = pairing["code"] ?? NSNull()
-            runtime["pairingExpiresAt"] = pairing["expiresAt"] ?? NSNull()
-            try writeJSON(runtime, NativePaths.data.appendingPathComponent("runtime.json"))
+            try autoreleasepool {
+                let config = try configuration()
+                music.setEnabled(config["musicEnabled"] as? Bool ?? true)
+                music.setLayout(configuredMusicLayout(config))
+                if server?.failed == true { listenerError = server?.errorDescription ?? ""; server?.stop(); server = nil }
+                if config["dashboardEnabled"] as? Bool != false && server == nil {
+                    server = try LocalHTTPServer(port: 18088, host: "0.0.0.0", handler: handle); server?.start()
+                } else if config["dashboardEnabled"] as? Bool == false && server != nil { server?.stop(); server = nil }
+                if server?.isRunning == true { listenerError = "" }
+                lock.lock(); let pairing = cloudPairing; lock.unlock()
+                var runtime: JSONObject = ["dashboard": server?.isRunning == true ? "运行中" : "已停止或端口被占用", "listenerError": listenerError, "music": music.isEnabled() ? "运行中" : "已停止", "updatedAt": Date().timeIntervalSince1970]
+                runtime["publicURL"] = publicAddress(config)
+                runtime["localPairingCode"] = localPairing.current()
+                runtime["paired"] = pairing["paired"] as? Bool ?? false
+                runtime["pairingCode"] = pairing["code"] ?? NSNull()
+                runtime["pairingExpiresAt"] = pairing["expiresAt"] ?? NSNull()
+                try writeJSON(runtime, NativePaths.data.appendingPathComponent("runtime.json"))
+            }
             Thread.sleep(forTimeInterval: 1)
         }
     }

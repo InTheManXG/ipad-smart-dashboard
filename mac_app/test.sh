@@ -13,3 +13,4 @@ xcrun swiftc -parse-as-library -swift-version 5 -module-cache-path .build/swift-
   mac_app/WindowDockState.swift tests/WindowDockStateTests.swift -o .build/window-dock-tests
 .build/window-dock-tests
 bash mac_app/test-service-lifecycle.sh
+bash mac_app/test-service-memory.sh
