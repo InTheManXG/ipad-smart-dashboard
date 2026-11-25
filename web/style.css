@@ -138,7 +138,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .music-source{position:absolute;top:12px;left:16px;display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;line-height:20px;white-space:nowrap;pointer-events:none}
 /* 使用本机网易云应用自带图标，保留原图透明边距和比例。 */
 .music-source-logo{width:24px;height:24px;object-fit:contain;flex:none}.music-source-logo[hidden]{display:none}
-.music-control{grid-row:1/4;align-self:stretch;width:100%;padding:0;border:0;border-radius:12px;color:#666871;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
+/* 上下各收进 32px，按压底色避开来源标识，图标仍保持垂直居中。 */
+.music-control{grid-row:1/4;align-self:stretch;margin-block:32px;width:100%;padding:0;border:0;border-radius:12px;color:#666871;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
 .music-control svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 #music-previous{grid-column:1}#music-replay{grid-column:2}#music-toggle{grid-column:4;color:var(--ink)}#music-next{grid-column:5}
 /* 触屏会保留 hover 状态；底色只由按住时的 active 提供，松开即透明。 */
@@ -170,7 +171,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 @media(max-width:700px){.music-panel{padding:12px 18px}.music-meta{gap:8px}#music-title{font-size:14px}.lyric-lines{--lyric-step:32px}.lyric-line{font-size:22px}}
 @media(max-height:500px){.home-page{height:auto;min-height:100dvh;overflow:visible}.home-page main{flex:none;height:300px}.music-panel{min-height:190px}}
 /* 手机宽度不足以容纳两侧操作时，按钮放到下方，仍保留 44px 点击区域。 */
-@media(max-width:540px){.music-panel{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto auto minmax(0,1fr) 44px;min-height:250px}.music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:1/-1}.music-control{grid-row:4}#music-toggle{grid-column:3}#music-next{grid-column:4}#music-control-result{bottom:50px}}
+@media(max-width:540px){.music-panel{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto auto minmax(0,1fr) 44px;min-height:250px}.music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:1/-1}.music-control{grid-row:4;margin-block:0}#music-toggle{grid-column:3}#music-next{grid-column:4}#music-control-result{bottom:50px}}
 
 
 /* 常亮开启时显示勾选；不可用入口置灰，不显示可点击的悬停反馈。 */
