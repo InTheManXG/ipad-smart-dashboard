@@ -344,6 +344,7 @@ final class NativeBackend {
         Thread.detachNewThread {
             var consoleUpload = ConsoleSnapshotUpload()
             while true {
+                let cycleStarted = ProcessInfo.processInfo.systemUptime
                 autoreleasepool {
                     do {
                         let snapshot = (try? self.console.snapshot()) ?? [JSONObject]()
@@ -378,8 +379,8 @@ final class NativeBackend {
                         Thread.sleep(forTimeInterval: 1)
                     }
                 }
-                // 服务端等待指令时立即唤醒，不再在每次成功交换后固定睡一秒。
-                Thread.sleep(forTimeInterval: 0.05)
+                // 网络等待计入轮询间隔，避免已等待指令后再额外停顿五十毫秒。
+                Thread.sleep(forTimeInterval: max(0, 0.05 - (ProcessInfo.processInfo.systemUptime - cycleStarted)))
             }
         }
         Thread.detachNewThread {
