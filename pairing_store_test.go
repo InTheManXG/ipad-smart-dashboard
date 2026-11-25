@@ -482,6 +482,50 @@ func TestPairingSnapshotPrivacyAndFreshness(t *testing.T) {
 	}
 }
 
+func TestPairingStatusExchangePreservesConsoleUntilRefresh(t *testing.T) {
+	store := newPairingStore(t)
+	id, action := registerPairingDevice(t, store), newID()
+	icon := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n"))
+	console := []any{Object{"id": action, "name": "应用", "kind": "app", "state": "idle", "icon": icon}}
+	if _, err := store.Exchange(id, Object{"status": Object{}, "console": console}); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	consoleAt := store.snapshots[id].consoleAt
+	store.mu.Unlock()
+	if _, err := store.Exchange(id, Object{"status": Object{}}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := store.Read(id, "console", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := current.([]any)
+	if len(items) != 1 || items[0].(Object)["id"] != action || items[0].(Object)["icon"] != icon {
+		t.Fatalf("status-only exchange lost console or icon: %v", current)
+	}
+	store.mu.Lock()
+	unchanged := store.snapshots[id].consoleAt.Equal(consoleAt)
+	// 省略未变快照只能减少上传，不能替旧控制台续期；过期后必须重新上传。
+	store.snapshots[id].consoleAt = time.Now().Add(-freshTTL - time.Second)
+	store.mu.Unlock()
+	if !unchanged {
+		t.Fatal("status-only exchange refreshed console timestamp")
+	}
+	if _, err := store.Exchange(id, Object{"status": Object{}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Read(id, "console", "")
+	pairingError(t, err, 503)
+	if _, err := store.Exchange(id, Object{"status": Object{}, "console": console}); err != nil {
+		t.Fatal(err)
+	}
+	current, err = store.Read(id, "console", "")
+	if err != nil || len(current.([]any)) != 1 || current.([]any)[0].(Object)["icon"] != icon {
+		t.Fatalf("console refresh did not restore readable icon: %v %v", current, err)
+	}
+}
+
 func TestPairingCleanConsoleBoundaries(t *testing.T) {
 	raw := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 40000-8)...)
 	icon := "data:image/png;base64," + base64.StdEncoding.EncodeToString(raw)

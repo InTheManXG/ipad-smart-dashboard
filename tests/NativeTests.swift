@@ -26,6 +26,19 @@ import Darwin
         try rejects("输出超限正常返回错误") { _ = try execute("/usr/bin/printf", ["too-long"], limit: 1) }
         try check(try execute("/bin/sleep", ["1"], timeout: 0.05).0 != 0, "超时停止子进程")
         try check(openDescriptorCount() <= descriptorsBefore + 2, "成功和错误路径均释放管道")
+        var consoleUpload = ConsoleSnapshotUpload()
+        let consoleData = try jsonData([["id": "test", "name": "测试应用", "state": "idle", "icon": "test-icon"]])
+        try check(consoleUpload.needsUpload(consoleData, now: 100), "首次连接上传完整控制台")
+        try check(consoleUpload.needsUpload(consoleData, now: 100.1), "未确认成功的上传仍需重试")
+        consoleUpload.didUpload(consoleData, now: 100)
+        try check(!consoleUpload.needsUpload(consoleData, now: 100.8), "等待下一条指令不重复上传图标")
+        try check(!consoleUpload.needsUpload(consoleData, now: 104.99), "未变化的列表在保活前复用")
+        try check(consoleUpload.needsUpload(consoleData, now: 105), "五秒时补发列表避免中继过期")
+        let changedConsole = try jsonData([["id": "test", "name": "测试应用", "state": "running", "icon": "test-icon"]])
+        try check(consoleUpload.needsUpload(changedConsole, now: 101), "执行状态变化立即上传")
+        try check(consoleUpload.needsUpload(try jsonData([]), now: 101), "清空控制台立即上传")
+        consoleUpload = ConsoleSnapshotUpload()
+        try check(consoleUpload.needsUpload(consoleData, now: 101), "连接失败后重新上传完整列表")
         // UA 只做展示，覆盖重叠标识、桌面模式与未知客户端，不能用作设备认证。
         for (ua, expected) in [
             ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0", "Windows · Edge 156"),

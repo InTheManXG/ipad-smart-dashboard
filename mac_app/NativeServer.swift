@@ -208,6 +208,19 @@ final class LocalHTTPServer {
     }
 }
 
+struct ConsoleSnapshotUpload {
+    private var previous: Data?
+    private var uploadedAt = -Double.infinity
+
+    func needsUpload(_ snapshot: Data, now: TimeInterval) -> Bool {
+        // 图标随列表变化上传；五秒保活低于中继的十五秒过期时间。
+        previous != snapshot || now - uploadedAt >= 5
+    }
+    mutating func didUpload(_ snapshot: Data, now: TimeInterval) {
+        previous = snapshot; uploadedAt = now
+    }
+}
+
 final class NativeBackend {
     let lock = NSLock(), collector = CodexCollector(), music = NativeMusic(), keys = LocalKeys()
     let console: ConsoleActions
@@ -329,10 +342,18 @@ final class NativeBackend {
         Thread.detachNewThread { self.music.run() }
         Thread.detachNewThread { self.music.publish() }
         Thread.detachNewThread {
+            var consoleUpload = ConsoleSnapshotUpload()
             while true {
                 autoreleasepool {
                     do {
-                        let response = try publishDevice("api/device/exchange", ["waitForCommand": true, "status": self.status(), "keys": self.publicKeys(), "console": (try? self.console.snapshot()) ?? [JSONObject]()])
+                        let snapshot = (try? self.console.snapshot()) ?? [JSONObject]()
+                        let snapshotData = try jsonData(snapshot)
+                        let started = ProcessInfo.processInfo.systemUptime
+                        let uploadConsole = consoleUpload.needsUpload(snapshotData, now: started)
+                        var body: JSONObject = ["waitForCommand": true, "status": self.status(), "keys": self.publicKeys()]
+                        if uploadConsole { body["console"] = snapshot }
+                        let response = try publishDevice("api/device/exchange", body)
+                        if uploadConsole { consoleUpload.didUpload(snapshotData, now: started) }
                         if let command = (response["commands"] as? [JSONObject])?.first,
                            let id = command["requestId"] as? String {
                             let ok: Bool
@@ -351,6 +372,8 @@ final class NativeBackend {
                             _ = try publishDevice("api/device/exchange", ["acks": [["requestId": id, "ok": ok]]])
                         }
                     } catch {
+                        // 连接恢复后补发完整列表，不能沿用失败请求或旧连接的上传记录。
+                        consoleUpload = ConsoleSnapshotUpload()
                         // 失败时退避，避免离线时空转；已下发的控制指令不自动重试。
                         Thread.sleep(forTimeInterval: 1)
                     }
