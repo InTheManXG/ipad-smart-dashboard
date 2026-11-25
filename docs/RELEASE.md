@@ -2,7 +2,7 @@
 
 ## 当前发布范围
 
-当前发行版本号为 `0.3.16`，Git 标签为 `v0.3.16`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
+当前发行版本号为 `0.3.17`，Git 标签为 `v0.3.17`；在 GitHub 发布为普通 Release，不勾选预发布。Mac 构建目标仅为 **Apple Silicon / arm64**，最低部署目标为 macOS 13；这不代表 macOS 13 及之后的所有版本已经验证。除本机自动化及隔离用户目录检查外，beta.3 已在独立 M1 Mac mini、macOS 27.0.1 上验证首次 GUI 安装、配对与控制权限、版本替换保留配置和退出后台。具体操作、证据与限制见 [实际验收记录](ACCEPTANCE.md)；macOS 13、实际 iPad、多播放器及真实中转站 Key 的升级仍未验收。
 
 当前提供明确标注 `unnotarized` 的 Apple Development 签名安装包，固定证书用于保持更新身份。它不是 Developer ID 发行签名，也没有 Apple 公证，不能称为已通过 Gatekeeper 的发行包。用户按 [未公证安装说明](UNNOTARIZED_INSTALL.md) 自行核对来源、校验并决定是否仅允许该 App。GitHub 自动提供的源码归档不代表 Mac 安装包。
 
@@ -12,9 +12,13 @@ GitHub 的普通 Release 标记与 Apple 公证无关。0.3.13 修复更新时�
 
 0.3.16 修复 iPadService 常驻循环未及时释放临时对象导致的内存持续增长。音乐采集、网络交换、配对、额度和配置刷新均按轮释放，新增隔离媒体轮询的内存回归；本机短时观察通过，尚未完成数小时持续运行验收。
 
+0.3.17 增加独立的歌词翻译与注音开关、网易云本地歌曲 ID 匹配和更大的歌词显示区域，并减少快捷列表重复上传与指令轮询等待。已验证真实英、日、粤语歌词及本机与公网联动；注音沿用歌词源内容，实际 iPad 未复测。
+
 ## 通过 GitHub 打包发布
 
 发行附件统一由 GitHub Actions 的 `macos-15` Apple Silicon runner 从版本标签编译、打包、验证并直接上传到 GitHub Release。维护者本机只做开发和验收，不上传本机构建的安装包。beta.4 已通过这一流程发布，见[实际打包记录](https://github.com/InTheManXG/ipad-smart-dashboard/actions/runs/43840655193)。
+
+从 0.3.17 起，发行构建号使用标签所指提交的完整历史提交数，避免工作流运行号小于已安装测试版而不提示更新。发行标签沿主分支递增，不重写已发布历史；打包后须核对 `CFBundleVersion` 与更新源构建号一致且高于上一版。
 
 1. 将已验证的源码提交并推送到 GitHub，为该提交创建新的语义版本标签，例如 `v0.1.0`。无预发布后缀时发布为普通 Release；带后缀（例如 `v0.2.0-beta.1`）时才标记预发布。推送新标签会自动触发 `Release` 工作流。
 2. 也可在仓库的 [Actions → Release](https://github.com/InTheManXG/ipad-smart-dashboard/actions/workflows/release.yml) 点击 `Run workflow`，选择 `main`，将 `version` 填为已推送的版本标签，`artifact` 选择 `unnotarized`。

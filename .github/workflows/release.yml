@@ -99,13 +99,16 @@ jobs:
     timeout-minutes: 10
     env:
       RELEASE_TAG: ${{ github.event.inputs.version || github.ref_name }}
-      APP_BUILD: ${{ github.run_number }}
       SIGNING_IDENTITY: ${{ secrets.DEVELOPMENT_SIGNING_IDENTITY }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
+      - name: Set release build number
+        run: |
+          # 完整源码历史沿主分支递增，避免工作流运行号低于本机测试构建而漏报更新。
+          echo "APP_BUILD=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -192,7 +195,6 @@ jobs:
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
       NOTARY_KEYCHAIN_PROFILE: ipad-release
-      APP_BUILD: ${{ github.run_number }}
     steps:
       - name: Require distribution credentials
         shell: bash
@@ -207,6 +209,10 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
+      - name: Set release build number
+        run: |
+          # 公证与未公证发行使用同一构建号规则。
+          echo "APP_BUILD=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
