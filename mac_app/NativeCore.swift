@@ -145,7 +145,7 @@ func writeJSON(_ value: Any, _ url: URL) throws {
 }
 func configuration() throws -> JSONObject {
     if !FileManager.default.fileExists(atPath: NativePaths.config.path) {
-        return ["publicURL": "", "musicEnabled": false, "musicLayout": "standard", "dashboardEnabled": false, "musicLogin": false]
+        return ["publicURL": "", "musicEnabled": false, "musicLayout": "standard", "musicTranslationEnabled": false, "musicPhoneticEnabled": false, "dashboardEnabled": false, "musicLogin": false]
     }
     return try readJSON(NativePaths.config)
 }
@@ -158,6 +158,13 @@ func validatedMusicLayout(_ value: Any?) throws -> String {
 // 旧配置没有布局字段，损坏或未来版本的值也安全回退到原有标准布局。
 func configuredMusicLayout(_ config: JSONObject) -> String {
     (try? validatedMusicLayout(config["musicLayout"])) ?? "standard"
+}
+func validatedLyricOptions(_ value: JSONObject) throws -> (translation: Bool, phonetic: Bool) {
+    guard let translation = value["translationEnabled"] as? NSNumber, CFGetTypeID(translation) == CFBooleanGetTypeID(),
+          let phonetic = value["phoneticEnabled"] as? NSNumber, CFGetTypeID(phonetic) == CFBooleanGetTypeID() else {
+        throw ControlError("歌词显示开关不正确")
+    }
+    return (translation.boolValue, phonetic.boolValue)
 }
 func displayToken() throws -> String {
     let account = NativePaths.identityAccount("display-token")

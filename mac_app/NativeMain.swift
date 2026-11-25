@@ -41,6 +41,7 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     }
     if action == "status" {
         var status: JSONObject = ["musicEnabled": config["musicEnabled"] as? Bool ?? true, "musicLayout": configuredMusicLayout(config), "publicURL": publicAddress(config), "dashboard": "已停止", "music": "已停止", "musicLogin": config["musicLogin"] as? Bool ?? true,
+                                  "musicTranslationEnabled": config["musicTranslationEnabled"] as? Bool ?? false, "musicPhoneticEnabled": config["musicPhoneticEnabled"] as? Bool ?? false,
                                   "appLogin": FileManager.default.fileExists(atPath: NativePaths.agents.appendingPathComponent("com.iamxg.ipad-control.plist").path)]
         if let runtime = try? readJSON(NativePaths.data.appendingPathComponent("runtime.json")), Date().timeIntervalSince1970 - (number(runtime["updatedAt"]) ?? 0) < 8, serviceLoaded() {
             status["dashboard"] = runtime["dashboard"]; status["music"] = runtime["music"]
@@ -151,6 +152,11 @@ func nativeDispatch(_ value: JSONObject) throws -> JSONObject {
     if ["key-save", "key-delete"].contains(action) {
         var body = value; body["action"] = action == "key-save" ? "save" : "delete"
         _ = try managedKeys(body)
+    } else if action == "music-lyrics" {
+        let options = try validatedLyricOptions(value)
+        config["musicTranslationEnabled"] = options.translation; config["musicPhoneticEnabled"] = options.phonetic
+        try writeJSON(config, NativePaths.config); try installService(start: true)
+        Thread.sleep(forTimeInterval: 1.2)
     } else if action == "music-layout" {
         config["musicLayout"] = try validatedMusicLayout(value["layout"])
         try writeJSON(config, NativePaths.config); try installService(start: true)

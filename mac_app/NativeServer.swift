@@ -319,6 +319,7 @@ final class NativeBackend {
         let initialConfig = try configuration()
         music.setEnabled(initialConfig["musicEnabled"] as? Bool ?? true)
         music.setLayout(configuredMusicLayout(initialConfig))
+        music.setLyricOptions(translation: initialConfig["musicTranslationEnabled"] as? Bool ?? false, phonetic: initialConfig["musicPhoneticEnabled"] as? Bool ?? false)
         var listenerError = ""
         // 公网不可用不能阻塞本地监听、采集和 App 状态刷新。
         Thread.detachNewThread {
@@ -410,6 +411,7 @@ final class NativeBackend {
                 let config = try configuration()
                 music.setEnabled(config["musicEnabled"] as? Bool ?? true)
                 music.setLayout(configuredMusicLayout(config))
+                music.setLyricOptions(translation: config["musicTranslationEnabled"] as? Bool ?? false, phonetic: config["musicPhoneticEnabled"] as? Bool ?? false)
                 if server?.failed == true { listenerError = server?.errorDescription ?? ""; server?.stop(); server = nil }
                 if config["dashboardEnabled"] as? Bool != false && server == nil {
                     server = try LocalHTTPServer(port: 18088, host: "0.0.0.0", handler: handle); server?.start()

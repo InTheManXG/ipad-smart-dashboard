@@ -12,6 +12,7 @@ function applyMusicLayout(visible, layout) {
   const key = `${visible}:${mode}`;
   if (key === musicLayoutKey) return;
   musicLayoutKey = key;
+  lastLyricFrame = null;
   const home = musicNode('home'), page = musicNode('music'), panel = musicNode('music-panel');
   const full = visible && mode === 'full';
   home.classList.toggle('music-hidden', !visible || full);
@@ -50,27 +51,52 @@ function renderLyrics(snapshot, frame) {
   const timed = Number.isInteger(frame.index);
   let key = lyricKey;
   if (snapshot !== renderedSnapshot || !timed) {
-    key = timed ? JSON.stringify([snapshot.title, snapshot.artist, snapshot.source, snapshot.duration, snapshot.lines]) : frame.current;
+    key = timed ? JSON.stringify([snapshot.title, snapshot.artist, snapshot.source, snapshot.duration, snapshot.lines,
+      snapshot.translationEnabled === true, snapshot.phoneticEnabled === true]) : frame.current;
   }
   const changed = key !== lyricKey;
   const active = timed ? frame.index + 1 : 0;
   if (changed) {
-    const texts = timed ? ['前奏', ...snapshot.lines.map(line => line.text || '间奏')] : [frame.current];
-    track.replaceChildren(...texts.map(text => {
+    const lines = timed ? [{text:'前奏'}, ...snapshot.lines] : [{text:frame.current}];
+    let hasDetails = false;
+    track.replaceChildren(...lines.map(line => {
       const node = document.createElement('p');
-      node.className = 'lyric-line'; node.textContent = text;
+      const text = line.text || '间奏';
+      const details = [
+        ['translation', snapshot?.translationEnabled === true],
+        ['phonetic', snapshot?.phoneticEnabled === true]
+      ].filter(([field, enabled]) => enabled && typeof line[field] === 'string' && line[field].trim());
+      node.className = 'lyric-line';
+      if (!details.length) node.textContent = text;
+      else {
+        hasDetails = true; node.dataset.details = 'true';
+        const original = document.createElement('span');
+        original.className = 'lyric-original'; original.textContent = text; node.append(original);
+        for (const [field] of details) {
+          const extra = document.createElement('span');
+          extra.className = `lyric-extra lyric-${field}`; extra.textContent = line[field]; node.append(extra);
+        }
+      }
       return node;
     }));
+    track.dataset.details = String(hasDetails);
   }
   // 同一首歌自然前进时移动现有歌词；切歌、跳转和断线立即定位，避免扫过无关句子。
   const smooth = !changed && timed && lastLyricFrame &&
     frame.index >= lastLyricFrame.index && frame.index <= lastLyricFrame.index + 1 &&
     Math.abs(frame.position - lastLyricFrame.position) <= 2.5;
   track.className = smooth ? 'smooth' : '';
-  if (changed || active !== (Number.isInteger(lastLyricFrame?.index) ? lastLyricFrame.index + 1 : 0)) {
+  const activeChanged = active !== (Number.isInteger(lastLyricFrame?.index) ? lastLyricFrame.index + 1 : 0);
+  if (changed || activeChanged) {
     for (let i = 0; i < track.children.length; i++) track.children[i].className = i === active ? 'lyric-line active' : 'lyric-line';
   }
-  track.style.transform = `translateY(calc(${1 - active} * var(--lyric-step)))`;
+  if (track.dataset.details === 'true') {
+    // 附加语言行高度各不相同，按真实位置居中，不能继续按固定行距滚动。
+    if (changed || activeChanged || !lastLyricFrame) {
+      const current = track.children[active];
+      track.style.transform = `translateY(${-current.offsetTop - current.offsetHeight / 2}px)`;
+    }
+  } else track.style.transform = `translateY(calc(${1 - active} * var(--lyric-step)))`;
   lyricKey = key; renderedSnapshot = snapshot; lastLyricFrame = frame;
 }
 
@@ -179,6 +205,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 refreshMusic();
 
 if (typeof window !== 'undefined') window.addEventListener('paired', () => refreshMusic());
+if (typeof window !== 'undefined') window.addEventListener('resize', () => { lastLyricFrame = null; renderMusic(); });
 if (typeof window !== 'undefined') window.addEventListener('pairing-invalid', () => {
   musicInvalidated = true; musicRevision++; musicSnapshot = null; musicControlAllowed = false;
   renderMusic();

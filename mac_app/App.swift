@@ -28,6 +28,8 @@ struct PairedScreen: Identifiable {
     @Published var dashboard = "正在检查…"
     @Published var musicEnabled = false
     @Published var musicLayout = "standard"
+    @Published var musicTranslationEnabled = false
+    @Published var musicPhoneticEnabled = false
     @Published var musicLogin = false
     @Published var appLogin = false
     @Published var publicURL = ""
@@ -90,6 +92,8 @@ struct PairedScreen: Identifiable {
             self.dashboard = result["dashboard"] as? String ?? "未知"
             self.musicEnabled = result["musicEnabled"] as? Bool ?? false
             self.musicLayout = result["musicLayout"] as? String ?? "standard"
+            self.musicTranslationEnabled = result["musicTranslationEnabled"] as? Bool ?? false
+            self.musicPhoneticEnabled = result["musicPhoneticEnabled"] as? Bool ?? false
             self.musicLogin = result["musicLogin"] as? Bool ?? false
             self.appLogin = result["appLogin"] as? Bool ?? false
             let address = result["publicURL"] as? String ?? ""
@@ -116,6 +120,12 @@ struct PairedScreen: Identifiable {
     func setMusicLayout(_ layout: String) async {
         await perform(["action": "music-layout", "layout": layout], success: "音乐布局已更新") { _ in
             self.musicLayout = layout
+        }
+    }
+
+    func setMusicLyrics(translation: Bool, phonetic: Bool) async {
+        await perform(["action": "music-lyrics", "translationEnabled": translation, "phoneticEnabled": phonetic], success: "歌词显示已更新") { _ in
+            self.musicTranslationEnabled = translation; self.musicPhoneticEnabled = phonetic
         }
     }
 
@@ -303,6 +313,15 @@ struct ControlView: View {
                         .font(.callout).foregroundStyle(.secondary)
                     Text("布局统一应用到所有已配对网页；关闭音乐同步时仅显示任务，保留所选布局。")
                         .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    Toggle("显示翻译", isOn: Binding(get: { model.musicTranslationEnabled }, set: { enabled in
+                        Task { await model.setMusicLyrics(translation: enabled, phonetic: model.musicPhoneticEnabled) }
+                    }))
+                    Toggle("显示注音", isOn: Binding(get: { model.musicPhoneticEnabled }, set: { enabled in
+                        Task { await model.setMusicLyrics(translation: model.musicTranslationEnabled, phonetic: enabled) }
+                    }))
+                    Text("翻译帮助理解歌词，注音帮助跟唱；可同时开启。仅显示歌词源已提供的内容，没有时不占位。")
+                        .font(.callout).foregroundStyle(.secondary)
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }
             Button("刷新同步状态") { Task { await model.refresh() } }

@@ -57,8 +57,67 @@ func TestMusicValidation(t *testing.T) {
 	value := musicTestSnapshot()
 	value["title"] = strings.Repeat("中", 300)
 	clean, err := validateMusic(value)
-	if err != nil || clean["layout"] != "standard" {
+	if err != nil || clean["layout"] != "standard" || clean["translationEnabled"] != false || clean["phoneticEnabled"] != false {
 		t.Fatalf("legacy snapshot or Unicode boundary rejected: %v", err)
+	}
+}
+
+func TestMusicLyricVariantsValidationAndRoundTrip(t *testing.T) {
+	for _, translationEnabled := range []bool{false, true} {
+		for _, phoneticEnabled := range []bool{false, true} {
+			m := NewMusic()
+			value := musicTestSnapshot()
+			value["translationEnabled"], value["phoneticEnabled"] = translationEnabled, phoneticEnabled
+			value["lines"] = []any{Object{"time": 2, "text": "原文", "translation": "译文", "phonetic": "jyut6 man4", "private": "must-not-leak"}}
+			if err := m.Put(value); err != nil {
+				t.Fatal(err)
+			}
+			got := m.Get()
+			if got["translationEnabled"] != translationEnabled || got["phoneticEnabled"] != phoneticEnabled {
+				t.Fatalf("lyric display flags changed: %v", got)
+			}
+			line := got["lines"].([]any)[0].(Object)
+			if len(line) != 4 || line["text"] != "原文" || line["translation"] != "译文" || line["phonetic"] != "jyut6 man4" {
+				t.Fatalf("lyric variants were dropped or private fields leaked: %v", line)
+			}
+		}
+	}
+	for _, field := range []string{"translation", "phonetic"} {
+		for _, invalid := range []any{nil, true, 1, []any{}, Object{}, strings.Repeat("中", 301)} {
+			value := musicTestSnapshot()
+			value["lines"] = []any{Object{"time": 0, "text": "原文", field: invalid}}
+			if _, err := validateMusic(value); err == nil {
+				t.Errorf("invalid %s accepted: %v", field, invalid)
+			}
+		}
+		for _, valid := range []string{"", strings.Repeat("中", 300)} {
+			value := musicTestSnapshot()
+			value["lines"] = []any{Object{"time": 0, "text": "原文", field: valid}}
+			clean, err := validateMusic(value)
+			if err != nil || clean["lines"].([]any)[0].(Object)[field] != valid {
+				t.Errorf("valid %s Unicode boundary rejected: %v", field, err)
+			}
+		}
+	}
+	for _, state := range []string{"ready", "idle", "unavailable", "offline"} {
+		for _, field := range []string{"translationEnabled", "phoneticEnabled"} {
+			for _, invalid := range []any{nil, "true", 1, []any{}, Object{}} {
+				value := musicTestSnapshot()
+				value["state"], value[field] = state, invalid
+				if _, err := validateMusic(value); err == nil {
+					t.Errorf("invalid %s accepted in %s: %v", field, state, invalid)
+				}
+			}
+		}
+		value := musicTestSnapshot()
+		value["state"], value["translationEnabled"], value["phoneticEnabled"] = state, true, true
+		clean, err := validateMusic(value)
+		if err != nil || clean["translationEnabled"] != true || clean["phoneticEnabled"] != true {
+			t.Fatalf("display flags lost in %s: %v %v", state, clean, err)
+		}
+		if state != "ready" && (clean["lines"] != nil || clean["title"] != nil) {
+			t.Fatalf("non-ready state retained old song: %v", clean)
+		}
 	}
 }
 
@@ -66,6 +125,7 @@ func TestMusicProgressAndOfflineLayout(t *testing.T) {
 	m := NewMusic()
 	value := musicTestSnapshot()
 	value["enabled"], value["layout"] = false, "full"
+	value["translationEnabled"], value["phoneticEnabled"] = true, true
 	if err := m.Put(value); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +140,7 @@ func TestMusicProgressAndOfflineLayout(t *testing.T) {
 	m.received = time.Now().Add(-9 * time.Second)
 	m.mu.Unlock()
 	offline := m.Get()
-	if len(offline) != 3 || offline["state"] != "offline" || offline["enabled"] != false || offline["layout"] != "full" {
+	if len(offline) != 5 || offline["state"] != "offline" || offline["enabled"] != false || offline["layout"] != "full" || offline["translationEnabled"] != true || offline["phoneticEnabled"] != true {
 		t.Fatalf("offline retained song data or lost display settings: %v", offline)
 	}
 	value["playing"] = false

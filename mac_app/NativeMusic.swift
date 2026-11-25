@@ -27,6 +27,24 @@ func parseLyrics(_ text: String) -> [JSONObject] {
     }
     return groups.keys.sorted().prefix(1000).map { ["time": $0, "text": String(groups[$0]!.joined(separator: " / ").prefix(300))] }
 }
+func parseLyricResponse(_ response: JSONObject) -> [JSONObject] {
+    var lines = parseLyrics((response["lrc"] as? JSONObject)?["lyric"] as? String ?? "")
+    guard !lines.isEmpty else { return [] }
+    let times = lines.map { number($0["time"])! }
+    for (field, source) in [("translation", "tlyric"), ("phonetic", "romalrc")] {
+        let extra = parseLyrics((response[source] as? JSONObject)?["lyric"] as? String ?? "")
+        var index = 0
+        for line in extra {
+            let time = number(line["time"])!
+            while index + 1 < times.count && abs(times[index + 1] - time) < abs(times[index] - time) { index += 1 }
+            // 各语言可能缺句或单独标注作者，只按相近时间戳对齐，不能按行号硬凑。
+            guard abs(times[index] - time) <= 0.05, let text = line["text"] as? String, !text.isEmpty,
+                  let original = lines[index]["text"] as? String, !original.isEmpty, text != original else { continue }
+            lines[index][field] = text
+        }
+    }
+    return lines
+}
 func lyricFetch(_ path: String, _ values: [String: String]) throws -> JSONObject {
     var url = URLComponents(string: "https://music.163.com/api/" + path)!
     url.queryItems = values.map { URLQueryItem(name: $0.key, value: $0.value) }
@@ -85,8 +103,8 @@ func findLyrics(_ track: JSONObject) throws -> [JSONObject] {
         songID = candidates.sorted { $0.0 != $1.0 ? !$0.0 : ($0.1 != $1.1 ? $0.1 < $1.1 : $0.2 < $1.2) }.first?.2
     }
     guard let id = songID else { return [] }
-    let data = try lyricFetch("song/lyric", ["id": String(id), "lv": "-1", "kv": "-1", "tv": "-1"])
-    return parseLyrics((data["lrc"] as? JSONObject)?["lyric"] as? String ?? "")
+    let data = try lyricFetch("song/lyric", ["id": String(id), "lv": "-1", "kv": "-1", "tv": "-1", "rv": "-1"])
+    return parseLyricResponse(data)
 }
 
 func media(_ arguments: [String]) throws -> Data {
@@ -116,18 +134,20 @@ final class NativeMusic {
     private let lookupLyrics: (JSONObject) throws -> [JSONObject]
     private var value: JSONObject = ["state": "offline"], received = 0.0, enabled = true
     private var layout = "standard"
+    private var translationEnabled = false, phoneticEnabled = false
     private var cache: [String: (Date, String, [JSONObject])] = [:], loading = Set<String>()
     private var completed = [String: Bool](), order = [String]()
     init(lookupLyrics: @escaping (JSONObject) throws -> [JSONObject] = findLyrics) { self.lookupLyrics = lookupLyrics }
     func setEnabled(_ next: Bool) { lock.lock(); enabled = next; if !next { value = ["state": "offline"] }; lock.unlock() }
     func setLayout(_ next: String) { lock.lock(); layout = (try? validatedMusicLayout(next)) ?? "standard"; lock.unlock() }
+    func setLyricOptions(translation: Bool, phonetic: Bool) { lock.lock(); translationEnabled = translation; phoneticEnabled = phonetic; lock.unlock() }
     func isEnabled() -> Bool { lock.lock(); defer { lock.unlock() }; return enabled }
     func snapshot() -> JSONObject {
         lock.lock(); defer { lock.unlock() }
         // 停用与采集离线必须区分，网页用此开关决定是否为歌词保留布局空间。
-        guard enabled else { return ["state": "offline", "enabled": false, "layout": layout] }
-        guard ProcessInfo.processInfo.systemUptime - received <= 8 else { return ["state": "offline", "enabled": true, "layout": layout] }
-        var result = value; result["enabled"] = true; result["layout"] = layout
+        var result: JSONObject = enabled && ProcessInfo.processInfo.systemUptime - received <= 8 ? value : ["state": "offline"]
+        result["enabled"] = enabled; result["layout"] = layout
+        result["translationEnabled"] = translationEnabled; result["phoneticEnabled"] = phoneticEnabled
         if result["state"] as? String == "ready", result["playing"] as? Bool == true {
             result["position"] = min(number(result["duration"]) ?? 0, (number(result["position"]) ?? 0) + ProcessInfo.processInfo.systemUptime - received)
         }

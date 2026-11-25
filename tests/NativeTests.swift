@@ -119,6 +119,40 @@ import Darwin
         try check(lines.count == 3 && number(lines[0]["time"]) == 1.5 && lines[1]["text"] as? String == "你好 / 世界" && lines[2]["text"] as? String == "", "歌词多时间标签与间奏、偏移")
         try check(normalizeSong("Ａ B_Ｃ！") == "abc", "兼容字符规范化")
         do {
+            let original = "[offset:1000]\n[00:02.000]First line\n[00:03.000]\n[00:04.000]Second line\n[00:06.000]Third line"
+            let translated = "[offset:2000]\n[00:02.000]译者署名\n[00:03.020]第一句\n[00:04.000]不应填入间奏\n[00:05.000]Second line\n[00:07.000]第三句"
+            let phonetic = "[offset:500]\n[00:01.500]first pronunciation\n[00:03.550]second pronunciation\n[00:05.551]too far away"
+            let response: JSONObject = ["lrc": ["lyric": original], "tlyric": ["lyric": translated], "romalrc": ["lyric": phonetic]]
+            let enriched = parseLyricResponse(response), plain = parseLyrics(original)
+            try check(enriched.count == plain.count && enriched.map { number($0["time"]) } == plain.map { number($0["time"]) } && enriched.map { $0["text"] as? String } == plain.map { $0["text"] as? String }, "翻译注音不改变原歌词行、时间轴和间奏")
+            try check(enriched[0]["translation"] as? String == "第一句" && enriched[0]["phonetic"] as? String == "first pronunciation", "不同 offset 分别校正后按时间对齐翻译和注音")
+            try check(enriched[1]["translation"] == nil && enriched[1]["phonetic"] == nil, "原文间奏不混入翻译或注音")
+            try check(enriched[2]["translation"] == nil && enriched[2]["phonetic"] as? String == "second pronunciation", "相同原文不重复，五十毫秒内注音仍可匹配")
+            try check(enriched[3]["translation"] as? String == "第三句" && enriched[3]["phonetic"] == nil, "缺句或超出容差的注音不串到下一句")
+            let blankResponse: JSONObject = ["lrc": ["lyric": "[00:01.000]原文"], "tlyric": ["lyric": "[00:01.000]   "], "romalrc": ["lyric": "[00:01.000]原文"]]
+            let blankExtras = parseLyricResponse(blankResponse)
+            try check(blankExtras[0]["translation"] == nil && blankExtras[0]["phonetic"] == nil, "空白或与原文相同的辅助歌词不输出")
+            try check(parseLyricResponse(["tlyric": ["lyric": translated], "romalrc": ["lyric": phonetic]]).isEmpty, "没有原文时不单独拼接翻译和注音")
+            try check(try jsonData(parseLyricResponse(["lrc": ["lyric": original]])) == jsonData(plain), "没有辅助歌词时保持原解析结果")
+        }
+        for translation in [false, true] {
+            for phonetic in [false, true] {
+                let options = try validatedLyricOptions(["translationEnabled": translation, "phoneticEnabled": phonetic])
+                try check(options.translation == translation && options.phonetic == phonetic, "独立验证四种歌词开关组合")
+            }
+        }
+        for field in ["translationEnabled", "phoneticEnabled"] {
+            for invalid in [0, 1, 1.0, "true", NSNull(), [true]] as [Any] {
+                var options: JSONObject = ["translationEnabled": false, "phoneticEnabled": false]
+                options[field] = invalid
+                try rejects("歌词开关拒绝非布尔值：" + field) { _ = try validatedLyricOptions(options) }
+            }
+            var missing: JSONObject = ["translationEnabled": false, "phoneticEnabled": false]
+            missing.removeValue(forKey: field)
+            try rejects("歌词开关拒绝缺失字段：" + field) { _ = try validatedLyricOptions(missing) }
+        }
+        try rejects("歌词开关拒绝空参数") { _ = try validatedLyricOptions([:]) }
+        do {
             // 播放历史只是候选来源，必须用当前媒体信息复核，不能把最近一首直接当作正在播放。
             let musicPath = root.appendingPathComponent("netease.sqlite")
             var musicDB: OpaquePointer?
@@ -207,7 +241,7 @@ import Darwin
         for initialState in ["missing", "error", "ready"] {
             let lookupLock = NSLock(), lookupFinished = DispatchSemaphore(value: 0)
             var lookupCalls = 0
-            let expectedLines: [JSONObject] = [["time": 0.0, "text": "恢复歌词"]]
+            let expectedLines: [JSONObject] = [["time": 0.0, "text": "恢复歌词", "translation": "Recovered lyrics", "phonetic": "hui fu ge ci"]]
             let cachedMusic = NativeMusic { _ in
                 lookupLock.lock(); lookupCalls += 1; let call = lookupCalls; lookupLock.unlock()
                 defer { lookupFinished.signal() }
@@ -248,6 +282,24 @@ import Darwin
             cachedMusic.update(track, now: started.addingTimeInterval(3600))
             try check(lookupFinished.wait(timeout: .now() + 0.05) == .timedOut, "成功缓存长期保留：" + initialState)
             try check(cachedMusic.snapshot()["lyricsState"] as? String == "ready" && (cachedMusic.snapshot()["lines"] as? [JSONObject])?.first?["text"] as? String == "恢复歌词", "查询成功后快照使用恢复的歌词：" + initialState)
+            if initialState == "ready" {
+                for translation in [false, true] {
+                    for phonetic in [false, true] {
+                        cachedMusic.setLyricOptions(translation: translation, phonetic: phonetic)
+                        let snapshot = cachedMusic.snapshot()
+                        try check(snapshot["translationEnabled"] as? Bool == translation && snapshot["phoneticEnabled"] as? Bool == phonetic, "切换开关立即更新播放快照")
+                        try check(try jsonData(snapshot["lines"] as! [JSONObject]) == jsonData(expectedLines), "显示开关不删除已缓存翻译和注音")
+                    }
+                }
+                cachedMusic.update(track, now: started.addingTimeInterval(7200))
+                try check(lookupFinished.wait(timeout: .now() + 0.05) == .timedOut && lyricCallCount() == 1, "切换歌词显示不重新查询")
+                cachedMusic.update(["state": "idle"])
+                try check(cachedMusic.snapshot()["lines"] == nil, "没有当前歌曲时不残留旧歌词")
+                cachedMusic.setEnabled(false)
+                try check(cachedMusic.snapshot()["state"] as? String == "offline" && cachedMusic.snapshot()["lines"] == nil, "停用音乐不残留旧歌词")
+                cachedMusic.setEnabled(true); cachedMusic.update(track)
+                try check(cachedMusic.snapshot()["lyricsState"] as? String == "ready" && lookupFinished.wait(timeout: .now() + 0.05) == .timedOut && lyricCallCount() == 1, "再次启用仍复用原歌词缓存")
+            }
         }
         for text in ["GET / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\nx", "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", "POST / HTTP/1.1\r\nContent-Length: 999999\r\n\r\n", "GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n"] {
             try rejects("拒绝歧义 HTTP 请求") { _ = try HTTPMessage.parse(Data(text.utf8)) }
@@ -575,6 +627,27 @@ import Darwin
         try check(afterKick.authorized(repaired, now: 2077) && !afterKick.authorized(firstWeb, now: 2077), "重新配对只授予新令牌权限")
         try check(try reopened.list(now: 2001 + 31 * 86400).isEmpty, "列表清理过期网页")
         let disabledMusic = NativeMusic()
+        try check(disabledMusic.snapshot()["translationEnabled"] as? Bool == false && disabledMusic.snapshot()["phoneticEnabled"] as? Bool == false, "旧配置默认关闭翻译与注音")
+        for translation in [false, true] {
+            for phonetic in [false, true] {
+                let optionMusic = NativeMusic()
+                optionMusic.setLyricOptions(translation: translation, phonetic: phonetic)
+                try check(optionMusic.snapshot()["state"] as? String == "offline" && optionMusic.snapshot()["translationEnabled"] as? Bool == translation && optionMusic.snapshot()["phoneticEnabled"] as? Bool == phonetic, "未采集时的离线快照保留两个歌词开关")
+                optionMusic.update(["state": "ready", "playing": false, "lines": [["time": 0, "text": "旧歌词", "translation": "Old lyrics", "phonetic": "jiu ge ci"]]])
+                try check(optionMusic.snapshot()["translationEnabled"] as? Bool == translation && optionMusic.snapshot()["phoneticEnabled"] as? Bool == phonetic, "播放时保留两个歌词开关")
+                for state in ["idle", "offline", "unavailable"] {
+                    optionMusic.update(["state": state])
+                    let snapshot = optionMusic.snapshot()
+                    try check(snapshot["state"] as? String == state && snapshot["translationEnabled"] as? Bool == translation && snapshot["phoneticEnabled"] as? Bool == phonetic && snapshot["lines"] == nil, "非播放状态保留开关并清除旧歌词：" + state)
+                }
+                optionMusic.setEnabled(false)
+                optionMusic.update(["state": "ready", "lines": [["time": 0, "text": "晚到的歌词"]]])
+                let stopped = optionMusic.snapshot()
+                try check(stopped["enabled"] as? Bool == false && stopped["state"] as? String == "offline" && stopped["translationEnabled"] as? Bool == translation && stopped["phoneticEnabled"] as? Bool == phonetic && stopped["lines"] == nil, "停用时保持歌词开关并拒绝晚到歌词")
+                optionMusic.setEnabled(true)
+                try check(optionMusic.snapshot()["translationEnabled"] as? Bool == translation && optionMusic.snapshot()["phoneticEnabled"] as? Bool == phonetic && optionMusic.snapshot()["lines"] == nil, "再次启用保留歌词开关且不恢复旧快照")
+            }
+        }
         try check(configuredMusicLayout([:]) == "standard", "旧配置默认使用标准音乐布局")
         try check(configuredMusicLayout(["musicLayout": "future"]) == "standard", "未知配置布局安全回退")
         for invalid in ["unknown", "", 1, true, NSNull()] as [Any] {

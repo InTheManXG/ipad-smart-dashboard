@@ -896,6 +896,7 @@ func (s *Store) readLocked(id, kind, key string) (any, error) {
 	if item == nil || now.Sub(item.received) > freshTTL {
 		if kind == "music" {
 			enabled, layout := false, any("standard")
+			result := Object{"state": "offline", "translationEnabled": false, "phoneticEnabled": false}
 			if item != nil {
 				enabled = true
 				if value, exists := item.music["enabled"]; exists {
@@ -904,8 +905,14 @@ func (s *Store) readLocked(id, kind, key string) (any, error) {
 				if value, exists := item.music["layout"]; exists {
 					layout = value
 				}
+				for _, key := range []string{"translationEnabled", "phoneticEnabled"} {
+					if value, exists := item.music[key]; exists {
+						result[key] = value
+					}
+				}
 			}
-			return Object{"state": "offline", "enabled": enabled, "layout": layout}, nil
+			result["enabled"], result["layout"] = enabled, layout
+			return result, nil
 		}
 		return nil, fail(503, "device_offline")
 	}

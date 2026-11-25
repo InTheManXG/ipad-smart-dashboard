@@ -29,12 +29,14 @@ func validateMusic(value any) (Object, error) {
 	if layout != "standard" && layout != "priority" && layout != "full" {
 		return nil, fail(400, "invalid_request")
 	}
-	result := Object{"state": state, "layout": layout}
-	if raw, exists := input["enabled"]; exists {
-		if _, ok := raw.(bool); !ok {
-			return nil, fail(400, "invalid_request")
+	result := Object{"state": state, "layout": layout, "translationEnabled": false, "phoneticEnabled": false}
+	for _, key := range []string{"enabled", "translationEnabled", "phoneticEnabled"} {
+		if raw, exists := input[key]; exists {
+			if _, ok := raw.(bool); !ok {
+				return nil, fail(400, "invalid_request")
+			}
+			result[key] = raw
 		}
-		result["enabled"] = raw
 	}
 	if state != "ready" {
 		return result, nil
@@ -89,7 +91,18 @@ func validateMusic(value any) (Object, error) {
 		if !numeric || math.IsNaN(stamp) || math.IsInf(stamp, 0) || stamp < 0 || stamp < previous || stamp > 86400 || !textual || utf8.RuneCountInString(text) > 300 {
 			return nil, fail(400, "invalid_request")
 		}
-		clean = append(clean, Object{"time": stamp, "text": text})
+		cleanLine := Object{"time": stamp, "text": text}
+		// 翻译与注音是可选文本；仍按白名单校验，不能借歌词透传其他本机数据。
+		for _, key := range []string{"translation", "phonetic"} {
+			if raw, exists := line[key]; exists {
+				text, ok := raw.(string)
+				if !ok || utf8.RuneCountInString(text) > 300 {
+					return nil, fail(400, "invalid_request")
+				}
+				cleanLine[key] = text
+			}
+		}
+		clean = append(clean, cleanLine)
 		previous = stamp
 	}
 	result["lines"] = clean
@@ -134,12 +147,14 @@ func (m *Music) Get() Object {
 	defer m.mu.Unlock()
 	age := time.Since(m.received).Seconds()
 	if m.snapshot == nil || age > 8 {
-		result := Object{"state": "offline", "layout": "standard"}
+		result := Object{"state": "offline", "layout": "standard", "translationEnabled": false, "phoneticEnabled": false}
 		// 断线只保留布局和开关，不继续展示或推演旧歌曲。
 		if m.snapshot != nil {
 			result["layout"] = m.snapshot["layout"]
-			if enabled, exists := m.snapshot["enabled"]; exists {
-				result["enabled"] = enabled
+			for _, key := range []string{"enabled", "translationEnabled", "phoneticEnabled"} {
+				if value, exists := m.snapshot[key]; exists {
+					result[key] = value
+				}
 			}
 		}
 		return result

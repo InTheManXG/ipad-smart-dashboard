@@ -4,9 +4,9 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const nodes = new Map();
 const permissionMessage = '控制台尚未允许此网页控制 Mac，请在 Mac「iPad 控制台 → 连接与配对」中开启「允许控制此 Mac」。';
-const node = () => ({textContent:'',className:'',classList:{toggle(name,on){this[name]=on;}},style:{},dataset:{},children:[],setAttribute(name,value){this[name]=value;},replaceChildren(...children){this.children=children;},append(child){if(child.parentElement)child.parentElement.children=child.parentElement.children.filter(item=>item!==child);child.parentElement=this;this.children.push(child);}});
-const layoutEvents = [];
-const context = vm.createContext({document:{hidden:false,addEventListener(){},createElement:node,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);}},window:{addEventListener(){},dispatchEvent(event){layoutEvents.push(event.type);}},Event,sessionStorage:{getItem(){return '';}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},performance:{now(){return 0;}},setInterval(){},requestAnimationFrame(){},setTimeout,clearTimeout,AbortController});
+const node = () => ({textContent:'',className:'',classList:{toggle(name,on){this[name]=on;}},style:{},dataset:{},children:[],offsetTop:0,offsetHeight:32,setAttribute(name,value){this[name]=value;},replaceChildren(...children){this.children=children;},append(child){if(child.parentElement)child.parentElement.children=child.parentElement.children.filter(item=>item!==child);child.parentElement=this;this.children.push(child);}});
+const layoutEvents = [], windowEvents = new Map();
+const context = vm.createContext({document:{hidden:false,addEventListener(){},createElement:node,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);}},window:{addEventListener(name,handler){windowEvents.set(name,handler);},dispatchEvent(event){layoutEvents.push(event.type);}},Event,sessionStorage:{getItem(){return '';}},localStorage:{getItem(){return '';},setItem(){},removeItem(){}},performance:{now(){return 0;}},setInterval(){},requestAnimationFrame(){},setTimeout,clearTimeout,AbortController});
 context.controlRequiredMessage = permissionMessage;
 vm.runInContext(fs.readFileSync('web/music.js','utf8'),context);
 for (const [snapshot, visible] of [[null,false],[{state:'offline',enabled:false},false],[{state:'idle',enabled:true},true],[{state:'offline',enabled:true},true],[{state:'unavailable',enabled:true},true],[{state:'idle'},true]]) {
@@ -84,6 +84,51 @@ assert.notEqual(track.children[1],first);
 context.renderLyrics(null,frame(null));
 assert.equal(track.children.length,1);
 assert.equal(track.children[0].textContent,'♪');
+// 翻译和注音由 Mac 分别控制，只展示数据源已有内容，外部文字不能成为 HTML。
+const languageSong = {...song,title:'语言显示测试',lines:[
+  {time:2,text:'Original lyric',translation:'中文翻译',phonetic:'fəˈnetɪk'},
+  {time:5,text:'No extra line',translation:' ',phonetic:''},
+  {time:8,text:'Safe text',translation:'<img src=x onerror=alert(1)>',phonetic:'注音内容'}
+]};
+for (const [translationEnabled,phoneticEnabled,expected] of [
+  [false,false,[]], [true,false,['中文翻译']], [false,true,['fəˈnetɪk']], [true,true,['中文翻译','fəˈnetɪk']]
+]) {
+  const snapshot = {...languageSong,translationEnabled,phoneticEnabled};
+  context.renderLyrics(snapshot,frame({...snapshot,position:2}));
+  const line = track.children[1];
+  assert.equal(line.children.length,expected.length ? expected.length + 1 : 0,'翻译和注音分别开关');
+  if (expected.length) {
+    assert.equal(line.children[0].textContent,'Original lyric','原文保留在第一行');
+    assert.deepEqual(Array.from(line.children).slice(1).map(item=>item.textContent),expected);
+  } else assert.equal(line.textContent,'Original lyric','关闭附加语言恢复原文布局');
+  assert.equal(track.children[2].children.length,0,'没有对应内容不创建空行');
+  assert.equal(track.children[2].textContent,'No extra line');
+}
+const languageSnapshot = {...languageSong,translationEnabled:true,phoneticEnabled:true,position:5.1};
+context.renderLyrics(languageSnapshot,frame({...languageSnapshot,position:8}));
+assert.equal(track.children[3].children[1].textContent,'<img src=x onerror=alert(1)>','翻译作为纯文本渲染');
+assert.equal(track.children[3].children[1].innerHTML,undefined);
+context.renderLyrics({...song,translationEnabled:true,phoneticEnabled:true},frame({...song,position:2}));
+assert.equal(track.dataset.details,'false','整首歌没有附加语言时保留原有行距');
+context.testSong = languageSnapshot;
+vm.runInContext('musicSnapshot = testSong; musicReceived = performance.now(); renderMusic()',context);
+const languageLine = track.children[2];
+languageLine.offsetTop = 116; languageLine.offsetHeight = 32;
+windowEvents.get('resize')();
+assert.equal(track.style.transform,'translateY(-132px)','混合行高按当前歌词的真实位置居中');
+languageLine.offsetTop = 210; languageLine.offsetHeight = 64;
+vm.runInContext('renderMusic()',context);
+assert.equal(track.style.transform,'translateY(-132px)','逐帧播放无需重新测量未变化的行');
+windowEvents.get('resize')();
+assert.equal(track.style.transform,'translateY(-242px)','窗口变化后重新测量附加歌词行高');
+assert.equal(track.children[2],languageLine,'窗口变化不重建歌词节点');
+for (const [layout,offset] of [['standard',280],['priority',360],['full',440]]) {
+  languageLine.offsetTop = offset;
+  context.testSong = {...languageSnapshot,layout};
+  vm.runInContext('musicSnapshot = testSong; renderMusic()',context);
+  assert.equal(track.style.transform,`translateY(${-offset - 32}px)`,'切换布局后重新居中多行歌词');
+  assert.equal(track.children[2],languageLine,'切换布局复用同一首歌的节点');
+}
 (async () => {
   let now = 1000;
   context.performance.now = () => now;

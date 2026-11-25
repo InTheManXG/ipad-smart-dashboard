@@ -482,6 +482,48 @@ func TestPairingSnapshotPrivacyAndFreshness(t *testing.T) {
 	}
 }
 
+func TestPairingLyricVariantsPreservedAcrossExchangeAndDisconnect(t *testing.T) {
+	store := newPairingStore(t)
+	id := registerPairingDevice(t, store)
+	song := musicTestSnapshot()
+	song["translationEnabled"], song["phoneticEnabled"] = true, true
+	song["lines"] = []any{Object{"time": 0, "text": "原文", "translation": "译文", "phonetic": "jyut6 man4", "private": "must-not-leak"}}
+	if _, err := store.Exchange(id, Object{"music": song}); err != nil {
+		t.Fatal(err)
+	}
+	// 任务与音乐来自不同上传循环，后续只上传任务不能清掉歌词开关或注音。
+	if _, err := store.Exchange(id, Object{"status": Object{}}); err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.Read(id, "music", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	music := value.(Object)
+	line := music["lines"].([]any)[0].(Object)
+	if music["translationEnabled"] != true || music["phoneticEnabled"] != true || len(line) != 4 || line["translation"] != "译文" || line["phonetic"] != "jyut6 man4" {
+		t.Fatalf("pairing exchange lost lyric variants or leaked fields: %v", music)
+	}
+	store.mu.Lock()
+	store.snapshots[id].received = time.Now().Add(-time.Minute)
+	store.mu.Unlock()
+	value, err = store.Read(id, "music", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	music = value.(Object)
+	if music["state"] != "offline" || music["translationEnabled"] != true || music["phoneticEnabled"] != true || music["lines"] != nil || music["title"] != nil {
+		t.Fatalf("disconnect lost display flags or retained old song: %v", music)
+	}
+	if _, err := store.Exchange(id, Object{"music": Object{"state": "idle"}}); err != nil {
+		t.Fatal(err)
+	}
+	value, err = store.Read(id, "music", "")
+	if err != nil || value.(Object)["translationEnabled"] != false || value.(Object)["phoneticEnabled"] != false || value.(Object)["lines"] != nil {
+		t.Fatalf("legacy/disabled display flags were not reset: %v %v", value, err)
+	}
+}
+
 func TestPairingStatusExchangePreservesConsoleUntilRefresh(t *testing.T) {
 	store := newPairingStore(t)
 	id, action := registerPairingDevice(t, store), newID()
