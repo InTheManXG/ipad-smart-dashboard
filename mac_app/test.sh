@@ -9,4 +9,7 @@ xcrun swiftc -parse-as-library -swift-version 5 -module-cache-path .build/swift-
 xcrun swiftc -parse-as-library -swift-version 5 -module-cache-path .build/swift-cache -target arm64-apple-macosx13.0 \
   mac_app/SingleInstance.swift tests/SingleInstanceTests.swift -o .build/single-instance-tests
 .build/single-instance-tests
+xcrun swiftc -parse-as-library -swift-version 5 -module-cache-path .build/swift-cache -target arm64-apple-macosx13.0 \
+  mac_app/WindowDockState.swift tests/WindowDockStateTests.swift -o .build/window-dock-tests
+.build/window-dock-tests
 bash mac_app/test-service-lifecycle.sh

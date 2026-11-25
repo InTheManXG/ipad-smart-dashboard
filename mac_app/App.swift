@@ -168,6 +168,7 @@ struct PairedScreen: Identifiable {
 }
 
 struct ControlView: View {
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var model = ControlModel()
     @ViewState private var section = "服务"
     @ViewState private var editingID: String?
@@ -228,6 +229,10 @@ struct ControlView: View {
             }.padding(28).disabled(model.busy)
         }
         .frame(minWidth: 820, minHeight: 620)
+        .onAppear {
+            let open = openWindow
+            WindowDockState.shared.openMainWindow = { open(id: "main") }
+        }
         .task { await model.refresh() }
         .onChange(of: section) { value in
             resetEditor()
@@ -267,7 +272,7 @@ struct ControlView: View {
                     Toggle("登录 Mac 时打开控制台", isOn: Binding(get: { model.appLogin }, set: { enabled in
                         Task { await model.service("app-login", enabled: enabled) }
                     }))
-                    Text("关闭窗口后可从菜单栏重新打开；退出控制台会停止后台服务。")
+                    Text("关闭窗口后仅保留菜单栏入口，后台继续运行；重新打开窗口会恢复 Dock 图标。退出控制台会停止后台服务。")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -671,9 +676,8 @@ struct PublicAddressEditor: View {
 
 @MainActor final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        WindowDockState.shared.start(inBackground: CommandLine.arguments.contains("--background"))
         AppUpdater.shared.start()
-        // 登录时后台启动不抢占窗口，但 Dock 与菜单栏始终提供返回入口。
-        if CommandLine.arguments.contains("--background") { NSApp.hide(nil) }
         Task {
             do { _ = try await Task.detached { try ControlModel.request(["action": "service-start"]) }.value }
             catch { showFailure("后台服务启动失败", error) }
@@ -681,6 +685,12 @@ struct PublicAddressEditor: View {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        WindowDockState.shared.prepareToOpen()
+        if !flag { WindowDockState.shared.reopenMainWindow() }
+        return true
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // 先卸载 launchd 服务再退出，防止 KeepAlive 留下没有控制入口的后台。
@@ -708,10 +718,12 @@ struct ControlMenu: View {
     @ObservedObject private var updater = AppUpdater.shared
     var body: some View {
         Button("打开 iPad 控制台") {
+            WindowDockState.shared.prepareToOpen()
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
         Button(updater.availableVersion.map { "发现新版本 \($0)…" } ?? "关于与更新…") {
+            WindowDockState.shared.prepareToOpen()
             openWindow(id: "about")
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -738,6 +750,7 @@ struct AboutCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("关于 iPad 控制台") {
+                WindowDockState.shared.prepareToOpen()
                 openWindow(id: "about")
                 NSApp.activate(ignoringOtherApps: true)
             }

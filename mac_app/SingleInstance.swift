@@ -38,7 +38,12 @@ enum ControlAppInstance {
                    let identifier = Bundle.main.bundleIdentifier,
                    let existing = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
                     .first(where: { $0.processIdentifier != getpid() }) {
-                    existing.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                    // 普通 activate 不会重建已关闭的窗口，交给 LaunchServices 发送重新打开事件。
+                    let reopen = Process()
+                    reopen.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                    reopen.arguments = ["-a", (existing.bundleURL ?? Bundle.main.bundleURL).path]
+                    if (try? reopen.run()) != nil { reopen.waitUntilExit() }
+                    else { existing.activate(options: [.activateAllWindows, .activateIgnoringOtherApps]) }
                 }
                 exit(0)
             }
