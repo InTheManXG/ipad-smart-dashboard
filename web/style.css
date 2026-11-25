@@ -120,10 +120,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 .relay-key-hint{font-family:ui-monospace,monospace;font-size:14px;font-weight:400;color:var(--muted);white-space:nowrap}
 
-/* 歌词在四分之一屏基础上增加 20px 留白；任务独立滚动，避免把歌词推到屏外。 */
+/* 歌词区预留更多高度；任务独立滚动，避免把歌词推到屏外。 */
 .home-page{height:100dvh;display:flex;flex-direction:column;overflow:hidden;padding-bottom:max(16px,env(safe-area-inset-bottom))}
 .home-page header,.home-page footer{flex-shrink:0}
-.home-page main{flex:1;min-height:0;display:flex;align-items:stretch;padding-bottom:16px}
+.home-page main{flex:1;min-height:0;display:flex;align-items:stretch;padding-bottom:8px}
 .home-page .tasks{width:100%;min-height:0;display:flex;flex-direction:column;padding:20px 24px}
 .home-page .section-head,.home-page #list-note{flex-shrink:0}
 /* 统计紧随标题，小屏允许换行；任务行保留足够触控高度。 */
@@ -132,7 +132,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .home-page .tasks #summary{margin:0;line-height:1.5}
 .home-page button.task{min-height:64px;padding-block:12px}
 .home-page #task-list{min-height:0;overflow-y:auto;overscroll-behavior-y:contain;margin-top:12px}
-.music-panel{position:relative;flex:0 0 calc(25dvh + 20px);min-height:196px;display:grid;grid-template-columns:repeat(2,clamp(44px,4vw,64px)) minmax(0,1fr) repeat(2,clamp(44px,4vw,64px));grid-template-rows:auto auto minmax(0,1fr);gap:6px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
+.music-panel{position:relative;flex:0 0 calc(25dvh + 44px);min-height:220px;display:grid;grid-template-columns:repeat(2,clamp(44px,4vw,64px)) minmax(0,1fr) repeat(2,clamp(44px,4vw,64px));grid-template-rows:auto auto minmax(0,1fr);gap:6px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
 .music-panel>.music-meta,.music-panel>.music-timeline,.music-panel>.lyric-lines{grid-column:3}
 .music-meta{grid-row:1}.music-timeline{grid-row:2}.lyric-lines{grid-row:3}
 .music-source{position:absolute;top:12px;left:16px;display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;line-height:20px;white-space:nowrap;pointer-events:none}
@@ -154,7 +154,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 #music-progress::-webkit-progress-bar{background:var(--line);border-radius:3px}#music-progress::-webkit-progress-value{background:var(--muted);border-radius:3px}#music-progress::-moz-progress-bar{background:var(--muted);border-radius:3px}
 .music-time{flex:none;font-size:11px;line-height:16px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .lyric-lines{--lyric-step:clamp(30px,4.8dvh,44px);text-align:center;min-width:0;height:calc(3 * var(--lyric-step));overflow:hidden;mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent);-webkit-mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent)}
-#lyric-track{position:relative;will-change:transform}
+/* 标准布局将新增高度交给歌词，原文的固定行距也按视窗中心补偿。 */
+.home-page:not(.music-priority) .lyric-lines{height:100%;min-height:calc(3 * var(--lyric-step));align-self:stretch}
+#lyric-track{position:relative;top:calc(50% - 1.5 * var(--lyric-step));will-change:transform}
 #lyric-track[data-details="true"]{top:50%}
 .lyric-line{height:var(--lyric-step);line-height:var(--lyric-step);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(21px,2.7vw,34px);font-weight:600;letter-spacing:.5px;color:#8a8b94;opacity:.65;transform:scale(.65);transform-origin:center}
 .lyric-line[data-details="true"]{height:auto;min-height:var(--lyric-step);display:flex;flex-direction:column;justify-content:center;gap:3px;padding:5px 0;line-height:1.25}
