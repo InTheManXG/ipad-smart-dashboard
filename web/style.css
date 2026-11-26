@@ -1,5 +1,5 @@
 :root{color-scheme:light;--bg:#f7f7f8;--panel:#fff;--line:#e6e6e9;--ink:#202124;--muted:#73747b;--accent:#5b58d6;--running:#e4ad00;--done:#26995b;--error:#de414b;--waiting:#3478e5}
-*{box-sizing:border-box}html{touch-action:manipulation}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;padding:env(safe-area-inset-top) 32px env(safe-area-inset-bottom);min-height:100vh;max-width:1600px;margin-inline:auto}
+*{box-sizing:border-box}html{height:100%;background:var(--bg);touch-action:manipulation}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;padding:env(safe-area-inset-top) 32px env(safe-area-inset-bottom);min-height:100vh;max-width:1600px;margin-inline:auto}
 header{height:98px;display:flex;align-items:center;justify-content:space-between}.brand,.top{display:flex;align-items:center;gap:14px}.logo{width:58px;height:58px}.brand h1{font-size:27px;letter-spacing:-.8px;font-weight:650;margin:0}.sub{font-size:12px;color:var(--muted);display:block;margin-top:2px}.top{gap:22px;font-size:12px;color:var(--muted)}time{font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:500}
 main{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:22px;padding:0 0 22px;align-items:start}.status-strip{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:24px;border:1px solid var(--line);background:var(--panel);padding:18px 22px;border-radius:16px}.status-current{display:flex;gap:16px;align-items:center;min-width:0}.status-current h2{font-size:17px;margin:0 0 5px}.status-current p{font-size:12px;color:var(--muted);margin:0;line-height:1.5}.status-meta{display:flex;flex-direction:column;gap:8px;text-align:right;font-size:12px;color:var(--muted)}#sync{font-size:11px;font-variant-numeric:tabular-nums}
 .signal{display:flex;align-items:center;justify-content:center;width:48px;height:48px;flex-shrink:0}.signal span{height:30px;width:30px;border-radius:50%;background:var(--status-color,var(--muted));box-shadow:0 0 0 7px color-mix(in srgb,var(--status-color,var(--muted)) 12%,transparent)}
@@ -101,12 +101,14 @@ main{grid-template-columns:minmax(0,1fr)}
 
 /* 使用原生横向滚动保留 iPad 手势；不显示分页提示，键盘仍可聚焦滚动区域。 */
 /* 外层固定为屏幕高度，避免较长的相邻页带着中间看板上下移动。 */
-body{max-width:none;padding:0;height:100dvh;min-height:0;overflow:hidden;overscroll-behavior-y:none}
+body{max-width:none;padding:0;height:100vh;height:100dvh;min-height:0;overflow:hidden;overscroll-behavior-y:none}
 /* 透明系统状态栏下的安全区固定覆盖，正文滚动后也不能与时间叠字。 */
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top);background:var(--bg);z-index:10;pointer-events:none}
-.pages{display:flex;width:100%;height:100dvh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-y:none;scroll-snap-type:x mandatory;scrollbar-width:none;align-items:flex-start}
+.pages{display:flex;width:100%;height:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-y:none;scroll-snap-type:x mandatory;scrollbar-width:none;align-items:flex-start}
 .pages::-webkit-scrollbar{display:none}
-.dashboard-page{flex:0 0 100%;width:100%;min-width:0;height:100dvh;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scroll-snap-align:start;padding:env(safe-area-inset-top) 32px env(safe-area-inset-bottom)}
+/* 主屏幕模式以完整根视口为准，避免动态工具栏高度在底部留下空带。 */
+@media(display-mode:standalone){body{height:100%}}
+.dashboard-page{flex:0 0 100%;width:100%;min-width:0;height:100%;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scroll-snap-align:start;padding:env(safe-area-inset-top) 32px env(safe-area-inset-bottom)}
 .company-page{padding-top:max(32px,env(safe-area-inset-top));padding-bottom:32px}
 #company-title{font-size:25px}#relay-cards{display:flex;flex-direction:column;margin-top:24px}
 /* 每个 Key 独占一行，额度数字、短进度条和辅助文字沿用首页样式。 */
@@ -122,8 +124,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .relay-key-hint{font-family:ui-monospace,monospace;font-size:14px;font-weight:400;color:var(--muted);white-space:nowrap}
 
 /* 歌词区预留更多高度；任务独立滚动，避免把歌词推到屏外。 */
-.home-page{height:100dvh;display:flex;flex-direction:column;overflow:hidden;padding-bottom:max(8px,env(safe-area-inset-bottom))}
+.home-page{height:100%;display:flex;flex-direction:column;overflow:hidden;padding-bottom:8px}
 .home-page header,.home-page footer{flex-shrink:0}
+/* 安全区放在末张卡片内部，外侧始终只留 8px；空页脚在旧 Safari 也不占高度。 */
+.home-page footer{padding-bottom:0}
+.home-page:not(.music-priority)>.music-panel{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.home-page.music-hidden main{padding-bottom:0}
+.home-page.music-hidden .tasks,.home-page.music-priority .tasks{padding-bottom:max(20px,env(safe-area-inset-bottom,0px))}
 .home-page main{flex:1;min-height:0;display:flex;align-items:stretch;padding-bottom:8px}
 .home-page .tasks{width:100%;min-height:0;display:flex;flex-direction:column;padding:20px 24px}
 .home-page .section-head,.home-page #list-note{flex-shrink:0}
@@ -191,13 +198,14 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 /* hidden 不能被音乐卡片的 display:grid 覆盖；短屏关闭音乐后也让任务填满高度。 */
 .music-panel[hidden]{display:none}
-@media(max-height:500px){.home-page.music-hidden{height:100dvh;min-height:0;overflow:hidden}.home-page.music-hidden main{flex:1;height:auto}}
+@media(max-height:500px){.home-page.music-hidden{height:100%;min-height:0;overflow:hidden}.home-page.music-hidden main{flex:1;height:auto}}
 
 /* 音乐优先把可用内容高度按 2:1 分给音乐和任务，任务列表仍在卡片内部滚动。 */
-.home-page.music-priority{display:grid;grid-template-rows:auto minmax(0,2fr) minmax(0,1fr) auto;gap:16px;height:100dvh;min-height:0;overflow:hidden}
+.home-page.music-priority{display:grid;grid-template-rows:auto minmax(0,2fr) minmax(0,1fr) auto;gap:0;height:100%;min-height:0;overflow:hidden}
 .home-page.music-priority header{grid-row:1}
-.home-page.music-priority .music-panel{grid-row:2;min-height:0}
-.home-page.music-priority main{grid-row:3;height:auto;min-height:0;padding:0}
+.home-page.music-priority .music-panel{grid-row:2;min-height:0;margin-top:16px}
+/* 间距属于实际卡片，不给空页脚预留一行网格间距。 */
+.home-page.music-priority main{grid-row:3;height:auto;min-height:0;margin-top:16px;padding:0}
 .home-page.music-priority footer{grid-row:4;padding:0}
 .music-priority .lyric-lines{--lyric-step:clamp(36px,7dvh,68px)}
 .music-priority .lyric-line{font-size:clamp(24px,3.3vw,42px)}
@@ -207,7 +215,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .music-full .music-page-open{display:inline-flex;gap:5px}
 
 /* 全屏音乐复用同一播放器，独立横向整页，不复制控件或歌词时间轴。 */
-.music-page{height:100dvh;min-height:0;display:flex;flex-direction:column;gap:16px;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom));overflow:hidden}
+.music-page{height:100%;min-height:0;display:flex;flex-direction:column;gap:16px;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom));overflow:hidden}
 .music-page[hidden]{display:none}
 .music-page>.music-panel{flex:1;min-height:0;padding:32px 20px}
 .music-page .lyric-lines{--lyric-step:clamp(44px,10dvh,96px)}
