@@ -106,8 +106,6 @@ body{max-width:none;padding:0;height:100vh;height:100dvh;min-height:0;overflow:h
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top);background:var(--bg);z-index:10;pointer-events:none}
 .pages{display:flex;width:100%;height:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-y:none;scroll-snap-type:x mandatory;scrollbar-width:none;align-items:flex-start}
 .pages::-webkit-scrollbar{display:none}
-/* 主屏幕模式以完整根视口为准，避免动态工具栏高度在底部留下空带。 */
-@media(display-mode:standalone){body{height:100%}}
 .dashboard-page{flex:0 0 100%;width:100%;min-width:0;height:100%;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scroll-snap-align:start;padding:env(safe-area-inset-top) 32px env(safe-area-inset-bottom)}
 .company-page{padding-top:max(32px,env(safe-area-inset-top));padding-bottom:32px}
 #company-title{font-size:25px}#relay-cards{display:flex;flex-direction:column;margin-top:24px}
@@ -189,6 +187,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 /* 全屏按钮覆盖整个遮罩，触摸任意位置均可恢复，并保留键盘操作。 */
 #wake-dialog{position:fixed;inset:0;width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:#101827b8;box-shadow:none;color:#fff;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}#wake-dialog::backdrop{background:transparent}#restore-wake{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;width:100%;height:100%;padding:32px;border:0;border-radius:0;background:transparent;color:inherit}#restore-wake:hover{background:transparent}#restore-wake:disabled{opacity:1}#wake-heading{font-size:clamp(24px,4vw,40px);font-weight:600;line-height:1.4}#wake-message{font-size:16px;line-height:1.7;color:#d5dce8;max-width:600px}
+
+/* iPad 主屏幕的百分比与动态视口会少算顶部状态栏，正文和遮罩统一使用完整视口。 */
+@media(display-mode:standalone){body,#wake-dialog{height:100vh}}
 
 /* 保留左侧独立页卡，不重复首页已有的信息与操作。 */
 .console-page{padding-top:max(32px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom))}
